@@ -1,0 +1,610 @@
+import { useState, useEffect } from "react";
+import { ContactsListWithFilters } from "./crm/ContactsListWithFilters";
+import { CustomersListWithFilters } from "./crm/CustomersListWithFilters";
+import { CustomerDetail } from "./bd/CustomerDetail";
+import { ContactDetail } from "./bd/ContactDetail";
+import { TasksList } from "./bd/TasksList";
+import { TaskDetailInline } from "./bd/TaskDetailInline";
+import { ActivitiesList } from "./bd/ActivitiesList";
+import { BudgetRequestList } from "./bd/BudgetRequestList";
+import { BDReports } from "./bd/BDReports";
+import { QuotationsListWithFilters } from "./pricing/QuotationsListWithFilters";
+import { QuotationBuilder } from "./bd/QuotationBuilder";
+import { QuotationDetail } from "./pricing/QuotationDetail";
+import { ProjectsList } from "./bd/ProjectsList";
+import { ProjectDetail } from "./bd/ProjectDetail";
+import type { Contact } from "../types/bd";
+import type { Customer } from "../types/bd";
+import type { Task } from "../types/bd";
+import type { QuotationNew, Project } from "../types/pricing";
+import { projectId, publicAnonKey } from '../utils/supabase/info';
+import { toast } from "./ui/toast-utils";
+
+type BDView = "contacts" | "customers" | "inquiries" | "projects" | "tasks" | "activities" | "budget-requests" | "reports";
+type SubView = "list" | "detail" | "builder";
+
+interface BusinessDevelopmentProps {
+  view?: BDView;
+  onCreateInquiry?: (customer: Customer) => void;
+  onViewInquiry?: (inquiryId: string) => void;
+  customerData?: Customer | null;
+  inquiryId?: string | null;
+  contactId?: string;
+  currentUser?: { name: string; email: string; department: string } | null;
+  onCreateTicket?: (quotation: QuotationNew) => void;
+}
+
+const API_URL = `https://${projectId}.supabase.co/functions/v1/make-server-c142e950`;
+
+export function BusinessDevelopment({ view: initialView = "contacts", onCreateInquiry, onViewInquiry, customerData, inquiryId, contactId, currentUser, onCreateTicket }: BusinessDevelopmentProps) {
+  const [view, setView] = useState<BDView>(initialView);
+  const [subView, setSubView] = useState<SubView>("list");
+  const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [selectedQuotation, setSelectedQuotation] = useState<QuotationNew | null>(null);
+  const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+  const [quotations, setQuotations] = useState<QuotationNew[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [customerDetailKey, setCustomerDetailKey] = useState(0);
+
+  // Map department name to userDepartment format
+  const userDepartment: "BD" | "PD" = "BD"; // Always BD since this is the Business Development module
+
+  // Fetch quotations from backend
+  const fetchQuotations = async () => {
+    setIsLoading(true);
+    try {
+      console.log('Fetching quotations from:', `${API_URL}/quotations?department=bd`);
+      
+      const response = await fetch(`${API_URL}/quotations?department=bd`, {
+        headers: {
+          'Authorization': `Bearer ${publicAnonKey}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        setQuotations(result.data);
+        console.log(`Fetched ${result.data.length} quotations for BD`);
+      } else {
+        console.error('Error fetching quotations:', result.error);
+        alert('Error loading quotations: ' + result.error);
+      }
+    } catch (error) {
+      console.error('Error fetching quotations:', error);
+      alert('Unable to connect to server. Please check your connection or try again later.\n\nError: ' + error);
+      // Set empty array so UI doesn't break
+      setQuotations([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Fetch projects from backend
+  const fetchProjects = async () => {
+    setIsLoading(true);
+    try {
+      console.log('Fetching projects from:', `${API_URL}/projects`);
+      
+      const response = await fetch(`${API_URL}/projects`, {
+        headers: {
+          'Authorization': `Bearer ${publicAnonKey}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        setProjects(result.data);
+        console.log(`Fetched ${result.data.length} projects`);
+      } else {
+        console.error('Error fetching projects:', result.error);
+        toast.error("Error loading projects", result.error);
+      }
+    } catch (error) {
+      console.error('Error fetching projects:', error);
+      toast.error("Unable to connect to server");
+      setProjects([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Fetch quotations when view changes to inquiries
+  useEffect(() => {
+    if (view === "inquiries") {
+      fetchQuotations();
+    }
+  }, [view]);
+
+  // Fetch projects when view changes to projects
+  useEffect(() => {
+    if (view === "projects") {
+      fetchProjects();
+    }
+  }, [view]);
+
+  // Reset to list view when switching between main views
+  useEffect(() => {
+    setSubView("list");
+    setSelectedContact(null);
+    setSelectedCustomer(null);
+    setSelectedTask(null);
+    setSelectedQuotation(null);
+    setSelectedProject(null);
+  }, [view]);
+
+  // Handle inquiryId prop - when set, show the detail view for that inquiry
+  useEffect(() => {
+    if (inquiryId && (view === "inquiries")) {
+      const inquiry = quotations.find(q => q.id === inquiryId);
+      if (inquiry) {
+        setSelectedQuotation(inquiry);
+        setSubView("detail");
+      }
+    }
+  }, [inquiryId, view, quotations]);
+
+  // Handle customerData prop - when set, open builder to create inquiry
+  useEffect(() => {
+    if (customerData && view === "inquiries") {
+      setSubView("builder");
+    }
+  }, [customerData, view]);
+
+  // Handle contactId prop - when set, fetch and show the contact detail view
+  useEffect(() => {
+    const fetchContactById = async () => {
+      if (contactId && view === "contacts") {
+        try {
+          const response = await fetch(`${API_URL}/contacts/${contactId}`, {
+            headers: {
+              'Authorization': `Bearer ${publicAnonKey}`,
+              'Content-Type': 'application/json'
+            }
+          });
+          
+          const result = await response.json();
+          
+          if (result.success && result.data) {
+            // Convert backend Contact to BD Contact format
+            const backendContact = result.data;
+            const bdContact: Contact = {
+              id: backendContact.id,
+              name: backendContact.name,
+              first_name: backendContact.name.split(' ')[0] || backendContact.name,
+              last_name: backendContact.name.split(' ').slice(1).join(' ') || '',
+              email: backendContact.email,
+              phone: backendContact.phone || '',
+              mobile_number: backendContact.phone || '',
+              company_id: backendContact.customer_id || backendContact.id,
+              lifecycle_stage: backendContact.status === "Customer" ? "Customer" : 
+                               backendContact.status === "MQL" ? "MQL" : 
+                               backendContact.status === "Prospect" ? "SQL" : "Lead",
+              lead_status: "Connected",
+              job_title: backendContact.title || '',
+              title: backendContact.title || null,
+              customer_id: backendContact.customer_id || null,
+              owner_id: '',
+              notes: backendContact.notes || null,
+              created_by: null,
+              created_at: backendContact.created_date || backendContact.created_at,
+              updated_at: backendContact.updated_at
+            };
+            setSelectedContact(bdContact);
+            setSubView("detail");
+          } else {
+            console.error('Error fetching contact:', result.error);
+            toast.error("Contact not found");
+          }
+        } catch (error) {
+          console.error('Error fetching contact:', error);
+          toast.error("Error loading contact");
+        }
+      }
+    };
+    
+    fetchContactById();
+  }, [contactId, view]);
+
+  const handleViewContact = (contact: Contact) => {
+    setSelectedContact(contact);
+    setSubView("detail");
+  };
+
+  const handleBackFromContact = () => {
+    setSelectedContact(null);
+    setSubView("list");
+  };
+
+  const handleViewCustomer = (customer: Customer) => {
+    setSelectedCustomer(customer);
+    setSubView("detail");
+  };
+
+  const handleBackFromCustomer = () => {
+    setSelectedCustomer(null);
+    setSubView("list");
+  };
+
+  const handleViewTask = (task: Task) => {
+    setSelectedTask(task);
+    setSubView("detail");
+  };
+
+  const handleBackFromTask = () => {
+    setSelectedTask(null);
+    setSubView("list");
+  };
+
+  const handleViewInquiry = (quotation: QuotationNew) => {
+    setSelectedQuotation(quotation);
+    setSubView("detail");
+  };
+
+  const handleBackFromInquiry = () => {
+    setSelectedQuotation(null);
+    setSubView("list");
+  };
+
+  const handleEditInquiry = () => {
+    // Keep the selected quotation and switch to builder mode for editing
+    setSubView("builder");
+  };
+
+  const handleCreateInquiry = () => {
+    setSelectedQuotation(null);
+    setSubView("builder");
+  };
+
+  const handleSaveInquiry = async (data: QuotationNew) => {
+    console.log("Saving inquiry:", data);
+    
+    try {
+      // Determine if this is create or update
+      const isUpdate = !!data.id && data.id.startsWith('QUO-');
+      
+      if (isUpdate) {
+        // Update existing quotation
+        const response = await fetch(`${API_URL}/quotations/${data.id}`, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${publicAnonKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(data)
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+          console.log('Inquiry updated successfully');
+          await fetchQuotations(); // Refresh list
+          setSubView("list");
+        } else {
+          console.error('Error updating inquiry:', result.error);
+          alert('Error updating inquiry: ' + result.error);
+        }
+      } else {
+        // Create new quotation
+        const response = await fetch(`${API_URL}/quotations`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${publicAnonKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(data)
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+          console.log('Inquiry created successfully:', result.data.id);
+          await fetchQuotations(); // Refresh list
+          setSubView("list");
+        } else {
+          console.error('Error creating inquiry:', result.error);
+          alert('Error creating inquiry: ' + result.error);
+        }
+      }
+    } catch (error) {
+      console.error('Error saving inquiry:', error);
+      alert('Error saving inquiry: ' + error);
+    }
+  };
+
+  const handleUpdateQuotation = async (updatedQuotation: QuotationNew) => {
+    // Update the selected quotation in state
+    setSelectedQuotation(updatedQuotation);
+    
+    try {
+      const response = await fetch(`${API_URL}/quotations/${updatedQuotation.id}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${publicAnonKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(updatedQuotation)
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        console.log("Quotation updated successfully");
+        await fetchQuotations(); // Refresh list
+      } else {
+        console.error('Error updating quotation:', result.error);
+      }
+    } catch (error) {
+      console.error('Error updating quotation:', error);
+    }
+  };
+
+  return (
+    <div className="h-full flex flex-col" style={{ background: "var(--neuron-bg-page)" }}>
+      {/* Main Content */}
+      <div className="flex-1 overflow-hidden">
+        {view === "contacts" && (
+          <>
+            {subView === "list" && (
+              <ContactsListWithFilters 
+                userDepartment={userDepartment}
+                onViewContact={handleViewContact} 
+              />
+            )}
+            {subView === "detail" && selectedContact && (
+              <ContactDetail 
+                contact={selectedContact} 
+                onBack={handleBackFromContact}
+                onCreateInquiry={async (customer, contact) => {
+                  // If customer is provided, use it. Otherwise fetch it from contact's customer_id
+                  let customerToUse = customer;
+                  
+                  if (!customerToUse && contact.customer_id) {
+                    try {
+                      const response = await fetch(`${API_URL}/customers/${contact.customer_id}`, {
+                        headers: {
+                          'Authorization': `Bearer ${publicAnonKey}`,
+                          'Content-Type': 'application/json'
+                        }
+                      });
+                      
+                      const result = await response.json();
+                      
+                      if (result.success && result.data) {
+                        customerToUse = result.data;
+                      }
+                    } catch (error) {
+                      console.error('Error fetching customer:', error);
+                    }
+                  }
+                  
+                  // Navigate to inquiries and open builder with contact data
+                  setSelectedCustomer(customerToUse || null);
+                  setSelectedContact(contact);
+                  setView("inquiries");
+                  setSubView("builder");
+                }}
+              />
+            )}
+          </>
+        )}
+
+        {view === "customers" && (
+          <>
+            {subView === "list" && (
+              <CustomersListWithFilters 
+                userDepartment="BD"
+                onViewCustomer={handleViewCustomer} 
+              />
+            )}
+            {subView === "detail" && selectedCustomer && (
+              <CustomerDetail 
+                key={customerDetailKey}
+                customer={selectedCustomer} 
+                onBack={handleBackFromCustomer}
+                onCreateInquiry={() => {
+                  // Handle inquiry creation within customer detail view
+                  setSubView("builder");
+                }}
+                onViewInquiry={onViewInquiry}
+              />
+            )}
+            {subView === "builder" && selectedCustomer && (
+              <QuotationBuilder 
+                customerData={selectedCustomer}
+                onSave={async (data: QuotationNew) => {
+                  try {
+                    const response = await fetch(`${API_URL}/quotations`, {
+                      method: 'POST',
+                      headers: {
+                        'Authorization': `Bearer ${publicAnonKey}`,
+                        'Content-Type': 'application/json'
+                      },
+                      body: JSON.stringify(data)
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                      toast.success("Inquiry created successfully!");
+                      console.log('Inquiry created successfully:', result.data.id);
+                      // Increment key to force CustomerDetail to re-fetch data
+                      setCustomerDetailKey(prev => prev + 1);
+                      // Go back to customer detail view
+                      setSubView("detail");
+                    } else {
+                      console.error('Error creating inquiry:', result.error);
+                      toast.error("Failed to create inquiry");
+                    }
+                  } catch (error) {
+                    console.error('Error saving inquiry:', error);
+                    toast.error("Failed to create inquiry");
+                  }
+                }}
+                onClose={() => {
+                  // Go back to customer detail view
+                  setSubView("detail");
+                }}
+                builderMode="inquiry"
+                initialData={{
+                  customer_id: selectedCustomer.id,
+                  customer_name: selectedCustomer.company_name,
+                  status: "Draft"
+                } as Partial<QuotationNew>}
+              />
+            )}
+          </>
+        )}
+
+        {view === "tasks" && (
+          <>
+            {subView === "list" && (
+              <TasksList onViewTask={handleViewTask} />
+            )}
+            {subView === "detail" && selectedTask && (
+              <TaskDetailInline task={selectedTask} onBack={handleBackFromTask} />
+            )}
+          </>
+        )}
+
+        {view === "activities" && (
+          <ActivitiesList />
+        )}
+
+        {view === "budget-requests" && (
+          <BudgetRequestList />
+        )}
+
+        {view === "reports" && (
+          <BDReports />
+        )}
+
+        {view === "inquiries" && (
+          <>
+            {subView === "list" && (
+              <QuotationsListWithFilters 
+                onViewItem={handleViewInquiry} 
+                onCreateQuotation={handleCreateInquiry}
+                quotations={quotations}
+                isLoading={isLoading}
+                userDepartment="BD"
+              />
+            )}
+            {subView === "detail" && selectedQuotation && (
+              <QuotationDetail 
+                quotation={selectedQuotation} 
+                onBack={handleBackFromInquiry}
+                userDepartment="BD"
+                onUpdate={handleUpdateQuotation}
+                onEdit={handleEditInquiry}
+                onCreateTicket={onCreateTicket}
+                onConvertToProject={async (projectId) => {
+                  try {
+                    // Fetch the created project by ID
+                    const response = await fetch(`${API_URL}/projects/${projectId}`, {
+                      headers: {
+                        'Authorization': `Bearer ${publicAnonKey}`,
+                        'Content-Type': 'application/json'
+                      }
+                    });
+
+                    const result = await response.json();
+
+                    if (result.success && result.data) {
+                      // Debug: Check if services_metadata is present
+                      console.log(`Project ${result.data.project_number} has ${result.data.services_metadata?.length || 0} service specifications`);
+                      
+                      // Navigate directly to the project detail
+                      setSelectedProject(result.data);
+                      setView("projects");
+                      setSubView("detail");
+                      
+                      // Also refresh the projects list in background
+                      fetchProjects();
+                    } else {
+                      // Fallback: navigate to projects list
+                      await fetchProjects();
+                      setView("projects");
+                      setSubView("list");
+                    }
+                  } catch (error) {
+                    console.error('Error fetching created project:', error);
+                    // Fallback: navigate to projects list
+                    await fetchProjects();
+                    setView("projects");
+                    setSubView("list");
+                  }
+                }}
+                currentUser={currentUser}
+              />
+            )}
+            {subView === "builder" && (
+              <QuotationBuilder 
+                customerData={customerData || selectedCustomer} 
+                contactData={selectedContact}
+                onSave={handleSaveInquiry}
+                onClose={handleBackFromInquiry}
+                builderMode="inquiry"
+                initialData={selectedQuotation || (customerData ? { 
+                  customer_id: customerData.id,
+                  customer_name: customerData.company_name,
+                  customer_company: customerData.company_name,
+                  status: "Draft"
+                } as Partial<QuotationNew> : undefined)}
+              />
+            )}
+          </>
+        )}
+
+        {view === "projects" && (
+          <>
+            {subView === "list" && (
+              <ProjectsList
+                projects={projects}
+                onSelectProject={(project) => {
+                  setSelectedProject(project);
+                  setSubView("detail");
+                }}
+                isLoading={isLoading}
+              />
+            )}
+            {subView === "detail" && selectedProject && (
+              <ProjectDetail
+                project={selectedProject}
+                onBack={() => {
+                  setSelectedProject(null);
+                  setSubView("list");
+                  fetchProjects(); // Refresh projects list
+                }}
+                onUpdate={() => {
+                  // Refresh the project data
+                  fetchProjects();
+                }}
+                currentUser={currentUser ? {
+                  id: "user-bd-rep-001", // TODO: Get from actual user context
+                  name: currentUser.name,
+                  email: currentUser.email,
+                  department: currentUser.department
+                } : undefined}
+              />
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}

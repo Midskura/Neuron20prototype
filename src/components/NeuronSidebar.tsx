@@ -1,0 +1,775 @@
+import { useState, useEffect } from "react";
+import { 
+  Home, 
+  Building2, 
+  UserCircle2, 
+  Mail, 
+  CheckSquare, 
+  Activity, 
+  Wallet, 
+  BarChart, 
+  FileSpreadsheet, 
+  Briefcase, 
+  Globe, 
+  FileText, 
+  Receipt, 
+  Coins, 
+  CreditCard, 
+  BookOpen, 
+  Package, 
+  UserCircle, 
+  Calendar, 
+  Inbox, 
+  ChevronDown, 
+  ChevronRight, 
+  ChevronLeft, 
+  Menu, 
+  HelpCircle, 
+  Settings,
+  Banknote,
+  ListTodo,
+  Truck,
+  Container,
+  Ship,
+  BaggageClaim
+} from "lucide-react";
+import logoImage from "figma:asset/28c84ed117b026fbf800de0882eb478561f37f4f.png";
+import { useUser } from "../hooks/useUser";
+
+type Page = "dashboard" | "bd-contacts" | "bd-customers" | "bd-inquiries" | "projects" | "bd-projects" | "bd-tasks" | "bd-activities" | "bd-budget-requests" | "bd-reports" | "pricing-contacts" | "pricing-customers" | "pricing-quotations" | "pricing-vendors" | "pricing-reports" | "ops-forwarding" | "ops-brokerage" | "ops-trucking" | "ops-marine-insurance" | "ops-others" | "ops-projects" | "ops-reports" | "operations" | "acct-evouchers" | "acct-billings" | "acct-collections" | "acct-expenses" | "acct-ledger" | "acct-reports" | "hr" | "calendar" | "inbox" | "ticket-queue" | "profile" | "admin" | "ticket-testing" | "activity-log";
+
+// SVG for Philippine Peso icon
+const Vector = () => (
+  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M5.83333 16.6667V3.33333M5.83333 10H11.6667C12.5507 10 13.3986 9.64881 14.0237 9.02369C14.6488 8.39857 15 7.55072 15 6.66667C15 5.78261 14.6488 4.93477 14.0237 4.30964C13.3986 3.68452 12.5507 3.33333 11.6667 3.33333H5.83333M3.33333 13.3333H8.33333" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+  </svg>
+);
+
+// Wrapper component for the Philippine Peso icon
+const PesoIcon = ({ size = 20, style }: { size?: number; style?: React.CSSProperties }) => (
+  <div 
+    style={{ 
+      width: size, 
+      height: size, 
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      '--stroke-0': style?.color || 'currentColor' 
+    } as React.CSSProperties}
+  >
+    <Vector />
+  </div>
+);
+
+export function NeuronSidebar({ currentPage, onNavigate, currentUser }: NeuronSidebarProps) {
+  // Initialize collapsed state from localStorage, default to false (expanded)
+  const [isCollapsed, setIsCollapsed] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('neuron_sidebar_collapsed');
+      return saved === 'true';
+    }
+    return false;
+  });
+  
+  // Initialize dropdown states from localStorage
+  const [isBDExpanded, setIsBDExpanded] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('neuron_bd_expanded');
+      return saved === 'true';
+    }
+    return false;
+  });
+  
+  const [isPricingExpanded, setIsPricingExpanded] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('neuron_pricing_expanded');
+      return saved === 'true';
+    }
+    return false;
+  });
+  
+  const [isOperationsExpanded, setIsOperationsExpanded] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('neuron_operations_expanded');
+      return saved === 'true';
+    }
+    return false;
+  });
+  
+  const [isAcctExpanded, setIsAcctExpanded] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('neuron_acct_expanded');
+      return saved === 'true';
+    }
+    return false;
+  });
+  
+  // Persist collapsed state to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('neuron_sidebar_collapsed', String(isCollapsed));
+  }, [isCollapsed]);
+  
+  // Persist dropdown states to localStorage
+  useEffect(() => {
+    localStorage.setItem('neuron_bd_expanded', String(isBDExpanded));
+  }, [isBDExpanded]);
+  
+  useEffect(() => {
+    localStorage.setItem('neuron_pricing_expanded', String(isPricingExpanded));
+  }, [isPricingExpanded]);
+  
+  useEffect(() => {
+    localStorage.setItem('neuron_operations_expanded', String(isOperationsExpanded));
+  }, [isOperationsExpanded]);
+  
+  useEffect(() => {
+    localStorage.setItem('neuron_acct_expanded', String(isAcctExpanded));
+  }, [isAcctExpanded]);
+  
+  // Use effectiveDepartment from context for dev role override support
+  const { effectiveDepartment, effectiveRole } = useUser();
+  
+  // Determine what modules to show based on effective department
+  const userDepartment = effectiveDepartment || currentUser?.department || "Operations";
+  const isExecutive = userDepartment === "Executive";
+  const isManager = effectiveRole === 'manager' || effectiveRole === 'director';
+  const showBD = isExecutive || userDepartment === "Business Development";
+  const showPricing = isExecutive || userDepartment === "Pricing";
+  const showOperations = isExecutive || userDepartment === "Operations";
+  const showAccounting = isExecutive || userDepartment === "Accounting";
+  const showHR = isExecutive || userDepartment === "HR";
+  
+  // Dashboard - standalone
+  const dashboardItem = { id: "dashboard" as Page, label: "Dashboard", icon: Home };
+  
+  // Business Development sub-items
+  const bdSubItems = [
+    { id: "bd-contacts" as Page, label: "Contacts", icon: UserCircle2 },
+    { id: "bd-customers" as Page, label: "Customers", icon: Building2 },
+    { id: "bd-inquiries" as Page, label: "Inquiries", icon: Mail },
+    { id: "bd-projects" as Page, label: "Projects", icon: Briefcase },
+    { id: "bd-tasks" as Page, label: "Tasks", icon: CheckSquare },
+    { id: "bd-activities" as Page, label: "Activities", icon: Activity },
+    { id: "bd-budget-requests" as Page, label: "Budget Requests", icon: Wallet },
+    { id: "bd-reports" as Page, label: "Reports", icon: BarChart },
+  ];
+
+  // Pricing sub-items
+  const pricingSubItems = [
+    { id: "pricing-contacts" as Page, label: "Contacts", icon: UserCircle2 },
+    { id: "pricing-customers" as Page, label: "Customers", icon: Building2 },
+    { id: "pricing-quotations" as Page, label: "Quotations", icon: FileSpreadsheet },
+    { id: "pricing-vendors" as Page, label: "Vendor", icon: Globe },
+    { id: "pricing-reports" as Page, label: "Reports", icon: BarChart },
+  ];
+
+  // Operations sub-items
+  const operationsSubItems = [
+    { id: "ops-projects" as Page, label: "Projects", icon: Briefcase },
+    { id: "ops-forwarding" as Page, label: "Forwarding", icon: Container },
+    { id: "ops-brokerage" as Page, label: "Brokerage", icon: BaggageClaim },
+    { id: "ops-trucking" as Page, label: "Trucking", icon: Truck },
+    { id: "ops-marine-insurance" as Page, label: "Marine Insurance", icon: Ship },
+    { id: "ops-others" as Page, label: "Others", icon: FileSpreadsheet },
+    { id: "ops-reports" as Page, label: "Reports", icon: BarChart },
+  ];
+
+  // Accounting sub-items
+  const acctSubItems = [
+    { id: "acct-evouchers" as Page, label: "E-Vouchers", icon: FileText },
+    { id: "acct-billings" as Page, label: "Billings", icon: Receipt },
+    { id: "acct-collections" as Page, label: "Collections", icon: Coins },
+    { id: "acct-expenses" as Page, label: "Expenses", icon: CreditCard },
+    { id: "acct-ledger" as Page, label: "Client Ledger", icon: BookOpen },
+    { id: "acct-reports" as Page, label: "Reports", icon: BarChart },
+  ];
+  
+  // Check if any BD page is active
+  const isBDActive = currentPage.startsWith("bd-");
+  
+  // Check if any Pricing page is active
+  const isPricingActive = currentPage.startsWith("pricing-");
+  
+  // Check if any Accounting page is active
+  const isAcctActive = currentPage.startsWith("acct-");
+  
+  // Work section (without BD and Accounting, we'll render them separately)
+  const workItems = [
+    { id: "operations" as Page, label: "Operations", icon: Package },
+    { id: "hr" as Page, label: "HR", icon: UserCircle },
+  ];
+  
+  // Personal section
+  const personalItems = [
+    { id: "calendar" as Page, label: "My Calendar", icon: Calendar },
+    { id: "inbox" as Page, label: "My Inbox", icon: Mail },
+  ];
+  
+  // Add Ticket Queue for managers/directors only
+  if (isManager) {
+    personalItems.push({ id: "ticket-queue" as Page, label: "Tickets", icon: ListTodo });
+  }
+  
+  // Add Activity Log for Managers and Directors only
+  if (isManager || currentUser?.role === "director") {
+    personalItems.push({ id: "activity-log" as Page, label: "Activity Log", icon: Activity });
+  }
+
+  const otherItems = [
+    { id: "admin" as Page, label: "Settings", icon: Settings },
+  ];
+
+  const renderNavButton = (item: { id: Page; label: string; icon: any }, isSubItem = false) => {
+    const Icon = item.icon;
+    const isActive = currentPage === item.id;
+    
+    return (
+      <button
+        key={item.id}
+        onClick={() => onNavigate(item.id)}
+        className="w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-150"
+        style={{
+          height: isSubItem ? "36px" : "40px",
+          backgroundColor: isActive ? "var(--neuron-state-selected)" : "transparent",
+          border: isActive ? "1.5px solid #5FC4A1" : "1.5px solid transparent",
+          color: isActive ? "var(--neuron-brand-green)" : "var(--neuron-ink-secondary)",
+          fontWeight: isActive ? 600 : 400,
+          justifyContent: isCollapsed ? "center" : "flex-start",
+          paddingLeft: isCollapsed ? "0" : isSubItem ? "28px" : "12px",
+          paddingRight: isCollapsed ? "0" : "12px",
+        }}
+        onMouseEnter={(e) => {
+          if (!isActive) {
+            e.currentTarget.style.backgroundColor = "var(--neuron-state-hover)";
+          }
+        }}
+        onMouseLeave={(e) => {
+          if (!isActive) {
+            e.currentTarget.style.backgroundColor = "transparent";
+          }
+        }}
+        title={isCollapsed ? item.label : undefined}
+      >
+        <Icon 
+          size={isSubItem ? 18 : 20} 
+          style={{ 
+            color: isActive ? "var(--neuron-brand-green)" : "var(--neuron-ink-muted)",
+            flexShrink: 0
+          }} 
+        />
+        {!isCollapsed && (
+          <span style={{ fontSize: "14px", lineHeight: "20px" }}>
+            {item.label}
+          </span>
+        )}
+      </button>
+    );
+  };
+
+  const renderSectionHeader = (label: string) => (
+    <div 
+      className="px-3 py-2 pt-6"
+      style={{ 
+        fontSize: "11px",
+        fontWeight: 600,
+        color: "var(--neuron-ink-muted)",
+        letterSpacing: "0.5px",
+      }}
+    >
+      {isCollapsed ? (
+        <div 
+          style={{ 
+            width: "20px",
+            height: "2px",
+            backgroundColor: "var(--neuron-ink-muted)",
+            margin: "0 auto",
+            opacity: 0.3
+          }}
+        />
+      ) : (
+        label
+      )}
+    </div>
+  );
+
+  return (
+    <div 
+      className="flex flex-col h-full transition-all duration-300"
+      style={{
+        width: isCollapsed ? "72px" : "272px",
+        backgroundColor: "var(--neuron-bg-elevated)",
+        borderRight: "1px solid var(--neuron-ui-border)",
+      }}
+    >
+      {/* Header */}
+      <div 
+        className="flex items-center gap-2 px-4 justify-between"
+        style={{ height: "56px" }}
+      >
+        {/* Logo - Only show when expanded */}
+        {!isCollapsed && (
+          <img
+            src={logoImage}
+            alt="Neuron"
+            style={{
+              height: "24px",
+              width: "auto",
+              cursor: "pointer",
+            }}
+            onClick={() => onNavigate("dashboard")}
+          />
+        )}
+        
+        {/* Collapse Toggle Button */}
+        <button
+          onClick={() => setIsCollapsed(!isCollapsed)}
+          className="flex items-center justify-center rounded-lg transition-all duration-150"
+          style={{
+            width: "32px",
+            height: "32px",
+            color: "var(--neuron-ink-muted)",
+            flexShrink: 0,
+            marginLeft: isCollapsed ? "auto" : "0",
+            marginRight: isCollapsed ? "auto" : "0",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = "var(--neuron-state-hover)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = "transparent";
+          }}
+        >
+          {isCollapsed ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}
+        </button>
+      </div>
+
+      {/* Navigation */}
+      <nav className="flex-1 px-4 space-y-1 pt-6 overflow-y-auto">
+        {/* Dashboard */}
+        {renderNavButton(dashboardItem)}
+        
+        {/* Work Section */}
+        {renderSectionHeader("WORK")}
+        
+        {/* Business Development with sub-items */}
+        {showBD && (
+          <div style={{ marginBottom: isBDExpanded ? "8px" : "0px" }}>
+            <button
+              onClick={() => {
+                if (isCollapsed) {
+                  // If collapsed, navigate to first BD item
+                  onNavigate("bd-contacts");
+                } else {
+                  // If expanded, toggle the dropdown
+                  setIsBDExpanded(!isBDExpanded);
+                }
+              }}
+              className="w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-150"
+              style={{
+                height: "40px",
+                backgroundColor: "transparent",
+                border: "1.5px solid transparent",
+                color: "var(--neuron-ink-secondary)",
+                fontWeight: 400,
+                justifyContent: "space-between",
+                paddingLeft: isCollapsed ? "0" : "12px",
+                paddingRight: isCollapsed ? "0" : "12px",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = "var(--neuron-state-hover)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = "transparent";
+              }}
+              title={isCollapsed ? "Business Development" : undefined}
+            >
+              <div className="flex items-center gap-3 flex-1 min-w-0" style={{ justifyContent: isCollapsed ? "center" : "flex-start" }}>
+                <Briefcase 
+                  size={20} 
+                  style={{ 
+                    color: "var(--neuron-ink-muted)",
+                    flexShrink: 0
+                  }} 
+                />
+                {!isCollapsed && (
+                  <span style={{ fontSize: "14px", lineHeight: "20px", whiteSpace: "nowrap" }}>
+                    Business Development
+                  </span>
+                )}
+              </div>
+              {!isCollapsed && (
+                <ChevronDown 
+                  size={16} 
+                  style={{ 
+                    color: "var(--neuron-ink-muted)",
+                    transform: isBDExpanded ? "rotate(0deg)" : "rotate(-90deg)",
+                    transition: "transform 0.2s",
+                    flexShrink: 0
+                  }} 
+                />
+              )}
+            </button>
+            
+            {/* BD Sub-items */}
+            <div 
+              style={{
+                maxHeight: isBDExpanded ? "240px" : "0px",
+                opacity: isBDExpanded ? 1 : 0,
+                overflow: "hidden",
+                transition: "max-height 0.3s ease-in-out, opacity 0.25s ease-in-out",
+              }}
+            >
+              <div className="space-y-1 mt-1">
+                {bdSubItems.map(item => renderNavButton(item, true))}
+              </div>
+            </div>
+          </div>
+        )}
+        
+        {/* Pricing with sub-items */}
+        {showPricing && (
+          <div style={{ marginBottom: isPricingExpanded ? "8px" : "0px" }}>
+            <button
+              onClick={() => {
+                if (isCollapsed) {
+                  // If collapsed, navigate to first Pricing item
+                  onNavigate("pricing-contacts");
+                } else {
+                  // If expanded, toggle the dropdown
+                  setIsPricingExpanded(!isPricingExpanded);
+                }
+              }}
+              className="w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-150"
+              style={{
+                height: "40px",
+                backgroundColor: "transparent",
+                border: "1.5px solid transparent",
+                color: "var(--neuron-ink-secondary)",
+                fontWeight: 400,
+                justifyContent: "space-between",
+                paddingLeft: isCollapsed ? "0" : "12px",
+                paddingRight: isCollapsed ? "0" : "12px",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = "var(--neuron-state-hover)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = "transparent";
+              }}
+              title={isCollapsed ? "Pricing" : undefined}
+            >
+              <div className="flex items-center gap-3 flex-1 min-w-0" style={{ justifyContent: isCollapsed ? "center" : "flex-start" }}>
+                <Banknote 
+                  size={20} 
+                  style={{ 
+                    color: "var(--neuron-ink-muted)",
+                    flexShrink: 0
+                  }} 
+                />
+                {!isCollapsed && (
+                  <span style={{ fontSize: "14px", lineHeight: "20px", whiteSpace: "nowrap" }}>
+                    Pricing
+                  </span>
+                )}
+              </div>
+              {!isCollapsed && (
+                <ChevronDown 
+                  size={16} 
+                  style={{ 
+                    color: "var(--neuron-ink-muted)",
+                    transform: isPricingExpanded ? "rotate(0deg)" : "rotate(-90deg)",
+                    transition: "transform 0.2s",
+                    flexShrink: 0
+                  }} 
+                />
+              )}
+            </button>
+            
+            {/* Pricing Sub-items */}
+            <div 
+              style={{
+                maxHeight: isPricingExpanded ? "240px" : "0px",
+                opacity: isPricingExpanded ? 1 : 0,
+                overflow: "hidden",
+                transition: "max-height 0.3s ease-in-out, opacity 0.25s ease-in-out",
+              }}
+            >
+              <div className="space-y-1 mt-1">
+                {pricingSubItems.map(item => renderNavButton(item, true))}
+              </div>
+            </div>
+          </div>
+        )}
+        
+        {/* Operations with sub-items */}
+        {showOperations && (
+          <div style={{ marginBottom: isOperationsExpanded ? "8px" : "0px" }}>
+            <button
+              onClick={() => {
+                if (isCollapsed) {
+                  // If collapsed, navigate to first Operations item
+                  onNavigate("projects");
+                } else {
+                  // If expanded, toggle the dropdown
+                  setIsOperationsExpanded(!isOperationsExpanded);
+                }
+              }}
+              className="w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-150"
+              style={{
+                height: "40px",
+                backgroundColor: "transparent",
+                border: "1.5px solid transparent",
+                color: "var(--neuron-ink-secondary)",
+                fontWeight: 400,
+                justifyContent: "space-between",
+                paddingLeft: isCollapsed ? "0" : "12px",
+                paddingRight: isCollapsed ? "0" : "12px",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = "var(--neuron-state-hover)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = "transparent";
+              }}
+              title={isCollapsed ? "Operations" : undefined}
+            >
+              <div className="flex items-center gap-3 flex-1 min-w-0" style={{ justifyContent: isCollapsed ? "center" : "flex-start" }}>
+                <Package 
+                  size={20} 
+                  style={{ 
+                    color: "var(--neuron-ink-muted)",
+                    flexShrink: 0
+                  }} 
+                />
+                {!isCollapsed && (
+                  <span style={{ fontSize: "14px", lineHeight: "20px", whiteSpace: "nowrap" }}>
+                    Operations
+                  </span>
+                )}
+              </div>
+              {!isCollapsed && (
+                <ChevronDown 
+                  size={16} 
+                  style={{ 
+                    color: "var(--neuron-ink-muted)",
+                    transform: isOperationsExpanded ? "rotate(0deg)" : "rotate(-90deg)",
+                    transition: "transform 0.2s",
+                    flexShrink: 0
+                  }} 
+                />
+              )}
+            </button>
+            
+            {/* Operations Sub-items */}
+            <div 
+              style={{
+                maxHeight: isOperationsExpanded ? "280px" : "0px",
+                opacity: isOperationsExpanded ? 1 : 0,
+                overflow: "hidden",
+                transition: "max-height 0.3s ease-in-out, opacity 0.25s ease-in-out",
+              }}
+            >
+              <div className="space-y-1 mt-1">
+                {operationsSubItems.map(item => renderNavButton(item, true))}
+              </div>
+            </div>
+          </div>
+        )}
+        
+        {/* HR */}
+        <div className="space-y-1">
+          {showHR && renderNavButton({ id: "hr" as Page, label: "HR", icon: UserCircle })}
+        </div>
+        
+        {/* Accounting with sub-items */}
+        {showAccounting && (
+          <div style={{ marginBottom: isAcctExpanded ? "8px" : "0px" }}>
+            <button
+              onClick={() => {
+                if (isCollapsed) {
+                  // If collapsed, navigate to first Accounting item
+                  onNavigate("acct-evouchers");
+                } else {
+                  // If expanded, toggle the dropdown
+                  setIsAcctExpanded(!isAcctExpanded);
+                }
+              }}
+              className="w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-150"
+              style={{
+                height: "40px",
+                backgroundColor: "transparent",
+                border: "1.5px solid transparent",
+                color: "var(--neuron-ink-secondary)",
+                fontWeight: 400,
+                justifyContent: "space-between",
+                paddingLeft: isCollapsed ? "0" : "12px",
+                paddingRight: isCollapsed ? "0" : "12px",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = "var(--neuron-state-hover)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = "transparent";
+              }}
+              title={isCollapsed ? "Accounting" : undefined}
+            >
+              <div className="flex items-center gap-3 flex-1 min-w-0" style={{ justifyContent: isCollapsed ? "center" : "flex-start" }}>
+                <PesoIcon 
+                  size={20} 
+                  style={{ 
+                    color: "var(--neuron-ink-muted)",
+                    flexShrink: 0
+                  }} 
+                />
+                {!isCollapsed && (
+                  <span style={{ fontSize: "14px", lineHeight: "20px", whiteSpace: "nowrap" }}>
+                    Accounting
+                  </span>
+                )}
+              </div>
+              {!isCollapsed && (
+                <ChevronDown 
+                  size={16} 
+                  style={{ 
+                    color: "var(--neuron-ink-muted)",
+                    transform: isAcctExpanded ? "rotate(0deg)" : "rotate(-90deg)",
+                    transition: "transform 0.2s",
+                    flexShrink: 0
+                  }} 
+                />
+              )}
+            </button>
+            
+            {/* Accounting Sub-items */}
+            <div 
+              style={{
+                maxHeight: isAcctExpanded ? "240px" : "0px",
+                opacity: isAcctExpanded ? 1 : 0,
+                overflow: "hidden",
+                transition: "max-height 0.3s ease-in-out, opacity 0.25s ease-in-out",
+              }}
+            >
+              <div className="space-y-1 mt-1">
+                {acctSubItems.map(item => renderNavButton(item, true))}
+              </div>
+            </div>
+          </div>
+        )}
+        
+        {/* Personal Section */}
+        {renderSectionHeader("PERSONAL")}
+        {personalItems.map(item => renderNavButton(item))}
+
+        {/* Other Section */}
+        {renderSectionHeader("OTHER")}
+        
+        <button
+          className="w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-150"
+          style={{
+            height: "40px",
+            color: "var(--neuron-ink-secondary)",
+            justifyContent: isCollapsed ? "center" : "flex-start",
+            paddingLeft: isCollapsed ? "0" : "12px",
+            paddingRight: isCollapsed ? "0" : "12px",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = "var(--neuron-state-hover)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = "transparent";
+          }}
+          title={isCollapsed ? "Help" : undefined}
+        >
+          <HelpCircle size={20} style={{ color: "var(--neuron-ink-muted)", flexShrink: 0 }} />
+          {!isCollapsed && <span style={{ fontSize: "14px" }}>Help</span>}
+        </button>
+
+        {otherItems.map(item => renderNavButton(item))}
+      </nav>
+
+      {/* Footer */}
+      <div className="px-4 py-4" style={{ borderTop: "1px solid var(--neuron-ui-border)" }}>
+        {/* User Profile */}
+        {currentUser && currentUser.name && (
+          <button
+            onClick={() => onNavigate("profile")}
+            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-150"
+            style={{
+              backgroundColor: currentPage === "profile" ? "var(--neuron-state-selected)" : "var(--neuron-bg-page)",
+              border: currentPage === "profile" ? "1.5px solid #5FC4A1" : "1.5px solid transparent",
+              minHeight: "48px",
+              justifyContent: isCollapsed ? "center" : "flex-start",
+              paddingLeft: isCollapsed ? "0" : "12px",
+              paddingRight: isCollapsed ? "0" : "12px",
+              cursor: "pointer",
+            }}
+            onMouseEnter={(e) => {
+              if (currentPage !== "profile") {
+                e.currentTarget.style.backgroundColor = "var(--neuron-state-hover)";
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (currentPage !== "profile") {
+                e.currentTarget.style.backgroundColor = "var(--neuron-bg-page)";
+              }
+            }}
+          >
+            <div 
+              className="flex items-center justify-center rounded-full"
+              style={{
+                width: "32px",
+                height: "32px",
+                backgroundColor: "var(--neuron-brand-green-100)",
+                color: "var(--neuron-brand-green)",
+                fontSize: "14px",
+                fontWeight: 600,
+                flexShrink: 0
+              }}
+              title={isCollapsed ? currentUser.name : undefined}
+            >
+              {currentUser.name.charAt(0).toUpperCase()}
+            </div>
+            {!isCollapsed && (
+              <div className="flex-1 min-w-0">
+                <div 
+                  className="truncate"
+                  style={{ 
+                    fontSize: "13px", 
+                    fontWeight: 600, 
+                    color: "var(--neuron-ink-primary)",
+                    lineHeight: "18px",
+                    textAlign: "left"
+                  }}
+                >
+                  {currentUser.name}
+                </div>
+                <div 
+                  className="truncate"
+                  style={{ 
+                    fontSize: "11px", 
+                    color: "var(--neuron-ink-muted)",
+                    lineHeight: "14px",
+                    textAlign: "left"
+                  }}
+                >
+                  {currentUser.email}
+                </div>
+                <div 
+                  className="truncate"
+                  style={{ 
+                    fontSize: "11px", 
+                    color: "var(--neuron-ink-muted)",
+                    lineHeight: "14px",
+                    textAlign: "left"
+                  }}
+                >
+                  {currentUser.department}
+                </div>
+              </div>
+            )}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}

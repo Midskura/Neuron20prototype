@@ -1,0 +1,615 @@
+import type { Contact, Customer, Task, Activity, Inquiry } from "../types/bd";
+
+export const mockCustomers: Customer[] = [
+  {
+    id: "cust-1",
+    name: "Global Imports Ltd",
+    industry: "General Merchandise",
+    registered_address: "1234 Ayala Avenue, Makati City, Metro Manila",
+    status: "Active",
+    lead_source: "Referral",
+    owner_id: "user-1",
+    created_at: "2024-01-15T08:00:00Z",
+    updated_at: "2024-12-01T10:30:00Z"
+  },
+  {
+    id: "cust-2",
+    name: "Unilab",
+    industry: "Pharmaceutical",
+    registered_address: "567 United Boulevard, Pasig City, Metro Manila",
+    status: "Active",
+    lead_source: "Cold Call",
+    owner_id: "user-2",
+    created_at: "2024-02-20T09:15:00Z",
+    updated_at: "2024-11-28T14:20:00Z"
+  },
+  {
+    id: "cust-3",
+    name: "Acme Trading Corp",
+    industry: "Electronics",
+    registered_address: "890 Bonifacio Global City, Taguig, Metro Manila",
+    status: "Active",
+    lead_source: "Website",
+    owner_id: "user-1",
+    created_at: "2024-03-10T11:00:00Z",
+    updated_at: "2024-12-05T09:45:00Z"
+  },
+  {
+    id: "cust-4",
+    name: "Metro Retail Group",
+    industry: "General Merchandise",
+    registered_address: "456 EDSA, Quezon City, Metro Manila",
+    status: "Active",
+    lead_source: "Trade Show",
+    owner_id: "user-3",
+    created_at: "2024-04-05T10:30:00Z",
+    updated_at: "2024-11-30T16:00:00Z"
+  },
+  {
+    id: "cust-5",
+    name: "Apex Supply Co",
+    industry: "Construction",
+    registered_address: "789 C5 Road, Pasig City, Metro Manila",
+    status: "Prospect",
+    lead_source: "LinkedIn",
+    owner_id: "user-2",
+    created_at: "2024-11-20T13:00:00Z",
+    updated_at: "2024-12-06T11:15:00Z"
+  },
+  {
+    id: "cust-6",
+    name: "Sterling Supply Chain",
+    industry: "IT",
+    registered_address: "321 Ortigas Center, Pasig City, Metro Manila",
+    status: "Active",
+    lead_source: "Referral",
+    owner_id: "user-1",
+    created_at: "2024-05-12T08:45:00Z",
+    updated_at: "2024-12-03T10:00:00Z"
+  },
+  {
+    id: "cust-7",
+    name: "Pacific Foods Inc",
+    industry: "Food & Beverage",
+    registered_address: "654 McKinley Road, Taguig, Metro Manila",
+    status: "Prospect",
+    lead_source: "Cold Call",
+    owner_id: "user-3",
+    created_at: "2024-11-25T09:30:00Z",
+    updated_at: "2024-12-07T14:30:00Z"
+  },
+  {
+    id: "cust-8",
+    name: "AutoParts Manila",
+    industry: "Automobile",
+    registered_address: "987 Alabang-Zapote Road, Las Piñas, Metro Manila",
+    status: "Inactive",
+    lead_source: "Website",
+    owner_id: "user-2",
+    created_at: "2024-06-18T15:00:00Z",
+    updated_at: "2024-09-15T12:00:00Z"
+  }
+];
+
+export const mockContacts: Contact[] = [
+  {
+    id: "cont-1",
+    first_name: "Maria",
+    last_name: "Santos",
+    job_title: "Procurement Manager",
+    email: "maria.santos@globalimports.ph",
+    mobile_number: "+63 917 123 4567",
+    lifecycle_stage: "Customer",
+    lead_status: "Connected",
+    company_id: "cust-1",
+    notes: "Primary contact for all import shipments. Prefers email communication.",
+    owner_id: "user-1",
+    created_at: "2024-01-15T08:30:00Z",
+    updated_at: "2024-12-05T11:20:00Z"
+  },
+  {
+    id: "cont-2",
+    first_name: "Juan",
+    last_name: "Dela Cruz",
+    job_title: "Supply Chain Director",
+    email: "juan.delacruz@unilab.com",
+    mobile_number: "+63 918 234 5678",
+    lifecycle_stage: "Customer",
+    lead_status: "Connected",
+    company_id: "cust-2",
+    notes: "Handles all pharmaceutical logistics. Very detail-oriented.",
+    owner_id: "user-2",
+    created_at: "2024-02-20T09:30:00Z",
+    updated_at: "2024-12-03T15:45:00Z"
+  },
+  {
+    id: "cont-3",
+    first_name: "Anna",
+    last_name: "Reyes",
+    job_title: "Logistics Coordinator",
+    email: "anna.reyes@acmetrading.ph",
+    mobile_number: "+63 919 345 6789",
+    lifecycle_stage: "Customer",
+    lead_status: "Connected",
+    company_id: "cust-3",
+    notes: "Quick decision maker. Handles urgent shipments.",
+    owner_id: "user-1",
+    created_at: "2024-03-10T11:30:00Z",
+    updated_at: "2024-12-06T09:15:00Z"
+  },
+  {
+    id: "cont-4",
+    first_name: "Carlos",
+    last_name: "Martinez",
+    job_title: "Import Manager",
+    email: "carlos.martinez@metroretail.com",
+    mobile_number: "+63 920 456 7890",
+    lifecycle_stage: "Customer",
+    lead_status: "Connected",
+    company_id: "cust-4",
+    notes: "Requires detailed documentation. Monthly shipment schedule.",
+    owner_id: "user-3",
+    created_at: "2024-04-05T11:00:00Z",
+    updated_at: "2024-12-02T14:30:00Z"
+  },
+  {
+    id: "cont-5",
+    first_name: "Miguel",
+    last_name: "Torres",
+    job_title: "Purchasing Head",
+    email: "miguel.torres@apexsupply.ph",
+    mobile_number: "+63 921 567 8901",
+    lifecycle_stage: "MQL",
+    lead_status: "In Progress",
+    company_id: "cust-5",
+    notes: "Interested in construction materials import. Awaiting quotation.",
+    owner_id: "user-2",
+    created_at: "2024-11-20T13:30:00Z",
+    updated_at: "2024-12-06T16:00:00Z"
+  },
+  {
+    id: "cont-6",
+    first_name: "Ricardo",
+    last_name: "Gomez",
+    job_title: "IT Procurement Officer",
+    email: "ricardo.gomez@sterling.ph",
+    mobile_number: "+63 922 678 9012",
+    lifecycle_stage: "Customer",
+    lead_status: "Connected",
+    company_id: "cust-6",
+    notes: "Tech equipment imports. Needs temperature-controlled logistics.",
+    owner_id: "user-1",
+    created_at: "2024-05-12T09:00:00Z",
+    updated_at: "2024-12-04T10:45:00Z"
+  },
+  {
+    id: "cont-7",
+    first_name: "Jose",
+    last_name: "Garcia",
+    job_title: "Operations Manager",
+    email: "jose.garcia@pacificfoods.ph",
+    mobile_number: "+63 923 789 0123",
+    lifecycle_stage: "Lead",
+    lead_status: "Attempted to contact",
+    company_id: "cust-7",
+    notes: "Left voicemail. Follow up next week.",
+    owner_id: "user-3",
+    created_at: "2024-11-25T10:00:00Z",
+    updated_at: "2024-12-07T15:00:00Z"
+  },
+  {
+    id: "cont-8",
+    first_name: "Antonio",
+    last_name: "Cruz",
+    job_title: "Warehouse Supervisor",
+    email: "antonio.cruz@autopartsmnl.ph",
+    mobile_number: "+63 924 890 1234",
+    lifecycle_stage: "Lead",
+    lead_status: "Bad timing",
+    company_id: "cust-8",
+    notes: "Not currently importing. Check back in Q2 2025.",
+    owner_id: "user-2",
+    created_at: "2024-06-18T15:30:00Z",
+    updated_at: "2024-09-15T13:00:00Z"
+  },
+  {
+    id: "cont-9",
+    first_name: "Ramon",
+    last_name: "Silva",
+    job_title: "Logistics Manager",
+    email: "ramon.silva@metroretail.com",
+    mobile_number: "+63 925 901 2345",
+    lifecycle_stage: "Customer",
+    lead_status: "Connected",
+    company_id: "cust-4",
+    notes: "Secondary contact. Handles overflow shipments.",
+    owner_id: "user-3",
+    created_at: "2024-06-01T10:00:00Z",
+    updated_at: "2024-11-29T11:30:00Z"
+  },
+  {
+    id: "cont-10",
+    first_name: "Fernando",
+    last_name: "Reyes",
+    job_title: "Export Coordinator",
+    email: "fernando.reyes@unilab.com",
+    mobile_number: "+63 926 012 3456",
+    lifecycle_stage: "SQL",
+    lead_status: "In Progress",
+    company_id: "cust-2",
+    notes: "Working on export quotation. High value potential.",
+    owner_id: "user-2",
+    created_at: "2024-07-10T11:00:00Z",
+    updated_at: "2024-12-05T14:00:00Z"
+  }
+];
+
+export const mockTasks: Task[] = [
+  {
+    id: "task-1",
+    title: "Follow up on Q1 2025 forecast",
+    type: "Call",
+    due_date: "2024-12-09T10:00:00Z",
+    priority: "High",
+    status: "Ongoing",
+    cancel_reason: null,
+    remarks: "Discuss volume commitment for Q1",
+    contact_id: "cont-1",
+    customer_id: "cust-1",
+    owner_id: "user-1",
+    created_at: "2024-12-05T09:00:00Z",
+    updated_at: "2024-12-05T09:00:00Z"
+  },
+  {
+    id: "task-2",
+    title: "Send pharmaceutical logistics proposal",
+    type: "Email",
+    due_date: "2024-12-10T14:00:00Z",
+    priority: "High",
+    status: "Pending",
+    cancel_reason: null,
+    remarks: "Include temperature-controlled options",
+    contact_id: "cont-10",
+    customer_id: "cust-2",
+    owner_id: "user-2",
+    created_at: "2024-12-06T08:30:00Z",
+    updated_at: "2024-12-06T08:30:00Z"
+  },
+  {
+    id: "task-3",
+    title: "Meeting with Anna - Urgent shipment review",
+    type: "Meeting",
+    due_date: "2024-12-08T15:00:00Z",
+    priority: "High",
+    status: "Completed",
+    cancel_reason: null,
+    remarks: "Discussed air freight options for electronics",
+    contact_id: "cont-3",
+    customer_id: "cust-3",
+    owner_id: "user-1",
+    created_at: "2024-12-02T10:00:00Z",
+    updated_at: "2024-12-08T16:00:00Z"
+  },
+  {
+    id: "task-4",
+    title: "Prepare monthly shipment schedule",
+    type: "To-do",
+    due_date: "2024-12-11T12:00:00Z",
+    priority: "Medium",
+    status: "Ongoing",
+    cancel_reason: null,
+    remarks: "Coordinate with Carlos for December shipments",
+    contact_id: "cont-4",
+    customer_id: "cust-4",
+    owner_id: "user-3",
+    created_at: "2024-12-04T11:00:00Z",
+    updated_at: "2024-12-04T11:00:00Z"
+  },
+  {
+    id: "task-5",
+    title: "Send quotation for construction materials",
+    type: "Email",
+    due_date: "2024-12-09T16:00:00Z",
+    priority: "High",
+    status: "Pending",
+    cancel_reason: null,
+    remarks: "Include pricing for heavy equipment transport",
+    contact_id: "cont-5",
+    customer_id: "cust-5",
+    owner_id: "user-2",
+    created_at: "2024-12-06T14:00:00Z",
+    updated_at: "2024-12-06T14:00:00Z"
+  },
+  {
+    id: "task-6",
+    title: "LinkedIn message - Pacific Foods",
+    type: "LinkedIn",
+    due_date: "2024-12-12T09:00:00Z",
+    priority: "Low",
+    status: "Cancelled",
+    cancel_reason: "Reschedule",
+    remarks: "Will call instead next week",
+    contact_id: "cont-7",
+    customer_id: "cust-7",
+    owner_id: "user-3",
+    created_at: "2024-12-05T13:00:00Z",
+    updated_at: "2024-12-07T10:00:00Z"
+  },
+  {
+    id: "task-7",
+    title: "Send marketing email - Q1 2025 promotions",
+    type: "Marketing Email",
+    due_date: "2024-12-15T08:00:00Z",
+    priority: "Medium",
+    status: "Pending",
+    cancel_reason: null,
+    remarks: "Include early bird discount for January bookings",
+    contact_id: null,
+    customer_id: "cust-6",
+    owner_id: "user-1",
+    created_at: "2024-12-07T09:00:00Z",
+    updated_at: "2024-12-07T09:00:00Z"
+  },
+  {
+    id: "task-8",
+    title: "WhatsApp follow-up - Temperature logs",
+    type: "WhatsApp",
+    due_date: "2024-12-09T11:00:00Z",
+    priority: "Medium",
+    status: "Ongoing",
+    cancel_reason: null,
+    remarks: "Send temperature monitoring documentation",
+    contact_id: "cont-2",
+    customer_id: "cust-2",
+    owner_id: "user-2",
+    created_at: "2024-12-06T15:00:00Z",
+    updated_at: "2024-12-06T15:00:00Z"
+  },
+  {
+    id: "task-9",
+    title: "Call Ricardo - IT equipment shipment",
+    type: "Call",
+    due_date: "2024-12-10T10:00:00Z",
+    priority: "High",
+    status: "Ongoing",
+    cancel_reason: null,
+    remarks: "Confirm pickup date and special handling requirements",
+    contact_id: "cont-6",
+    customer_id: "cust-6",
+    owner_id: "user-1",
+    created_at: "2024-12-07T08:00:00Z",
+    updated_at: "2024-12-07T08:00:00Z"
+  },
+  {
+    id: "task-10",
+    title: "Meeting scheduled - Ramon Silva",
+    type: "Meeting",
+    due_date: "2024-12-13T14:00:00Z",
+    priority: "Medium",
+    status: "Pending",
+    cancel_reason: null,
+    remarks: "Discuss overflow capacity for peak season",
+    contact_id: "cont-9",
+    customer_id: "cust-4",
+    owner_id: "user-3",
+    created_at: "2024-12-06T16:00:00Z",
+    updated_at: "2024-12-06T16:00:00Z"
+  }
+];
+
+export const mockActivities: Activity[] = [
+  {
+    id: "act-1",
+    type: "Call Logged",
+    description: "Discussed Q4 shipment performance. Client satisfied with delivery times.",
+    date: "2024-12-05T11:20:00Z",
+    contact_id: "cont-1",
+    customer_id: "cust-1",
+    task_id: null,
+    user_id: "user-1",
+    created_at: "2024-12-05T11:25:00Z"
+  },
+  {
+    id: "act-2",
+    type: "Email Logged",
+    description: "Sent updated rate card for 2025. Awaiting client confirmation.",
+    date: "2024-12-03T15:45:00Z",
+    contact_id: "cont-2",
+    customer_id: "cust-2",
+    task_id: null,
+    user_id: "user-2",
+    created_at: "2024-12-03T15:50:00Z"
+  },
+  {
+    id: "act-3",
+    type: "Meeting Logged",
+    description: "Met at client office. Reviewed urgent air freight requirements for electronics shipment.",
+    date: "2024-12-08T15:00:00Z",
+    contact_id: "cont-3",
+    customer_id: "cust-3",
+    task_id: "task-3",
+    user_id: "user-1",
+    created_at: "2024-12-08T16:00:00Z"
+  },
+  {
+    id: "act-4",
+    type: "Call Logged",
+    description: "Confirmed December shipment schedule. 8 containers total.",
+    date: "2024-12-02T14:30:00Z",
+    contact_id: "cont-4",
+    customer_id: "cust-4",
+    task_id: null,
+    user_id: "user-3",
+    created_at: "2024-12-02T14:35:00Z"
+  },
+  {
+    id: "act-5",
+    type: "WhatsApp Logged",
+    description: "Sent quotation via WhatsApp. Client requested revised pricing for higher volume.",
+    date: "2024-12-06T16:00:00Z",
+    contact_id: "cont-5",
+    customer_id: "cust-5",
+    task_id: null,
+    user_id: "user-2",
+    created_at: "2024-12-06T16:05:00Z"
+  },
+  {
+    id: "act-6",
+    type: "Email Logged",
+    description: "Provided temperature monitoring documentation and certification.",
+    date: "2024-12-04T10:45:00Z",
+    contact_id: "cont-6",
+    customer_id: "cust-6",
+    task_id: null,
+    user_id: "user-1",
+    created_at: "2024-12-04T10:50:00Z"
+  },
+  {
+    id: "act-7",
+    type: "Call Logged",
+    description: "Left voicemail regarding food & beverage logistics capabilities. No callback yet.",
+    date: "2024-12-07T15:00:00Z",
+    contact_id: "cont-7",
+    customer_id: "cust-7",
+    task_id: null,
+    user_id: "user-3",
+    created_at: "2024-12-07T15:05:00Z"
+  },
+  {
+    id: "act-8",
+    type: "System Update",
+    description: "Lead status updated from 'New' to 'In Progress'",
+    date: "2024-12-06T16:00:00Z",
+    contact_id: "cont-5",
+    customer_id: "cust-5",
+    task_id: null,
+    user_id: "user-2",
+    created_at: "2024-12-06T16:00:00Z"
+  },
+  {
+    id: "act-9",
+    type: "Note",
+    description: "Client mentioned they may have additional export requirements in Q1 2025. Flagged as high-value opportunity.",
+    date: "2024-12-05T14:00:00Z",
+    contact_id: "cont-10",
+    customer_id: "cust-2",
+    task_id: null,
+    user_id: "user-2",
+    created_at: "2024-12-05T14:05:00Z"
+  },
+  {
+    id: "act-10",
+    type: "Email Logged",
+    description: "Sent monthly shipment schedule and tracking updates.",
+    date: "2024-11-29T11:30:00Z",
+    contact_id: "cont-9",
+    customer_id: "cust-4",
+    task_id: null,
+    user_id: "user-3",
+    created_at: "2024-11-29T11:35:00Z"
+  },
+  {
+    id: "act-11",
+    type: "Meeting Logged",
+    description: "Initial consultation meeting. Discussed logistics needs and service offerings.",
+    date: "2024-11-20T14:00:00Z",
+    contact_id: "cont-5",
+    customer_id: "cust-5",
+    task_id: null,
+    user_id: "user-2",
+    created_at: "2024-11-20T15:00:00Z"
+  },
+  {
+    id: "act-12",
+    type: "Call Logged",
+    description: "Confirmed special handling requirements for IT equipment. Client very satisfied with proposal.",
+    date: "2024-12-04T11:00:00Z",
+    contact_id: "cont-6",
+    customer_id: "cust-6",
+    task_id: null,
+    user_id: "user-1",
+    created_at: "2024-12-04T11:10:00Z"
+  }
+];
+
+export const mockInquiries: Inquiry[] = [
+  {
+    id: "inq-1",
+    customer_id: "cust-1",
+    contact_id: "cont-1",
+    source_system_id: "EQ-2024-001",
+    status: "Accepted",
+    created_at: "2024-11-15T09:00:00Z",
+    updated_at: "2024-11-20T14:30:00Z"
+  },
+  {
+    id: "inq-2",
+    customer_id: "cust-2",
+    contact_id: "cont-2",
+    source_system_id: "EQ-2024-002",
+    status: "Sent",
+    created_at: "2024-12-03T10:00:00Z",
+    updated_at: "2024-12-03T10:00:00Z"
+  },
+  {
+    id: "inq-3",
+    customer_id: "cust-3",
+    contact_id: "cont-3",
+    source_system_id: "EQ-2024-003",
+    status: "Accepted",
+    created_at: "2024-11-28T11:00:00Z",
+    updated_at: "2024-12-02T15:00:00Z"
+  },
+  {
+    id: "inq-4",
+    customer_id: "cust-5",
+    contact_id: "cont-5",
+    source_system_id: "EQ-2024-004",
+    status: "Sent",
+    created_at: "2024-12-06T14:00:00Z",
+    updated_at: "2024-12-06T14:00:00Z"
+  },
+  {
+    id: "inq-5",
+    customer_id: "cust-6",
+    contact_id: "cont-6",
+    source_system_id: "EQ-2024-005",
+    status: "Accepted",
+    created_at: "2024-11-25T09:00:00Z",
+    updated_at: "2024-11-30T16:00:00Z"
+  },
+  {
+    id: "inq-6",
+    customer_id: "cust-2",
+    contact_id: "cont-10",
+    source_system_id: "EQ-2024-006",
+    status: "Draft",
+    created_at: "2024-12-05T13:00:00Z",
+    updated_at: "2024-12-05T13:00:00Z"
+  },
+  {
+    id: "inq-7",
+    customer_id: "cust-4",
+    contact_id: "cont-4",
+    source_system_id: "EQ-2024-007",
+    status: "Rejected",
+    created_at: "2024-11-10T10:00:00Z",
+    updated_at: "2024-11-18T14:00:00Z"
+  },
+  {
+    id: "inq-8",
+    customer_id: "cust-7",
+    contact_id: "cont-7",
+    source_system_id: null,
+    status: "Draft",
+    created_at: "2024-12-07T16:00:00Z",
+    updated_at: "2024-12-07T16:00:00Z"
+  }
+];
+
+// Mock users (BD team members)
+export const mockBDUsers = [
+  { id: "user-1", name: "Sarah Chen", email: "sarah.chen@jjbos.ph", role: "BD Manager" },
+  { id: "user-2", name: "Michael Santos", email: "michael.santos@jjbos.ph", role: "BD Executive" },
+  { id: "user-3", name: "Patricia Lim", email: "patricia.lim@jjbos.ph", role: "BD Executive" }
+];
