@@ -1,11 +1,15 @@
 import { useState } from "react";
-import { ArrowLeft, MoreVertical } from "lucide-react";
-import { ProjectOverviewTab } from "../bd/ProjectOverviewTab";
-import { ServiceSpecificationsTab } from "../bd/ServiceSpecificationsTab";
-import { PricingBreakdownTab } from "../bd/PricingBreakdownTab";
-import { ActivityTab } from "../bd/ActivityTab";
-import { ServicesAndBookingsTab } from "./ServicesAndBookingsTab";
+import { ArrowLeft, MoreVertical, Edit3, Copy, Archive, Trash2, FileText } from "lucide-react";
+import { CommentsTab } from "../shared/CommentsTab";
+import { ProjectOverviewTab } from "./ProjectOverviewTab";
+import { ProjectBookingsTab } from "./ProjectBookingsTab";
+import { ProjectExpensesTab } from "./ProjectExpensesTab";
+import { ProjectAttachmentsTab } from "./ProjectAttachmentsTab";
 import type { Project } from "../../types/pricing";
+import { projectId, publicAnonKey } from "../../utils/supabase/info";
+import { toast } from "../ui/toast-utils";
+
+type ProjectTab = "overview" | "bookings" | "expenses" | "attachments" | "comments";
 
 interface ProjectDetailProps {
   project: Project;
@@ -24,213 +28,513 @@ interface ProjectDetailProps {
 export function ProjectDetail({ 
   project, 
   onBack, 
-  onUpdate,
+  onUpdate, 
   currentUser,
   department,
   onCreateTicket
 }: ProjectDetailProps) {
-  // BD sees: Overview, Service Specs, Pricing, Activity
-  // Operations sees: Overview, Services & Bookings, Activity
-  const bdTabs = ["overview", "specifications", "pricing", "activity"] as const;
-  const operationsTabs = ["overview", "services", "activity"] as const;
-  
-  type BDTab = typeof bdTabs[number];
-  type OperationsTab = typeof operationsTabs[number];
-  type Tab = BDTab | OperationsTab;
+  const [activeTab, setActiveTab] = useState<ProjectTab>("overview");
+  const [showActionsMenu, setShowActionsMenu] = useState(false);
+  const [isGeneratingInvoice, setIsGeneratingInvoice] = useState(false);
+  const [selectedBookingId, setSelectedBookingId] = useState<string | null>(null);
 
-  const [activeTab, setActiveTab] = useState<Tab>("overview");
+  const currentUserId = currentUser?.id || "user-123";
+  const currentUserName = currentUser?.name || "John Doe";
+  const currentUserDepartment = currentUser?.department || "BD";
 
-  const tabs = department === "BD" ? bdTabs : operationsTabs;
-  
-  console.log("ProjectDetail - Department:", department, "- Showing tabs:", tabs);
+  // BD and PD users see the actions menu (not Operations)
+  const showActions = department === "BD";
 
-  const getTabLabel = (tab: Tab) => {
-    switch (tab) {
-      case "overview": return "Overview";
-      case "specifications": return "Service Specifications";
-      case "pricing": return "Pricing Breakdown";
-      case "services": return "Services & Bookings";
-      case "activity": return "Activity & Team";
-      default: return tab;
+  const API_URL = `https://${projectId}.supabase.co/functions/v1/make-server-c142e950`;
+
+  // Handle viewing a booking from the Overview tab
+  const handleViewBooking = (bookingId: string, serviceType: string) => {
+    setSelectedBookingId(bookingId);
+    setActiveTab("bookings");
+  };
+
+  const handleGenerateInvoice = async () => {
+    setIsGeneratingInvoice(true);
+    
+    try {
+      const response = await fetch(`${API_URL}/projects/${project.id}/generate-invoice`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${publicAnonKey}`
+        },
+        body: JSON.stringify({
+          bookingId: `PROJECT-${project.project_number}`,
+          bookingType: "forwarding"
+        })
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || "Failed to generate invoice");
+      }
+
+      toast.success(`Invoice ${result.data.billingId} generated successfully!`);
+      console.log("Generated invoice:", result.data);
+      
+    } catch (error) {
+      console.error("Error generating invoice:", error);
+      toast.error(error instanceof Error ? error.message : "Failed to generate invoice");
+    } finally {
+      setIsGeneratingInvoice(false);
+    }
+  };
+
+  const handleEdit = () => {
+    console.log("Edit project:", project.project_number);
+    alert("Edit functionality coming soon!");
+  };
+
+  const handleDuplicate = () => {
+    console.log("Duplicating project:", project.project_number);
+    alert(`📋 Project ${project.project_number} has been duplicated!`);
+    setShowActionsMenu(false);
+  };
+
+  const handleArchive = () => {
+    console.log("Archiving project:", project.project_number);
+    alert(`📦 Project ${project.project_number} has been archived!`);
+    setShowActionsMenu(false);
+  };
+
+  const handleDelete = () => {
+    if (confirm(`Are you sure you want to delete project ${project.project_number}?`)) {
+      console.log("Deleting project:", project.project_number);
+      alert(`🗑️ Project ${project.project_number} has been deleted!`);
+      setShowActionsMenu(false);
+      onBack();
     }
   };
 
   return (
-    <div style={{
-      height: "100vh",
+    <div style={{ 
+      backgroundColor: "white",
       display: "flex",
       flexDirection: "column",
-      background: "#F9FAFB"
+      height: "100vh"
     }}>
-      {/* Header */}
+      {/* Header Bar */}
       <div style={{
-        background: "white",
+        padding: "20px 48px",
         borderBottom: "1px solid var(--neuron-ui-border)",
-        padding: "20px 48px"
+        backgroundColor: "#F8FBFB",
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center"
       }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
-            <button
-              onClick={onBack}
-              style={{
-                background: "transparent",
-                border: "none",
-                padding: "8px",
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                color: "#6B7280",
-                borderRadius: "6px"
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = "#F3F4F6";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = "transparent";
-              }}
-            >
-              <ArrowLeft size={20} />
-            </button>
-            
-            <div>
-              <h1 style={{
-                fontSize: "20px",
-                fontWeight: 600,
-                color: "var(--neuron-ink-primary)",
-                marginBottom: "4px"
-              }}>
-                {project.quotation_name || project.project_number}
-              </h1>
-              <p style={{
-                fontSize: "13px",
-                color: "var(--neuron-ink-muted)",
-                margin: 0
-              }}>
-                {project.project_number} • From Quotation {project.quotation_number}
-              </p>
-            </div>
-          </div>
-
-          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-            {department === "BD" && (
-              <div style={{
-                fontSize: "13px",
-                color: "var(--neuron-ink-muted)",
-                padding: "8px 16px",
-                background: "#F9FAFB",
-                border: "1px solid var(--neuron-ui-border)",
-                borderRadius: "6px"
-              }}>
-                <span style={{ fontWeight: 500 }}>Ops Assigned:</span>{" "}
-                {project.ops_assigned_user_name || "Unassigned"}
-              </div>
-            )}
-            
-            {department === "Operations" && (
-              <div style={{
-                fontSize: "13px",
-                color: "var(--neuron-ink-muted)",
-                padding: "8px 16px",
-                background: "#F9FAFB",
-                border: "1px solid var(--neuron-ui-border)",
-                borderRadius: "6px"
-              }}>
-                <span style={{ fontWeight: 500 }}>BD Owner:</span>{" "}
-                {project.bd_owner_user_name || "—"}
-              </div>
-            )}
-
-            <button
-              style={{
-                background: "transparent",
-                border: "none",
-                padding: "8px",
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                color: "#6B7280",
-                borderRadius: "6px"
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = "#F3F4F6";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = "transparent";
-              }}
-            >
-              <MoreVertical size={20} />
-            </button>
-          </div>
+        <div>
+          <button
+            onClick={onBack}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              background: "none",
+              border: "none",
+              color: "var(--neuron-ink-secondary)",
+              cursor: "pointer",
+              fontSize: "13px",
+              marginBottom: "12px",
+              padding: "0"
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.color = "var(--neuron-brand-green)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.color = "var(--neuron-ink-secondary)";
+            }}
+          >
+            <ArrowLeft size={16} />
+            Back to Projects
+          </button>
+          
+          <h1 style={{ 
+            fontSize: "20px",
+            fontWeight: 600,
+            color: "var(--neuron-ink-primary)",
+            marginBottom: "4px"
+          }}>
+            {project.quotation_name || project.project_number}
+          </h1>
+          <p style={{ fontSize: "13px", color: "var(--neuron-ink-muted)", margin: 0 }}>
+            {project.project_number}
+          </p>
         </div>
 
-        {/* Tabs */}
-        <div style={{
-          display: "flex",
-          gap: "4px",
-          marginTop: "20px",
-          borderBottom: "1px solid var(--neuron-ui-border)"
-        }}>
-          {tabs.map((tab) => (
+        {/* Actions Menu - Only for BD & PD */}
+        {showActions && (
+          <div style={{ position: "relative" }}>
             <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
+              onClick={() => setShowActionsMenu(!showActionsMenu)}
               style={{
-                padding: "12px 20px",
-                background: "transparent",
-                border: "none",
-                borderBottom: activeTab === tab ? "2px solid #0F766E" : "2px solid transparent",
-                color: activeTab === tab ? "#0F766E" : "#6B7280",
-                fontSize: "14px",
-                fontWeight: 600,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "10px",
+                backgroundColor: "white",
+                border: "1.5px solid #D1D5DB",
+                borderRadius: "8px",
                 cursor: "pointer",
-                transition: "all 0.2s ease",
-                marginBottom: "-1px"
+                transition: "all 0.2s ease"
               }}
               onMouseEnter={(e) => {
-                if (activeTab !== tab) {
-                  e.currentTarget.style.color = "#12332B";
-                }
+                e.currentTarget.style.borderColor = "var(--neuron-brand-green)";
               }}
               onMouseLeave={(e) => {
-                if (activeTab !== tab) {
-                  e.currentTarget.style.color = "#6B7280";
-                }
+                e.currentTarget.style.borderColor = "#D1D5DB";
               }}
             >
-              {getTabLabel(tab)}
+              <MoreVertical size={18} color="var(--neuron-ink-secondary)" />
             </button>
-          ))}
-        </div>
+
+            {showActionsMenu && (
+              <>
+                <div 
+                  style={{
+                    position: "fixed",
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    zIndex: 10
+                  }}
+                  onClick={() => setShowActionsMenu(false)}
+                />
+                <div
+                  style={{
+                    position: "absolute",
+                    top: "calc(100% + 4px)",
+                    right: 0,
+                    backgroundColor: "white",
+                    border: "1px solid #E5E7EB",
+                    borderRadius: "8px",
+                    boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)",
+                    minWidth: "180px",
+                    zIndex: 20,
+                    overflow: "hidden"
+                  }}
+                >
+                  <button
+                    onClick={() => {
+                      handleEdit();
+                      setShowActionsMenu(false);
+                    }}
+                    style={{
+                      width: "100%",
+                      padding: "12px 16px",
+                      textAlign: "left",
+                      border: "none",
+                      background: "none",
+                      cursor: "pointer",
+                      fontSize: "14px",
+                      color: "var(--neuron-ink-primary)",
+                      transition: "background-color 0.15s ease"
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = "#F9FAFB";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = "transparent";
+                    }}
+                  >
+                    <Edit3 size={16} style={{ display: "inline", marginRight: "8px", verticalAlign: "middle" }} />
+                    Edit Project
+                  </button>
+                  {project.charge_categories && project.charge_categories.length > 0 && (
+                    <button
+                      onClick={() => {
+                        handleGenerateInvoice();
+                        setShowActionsMenu(false);
+                      }}
+                      disabled={isGeneratingInvoice}
+                      style={{
+                        width: "100%",
+                        padding: "12px 16px",
+                        textAlign: "left",
+                        border: "none",
+                        background: "none",
+                        cursor: isGeneratingInvoice ? "not-allowed" : "pointer",
+                        fontSize: "14px",
+                        color: "var(--neuron-ink-primary)",
+                        transition: "background-color 0.15s ease",
+                        opacity: isGeneratingInvoice ? 0.5 : 1
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!isGeneratingInvoice) {
+                          e.currentTarget.style.backgroundColor = "#F9FAFB";
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = "transparent";
+                      }}
+                    >
+                      <FileText size={16} style={{ display: "inline", marginRight: "8px", verticalAlign: "middle" }} />
+                      {isGeneratingInvoice ? "Generating..." : "Generate Invoice"}
+                    </button>
+                  )}
+                  <button
+                    onClick={handleDuplicate}
+                    style={{
+                      width: "100%",
+                      padding: "10px 16px",
+                      textAlign: "left",
+                      border: "none",
+                      background: "none",
+                      fontSize: "14px",
+                      color: "var(--neuron-ink-primary)",
+                      cursor: "pointer",
+                      transition: "background-color 0.2s ease"
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = "#F9FAFB";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = "transparent";
+                    }}
+                  >
+                    <Copy size={16} style={{ display: "inline", marginRight: "8px", verticalAlign: "middle" }} />
+                    Duplicate Project
+                  </button>
+                  <button
+                    onClick={handleArchive}
+                    style={{
+                      width: "100%",
+                      padding: "10px 16px",
+                      textAlign: "left",
+                      border: "none",
+                      background: "none",
+                      fontSize: "14px",
+                      color: "var(--neuron-ink-primary)",
+                      cursor: "pointer",
+                      transition: "background-color 0.2s ease"
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = "#F9FAFB";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = "transparent";
+                    }}
+                  >
+                    <Archive size={16} style={{ display: "inline", marginRight: "8px", verticalAlign: "middle" }} />
+                    Archive Project
+                  </button>
+                  <div style={{ height: "1px", backgroundColor: "#E5E7EB", margin: "4px 0" }} />
+                  <button
+                    onClick={handleDelete}
+                    style={{
+                      width: "100%",
+                      padding: "10px 16px",
+                      textAlign: "left",
+                      border: "none",
+                      background: "none",
+                      fontSize: "14px",
+                      color: "#DC2626",
+                      cursor: "pointer",
+                      transition: "background-color 0.2s ease"
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = "#FEF2F2";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = "transparent";
+                    }}
+                  >
+                    <Trash2 size={16} style={{ display: "inline", marginRight: "8px", verticalAlign: "middle" }} />
+                    Delete Project
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* Tab Content */}
+      {/* Tabs */}
+      <div style={{
+        display: "flex",
+        gap: "24px",
+        padding: "0 48px",
+        borderBottom: "1px solid #E5E7EB"
+      }}>
+        <button
+          onClick={() => setActiveTab("overview")}
+          style={{
+            padding: "16px 0",
+            background: "none",
+            border: "none",
+            borderBottom: activeTab === "overview" ? "2px solid var(--neuron-brand-green)" : "2px solid transparent",
+            color: activeTab === "overview" ? "var(--neuron-brand-green)" : "var(--neuron-ink-secondary)",
+            fontSize: "14px",
+            fontWeight: 600,
+            cursor: "pointer",
+            transition: "all 0.2s ease",
+            marginBottom: "-1px"
+          }}
+          onMouseEnter={(e) => {
+            if (activeTab !== "overview") {
+              e.currentTarget.style.color = "var(--neuron-ink-primary)";
+            }
+          }}
+          onMouseLeave={(e) => {
+            if (activeTab !== "overview") {
+              e.currentTarget.style.color = "var(--neuron-ink-secondary)";
+            }
+          }}
+        >
+          Overview
+        </button>
+        <button
+          onClick={() => setActiveTab("bookings")}
+          style={{
+            padding: "16px 0",
+            background: "none",
+            border: "none",
+            borderBottom: activeTab === "bookings" ? "2px solid var(--neuron-brand-green)" : "2px solid transparent",
+            color: activeTab === "bookings" ? "var(--neuron-brand-green)" : "var(--neuron-ink-secondary)",
+            fontSize: "14px",
+            fontWeight: 600,
+            cursor: "pointer",
+            transition: "all 0.2s ease",
+            marginBottom: "-1px"
+          }}
+          onMouseEnter={(e) => {
+            if (activeTab !== "bookings") {
+              e.currentTarget.style.color = "var(--neuron-ink-primary)";
+            }
+          }}
+          onMouseLeave={(e) => {
+            if (activeTab !== "bookings") {
+              e.currentTarget.style.color = "var(--neuron-ink-secondary)";
+            }
+          }}
+        >
+          Bookings
+        </button>
+        <button
+          onClick={() => setActiveTab("expenses")}
+          style={{
+            padding: "16px 0",
+            background: "none",
+            border: "none",
+            borderBottom: activeTab === "expenses" ? "2px solid var(--neuron-brand-green)" : "2px solid transparent",
+            color: activeTab === "expenses" ? "var(--neuron-brand-green)" : "var(--neuron-ink-secondary)",
+            fontSize: "14px",
+            fontWeight: 600,
+            cursor: "pointer",
+            transition: "all 0.2s ease",
+            marginBottom: "-1px"
+          }}
+          onMouseEnter={(e) => {
+            if (activeTab !== "expenses") {
+              e.currentTarget.style.color = "var(--neuron-ink-primary)";
+            }
+          }}
+          onMouseLeave={(e) => {
+            if (activeTab !== "expenses") {
+              e.currentTarget.style.color = "var(--neuron-ink-secondary)";
+            }
+          }}
+        >
+          Expenses
+        </button>
+        <button
+          onClick={() => setActiveTab("attachments")}
+          style={{
+            padding: "16px 0",
+            background: "none",
+            border: "none",
+            borderBottom: activeTab === "attachments" ? "2px solid var(--neuron-brand-green)" : "2px solid transparent",
+            color: activeTab === "attachments" ? "var(--neuron-brand-green)" : "var(--neuron-ink-secondary)",
+            fontSize: "14px",
+            fontWeight: 600,
+            cursor: "pointer",
+            transition: "all 0.2s ease",
+            marginBottom: "-1px"
+          }}
+          onMouseEnter={(e) => {
+            if (activeTab !== "attachments") {
+              e.currentTarget.style.color = "var(--neuron-ink-primary)";
+            }
+          }}
+          onMouseLeave={(e) => {
+            if (activeTab !== "attachments") {
+              e.currentTarget.style.color = "var(--neuron-ink-secondary)";
+            }
+          }}
+        >
+          Attachments
+        </button>
+        <button
+          onClick={() => setActiveTab("comments")}
+          style={{
+            padding: "16px 0",
+            background: "none",
+            border: "none",
+            borderBottom: activeTab === "comments" ? "2px solid var(--neuron-brand-green)" : "2px solid transparent",
+            color: activeTab === "comments" ? "var(--neuron-brand-green)" : "var(--neuron-ink-secondary)",
+            fontSize: "14px",
+            fontWeight: 600,
+            cursor: "pointer",
+            transition: "all 0.2s ease",
+            marginBottom: "-1px"
+          }}
+          onMouseEnter={(e) => {
+            if (activeTab !== "comments") {
+              e.currentTarget.style.color = "var(--neuron-ink-primary)";
+            }
+          }}
+          onMouseLeave={(e) => {
+            if (activeTab !== "comments") {
+              e.currentTarget.style.color = "var(--neuron-ink-secondary)";
+            }
+          }}
+        >
+          Comments
+        </button>
+      </div>
+
+      {/* Content */}
       <div style={{ flex: 1, overflow: "auto" }}>
         {activeTab === "overview" && (
           <ProjectOverviewTab 
             project={project} 
             currentUser={currentUser}
-            onCreateTicket={onCreateTicket}
+            onUpdate={onUpdate}
+            onViewBooking={handleViewBooking}
           />
         )}
-        
-        {activeTab === "specifications" && (
-          <ServiceSpecificationsTab project={project} />
-        )}
-        
-        {activeTab === "pricing" && department === "BD" && (
-          <PricingBreakdownTab project={project} />
-        )}
-        
-        {activeTab === "services" && department === "Operations" && (
-          <ServicesAndBookingsTab 
+        {activeTab === "bookings" && (
+          <ProjectBookingsTab 
             project={project} 
             currentUser={currentUser}
-            onUpdate={onUpdate}
+            selectedBookingId={selectedBookingId}
           />
         )}
-        
-        {activeTab === "activity" && (
-          <ActivityTab project={project} currentUser={currentUser} />
+        {activeTab === "expenses" && (
+          <ProjectExpensesTab 
+            project={project} 
+            currentUser={currentUser}
+          />
+        )}
+        {activeTab === "attachments" && (
+          <ProjectAttachmentsTab 
+            project={project} 
+            currentUser={currentUser}
+          />
+        )}
+        {activeTab === "comments" && (
+          <CommentsTab 
+            inquiryId={project.quotation_id}
+            currentUserId={currentUserId}
+            currentUserName={currentUserName}
+            currentUserDepartment={currentUserDepartment}
+          />
         )}
       </div>
     </div>

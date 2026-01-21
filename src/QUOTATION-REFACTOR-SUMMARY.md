@@ -52,7 +52,7 @@ Comprehensive pricing management:
 - **Philippine Peso Icon**: Custom ₱ icon for branding consistency
 
 #### Service Detail Forms (V2)
-All using SimpleDropdown for consistency:
+All using **CustomDropdown with icons** for consistency:
 
 **`BrokerageFormV2.tsx`**
 - Subtype selection (Import Air, Import Ocean, Export Air, Export Ocean)
@@ -153,7 +153,7 @@ Comprehensive documentation including:
 ✅ Pure white backgrounds
 ✅ Stroke borders (no shadows)
 ✅ Consistent padding (32px 48px for main areas)
-✅ SimpleDropdown for all form selectors
+✅ **CustomDropdown with icons** for all form selectors
 ✅ Proper typography (no font size/weight overrides unless specified)
 
 ### User Experience

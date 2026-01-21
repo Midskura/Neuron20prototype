@@ -45,7 +45,7 @@ export function canPerformQuotationAction(
     send_to_client: ["BD"],
     mark_accepted: ["BD"],
     mark_rejected: ["BD"],
-    create_project: ["BD"],
+    create_project: ["BD", "PD", "Admin"], // UPDATED: Allow PD to create projects
     request_revision: ["BD"],
     cancel_quotation: ["BD", "Admin"]
   };
@@ -61,10 +61,10 @@ export function canPerformProjectAction(
   userDepartment: Department
 ): boolean {
   const permissions: Record<ProjectAction, Department[]> = {
-    view_project: ["BD", "Operations", "Finance", "Admin"],
-    edit_project: ["BD", "Admin"],
+    view_project: ["BD", "PD", "Operations", "Finance", "Admin"], // UPDATED: Allow PD to view projects
+    edit_project: ["BD", "PD", "Admin"], // UPDATED: Allow PD to edit projects
     generate_invoice: ["BD", "Finance", "Admin"],
-    assign_operations: ["BD", "Operations", "Admin"]
+    assign_operations: ["BD", "PD", "Operations", "Admin"] // UPDATED: Allow PD to assign operations
   };
 
   return permissions[action]?.includes(userDepartment) || false;
@@ -78,9 +78,9 @@ export function canPerformBookingAction(
   userDepartment: Department
 ): boolean {
   const permissions: Record<BookingAction, Department[]> = {
-    create_booking: ["Operations", "Admin"],
-    edit_booking: ["Operations", "Admin"],
-    view_booking: ["BD", "Operations", "Finance", "Admin"],
+    create_booking: ["PD", "Operations", "Admin"], // UPDATED: Allow PD to create bookings
+    edit_booking: ["PD", "Operations", "Admin"], // UPDATED: Allow PD to edit bookings
+    view_booking: ["BD", "PD", "Operations", "Finance", "Admin"], // UPDATED: Allow PD to view bookings
     create_billing: ["Operations", "Finance", "Admin"],
     create_expense: ["Operations", "Finance", "Admin"]
   };

@@ -1,7 +1,7 @@
-import { ArrowLeft, Calendar, Flag, User, Building2, Mail, Phone, Edit, Upload, Paperclip, Clock, MessageSquare, Send, Trash2, CheckCircle } from "lucide-react";
+import { ArrowLeft, Calendar, Flag, User, Building2, Mail, Phone, Edit, Upload, Paperclip, Clock, MessageSquare, Send, Trash2, CheckCircle, Users, MessageCircle, Linkedin, CheckSquare, StickyNote } from "lucide-react";
 import { useState } from "react";
 import type { Task, TaskType, TaskPriority, TaskStatus } from "../../types/bd";
-import { SimpleDropdown } from "./SimpleDropdown";
+import { CustomDropdown } from "./CustomDropdown";
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { toast } from "../ui/toast-utils";
 
@@ -337,8 +337,19 @@ export function TaskDetailInline({ task, onBack, onUpdate, onDelete, customers, 
                 <label className="block text-[11px] font-medium uppercase tracking-wide mb-2" style={{ color: "#667085" }}>
                   Type
                 </label>
-                <SimpleDropdown
-                  options={["To-do", "Call", "Email", "Meeting", "SMS", "Viber", "WhatsApp", "WeChat", "LinkedIn", "Marketing Email"]}
+                <CustomDropdown
+                  options={[
+                    { value: "To-do", label: "To-do", icon: <CheckSquare size={16} /> },
+                    { value: "Call", label: "Call", icon: <Phone size={16} /> },
+                    { value: "Email", label: "Email", icon: <Mail size={16} /> },
+                    { value: "Meeting", label: "Meeting", icon: <Users size={16} /> },
+                    { value: "SMS", label: "SMS", icon: <Send size={16} /> },
+                    { value: "Viber", label: "Viber", icon: <MessageCircle size={16} /> },
+                    { value: "WhatsApp", label: "WhatsApp", icon: <MessageSquare size={16} /> },
+                    { value: "WeChat", label: "WeChat", icon: <MessageSquare size={16} /> },
+                    { value: "LinkedIn", label: "LinkedIn", icon: <Linkedin size={16} /> },
+                    { value: "Marketing Email", label: "Marketing Email", icon: <MessageSquare size={16} /> }
+                  ]}
                   value={editedTask.type}
                   onChange={(value) => {
                     setEditedTask({ ...editedTask, type: value as TaskType });
@@ -391,7 +402,7 @@ export function TaskDetailInline({ task, onBack, onUpdate, onDelete, customers, 
                   Remarks
                 </label>
                 <textarea
-                  value={editedTask.remarks}
+                  value={editedTask.remarks || ""}
                   onChange={(e) => setEditedTask({ ...editedTask, remarks: e.target.value })}
                   onBlur={handleSave}
                   placeholder="Add remarks..."

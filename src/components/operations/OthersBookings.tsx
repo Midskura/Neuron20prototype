@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Plus, Search, Wrench, Briefcase, UserCheck, FileEdit, Clock, CheckCircle } from "lucide-react";
+import { Plus, Search, Wrench, Briefcase, UserCheck, FileEdit, Clock, CheckCircle, Trash2 } from "lucide-react";
 import { projectId, publicAnonKey } from "../../utils/supabase/info";
 import { CreateOthersBookingPanel } from "./CreateOthersBookingPanel";
 import { OthersBookingDetails } from "./OthersBookingDetails";
@@ -73,6 +73,35 @@ export function OthersBookings({ currentUser }: OthersBookingsProps = {}) {
   const handleBookingCreated = () => {
     setShowCreateModal(false);
     fetchBookings();
+  };
+
+  const handleDeleteBooking = async (bookingId: string, e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent row click
+    
+    if (!window.confirm(`Are you sure you want to delete booking ${bookingId}? This will also delete all associated billings and expenses. This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_URL}/others-bookings/${bookingId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${publicAnonKey}`,
+        }
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        toast.success('Booking deleted successfully');
+        fetchBookings(); // Refresh list
+      } else {
+        toast.error('Failed to delete booking: ' + result.error);
+      }
+    } catch (error) {
+      console.error('Error deleting booking:', error);
+      toast.error('Unable to delete booking');
+    }
   };
 
   // Get unique values for filters
@@ -403,6 +432,9 @@ export function OthersBookings({ currentUser }: OthersBookingsProps = {}) {
                     <th className="text-left py-3 px-4 text-[#667085] font-semibold text-xs uppercase tracking-wide">
                       Created
                     </th>
+                    <th className="text-center py-3 px-4 text-[#667085] font-semibold text-xs uppercase tracking-wide" style={{ width: "80px" }}>
+                      Actions
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -452,6 +484,36 @@ export function OthersBookings({ currentUser }: OthersBookingsProps = {}) {
                         <div style={{ fontSize: "13px", color: "#667085" }}>
                           {new Date(booking.createdAt).toLocaleDateString()}
                         </div>
+                      </td>
+                      <td className="py-4 px-4 text-center">
+                        <button
+                          onClick={(e) => handleDeleteBooking(booking.bookingId, e)}
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            gap: "4px",
+                            padding: "6px 12px",
+                            fontSize: "12px",
+                            fontWeight: 600,
+                            border: "1px solid #FCA5A5",
+                            borderRadius: "6px",
+                            background: "white",
+                            color: "#DC2626",
+                            cursor: "pointer",
+                            transition: "all 150ms"
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.background = "#DC2626";
+                            e.currentTarget.style.color = "white";
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.background = "white";
+                            e.currentTarget.style.color = "#DC2626";
+                          }}
+                        >
+                          <Trash2 size={14} />
+                        </button>
                       </td>
                     </tr>
                   ))}

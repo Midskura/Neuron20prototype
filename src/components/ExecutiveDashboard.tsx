@@ -37,14 +37,24 @@ import {
 } from "recharts";
 import { NeuronCard } from "./NeuronCard";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
-import { useState } from "react";
+import { useState, useMemo, memo, useRef, useEffect } from "react";
 
 interface ExecutiveDashboardProps {
   currentUser?: { name: string; email: string } | null;
 }
 
-// Hero Metric Card Component
-function HeroMetric({ 
+interface HeroMetricProps {
+  label: string;
+  value: string;
+  subtext?: string;
+  trend: "up" | "down" | "neutral";
+  trendValue: string;
+  icon: any;
+  alert?: boolean;
+}
+
+// Hero Metric Card Component - Memoized for performance
+const HeroMetric = memo(({ 
   label, 
   value, 
   subtext, 
@@ -52,15 +62,7 @@ function HeroMetric({
   trendValue, 
   icon: Icon,
   alert
-}: { 
-  label: string; 
-  value: string; 
-  subtext?: string; 
-  trend: "up" | "down" | "neutral"; 
-  trendValue: string;
-  icon: any;
-  alert?: boolean;
-}) {
+}: HeroMetricProps) => {
   const isPositive = trend === "up";
   const isNeutral = trend === "neutral";
   
@@ -110,56 +112,54 @@ function HeroMetric({
       </div>
     </NeuronCard>
   );
-}
+});
+
+HeroMetric.displayName = 'HeroMetric';
 
 export function ExecutiveDashboard({ currentUser }: ExecutiveDashboardProps) {
   const [timeframe, setTimeframe] = useState("month");
 
-  // Cash Flow Data
-  const cashFlowData = [
+  // ⚡ PERFORMANCE: Memoize all chart data to prevent recreation on every render
+  const cashFlowData = useMemo(() => [
     { month: "Jun", receivables: 485000, payables: 362000, netPosition: 123000 },
     { month: "Jul", receivables: 512000, payables: 389000, netPosition: 123000 },
     { month: "Aug", receivables: 548000, payables: 401000, netPosition: 147000 },
     { month: "Sep", receivables: 592000, payables: 438000, netPosition: 154000 },
     { month: "Oct", receivables: 634000, payables: 467000, netPosition: 167000 },
     { month: "Nov", receivables: 678000, payables: 495000, netPosition: 183000 }
-  ];
+  ], []);
 
-  // Margin Analysis by Service Type
-  const marginByServiceData = [
+  const marginByServiceData = useMemo(() => [
     { service: "Ocean FCL", revenue: 285000, cost: 218000, margin: 23.5 },
     { service: "Ocean LCL", revenue: 142000, cost: 115000, margin: 19.0 },
     { service: "Air Freight", revenue: 189000, cost: 156000, margin: 17.5 },
     { service: "Domestic", revenue: 62000, cost: 51000, margin: 17.7 }
-  ];
+  ], []);
 
-  // Client Payment Behavior
-  const paymentBehaviorData = [
+  const paymentBehaviorData = useMemo(() => [
     { name: "0-30 Days", value: 45, amount: "₱305K" },
     { name: "31-60 Days", value: 32, amount: "₱217K" },
     { name: "61-90 Days", value: 15, amount: "₱102K" },
     { name: "90+ Days", value: 8, amount: "₱54K" }
-  ];
+  ], []);
 
-  // Booking Volume & Efficiency
-  const bookingTrendsData = [
+  const bookingTrendsData = useMemo(() => [
     { week: "W40", bookings: 42, onTime: 39, revenue: 125000 },
     { week: "W41", bookings: 48, onTime: 45, revenue: 138000 },
     { week: "W42", bookings: 51, onTime: 48, revenue: 147000 },
     { week: "W43", bookings: 45, onTime: 43, revenue: 132000 },
     { week: "W44", bookings: 53, onTime: 51, revenue: 156000 }
-  ];
+  ], []);
 
-  const COLORS = {
+  const COLORS = useMemo(() => ({
     green: '#0F766E',
     teal: '#14B8A6',
     orange: '#F97316',
     red: '#EF4444',
     gray: '#9CA3AF'
-  };
+  }), []);
 
-  // Top Clients by Profitability (not just revenue!)
-  const topClientsByProfit = [
+  const topClientsByProfit = useMemo(() => [
     { 
       client: "Acme Trading Corp", 
       revenue: "₱124,500", 
@@ -200,10 +200,9 @@ export function ExecutiveDashboard({ currentUser }: ExecutiveDashboardProps) {
       paymentDays: 38,
       status: "Good"
     }
-  ];
+  ], []);
 
-  // Subcontractor Performance
-  const topSubcontractors = [
+  const topSubcontractors = useMemo(() => [
     { 
       name: "Pacific Express Logistics", 
       bookings: 47, 
@@ -232,7 +231,7 @@ export function ExecutiveDashboard({ currentUser }: ExecutiveDashboardProps) {
       avgCost: "₱4,980",
       rating: "Good"
     }
-  ];
+  ], []);
 
   return (
     <div className="h-full flex flex-col" style={{ background: "#FFFFFF" }}>
@@ -316,7 +315,7 @@ export function ExecutiveDashboard({ currentUser }: ExecutiveDashboardProps) {
 
           {/* Cash Flow Management */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-            <NeuronCard padding="lg" className="lg:col-span-2">
+            <NeuronCard padding="lg" className="lg:col-span-2" style={{ contain: 'layout style paint', willChange: 'contents' }}>
               <div className="flex items-center justify-between mb-6">
                 <div>
                   <h3 className="text-[18px] font-semibold text-[#12332B] mb-1">
@@ -328,10 +327,10 @@ export function ExecutiveDashboard({ currentUser }: ExecutiveDashboardProps) {
                 </div>
               </div>
               
-              <div style={{ width: '100%', height: 'max(280px, min(350px, 40vh))' }}>
-                <ResponsiveContainer width="100%" height="100%">
+              <div style={{ width: '100%', height: 350, contain: 'strict' }}>
+                <ResponsiveContainer width="100%" height="100%" debounce={300}>
                   <ComposedChart data={cashFlowData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#E5E9F0" />
+                    {/* CartesianGrid removed for better performance */}
                     <XAxis 
                       dataKey="month" 
                       tick={{ fill: '#6B7A76', fontSize: 12 }}
@@ -355,8 +354,8 @@ export function ExecutiveDashboard({ currentUser }: ExecutiveDashboardProps) {
                       wrapperStyle={{ paddingTop: '20px' }}
                       iconType="circle"
                     />
-                    <Bar dataKey="receivables" fill="#0F766E" name="Receivables" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="payables" fill="#9CA3AF" name="Payables" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="receivables" fill="#0F766E" name="Receivables" radius={[4, 4, 0, 0]} isAnimationActive={false} />
+                    <Bar dataKey="payables" fill="#9CA3AF" name="Payables" radius={[4, 4, 0, 0]} isAnimationActive={false} />
                     <Line 
                       type="monotone" 
                       dataKey="netPosition" 
@@ -364,6 +363,7 @@ export function ExecutiveDashboard({ currentUser }: ExecutiveDashboardProps) {
                       strokeWidth={3}
                       name="Net Position"
                       dot={{ fill: '#14B8A6', r: 4 }}
+                      isAnimationActive={false}
                     />
                   </ComposedChart>
                 </ResponsiveContainer>
@@ -443,7 +443,7 @@ export function ExecutiveDashboard({ currentUser }: ExecutiveDashboardProps) {
               </div>
             </NeuronCard>
 
-            <NeuronCard padding="lg">
+            <NeuronCard padding="lg" style={{ contain: 'layout style paint', willChange: 'contents' }}>
               <div className="mb-6">
                 <h3 className="text-[18px] font-semibold text-[#12332B] mb-1">
                   Booking Volume & On-Time Rate
@@ -453,10 +453,10 @@ export function ExecutiveDashboard({ currentUser }: ExecutiveDashboardProps) {
                 </p>
               </div>
               
-              <div style={{ width: '100%', height: 'max(260px, min(320px, 35vh))' }}>
-                <ResponsiveContainer width="100%" height="100%">
+              <div style={{ width: '100%', height: 300, contain: 'strict' }}>
+                <ResponsiveContainer width="100%" height="100%" debounce={300}>
                   <BarChart data={bookingTrendsData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#E5E9F0" />
+                    {/* CartesianGrid removed for better performance */}
                     <XAxis 
                       dataKey="week" 
                       tick={{ fill: '#6B7A76', fontSize: 12 }}
@@ -475,8 +475,8 @@ export function ExecutiveDashboard({ currentUser }: ExecutiveDashboardProps) {
                       }}
                     />
                     <Legend iconType="circle" />
-                    <Bar dataKey="bookings" fill="#9CA3AF" name="Total Bookings" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="onTime" fill="#0F766E" name="On-Time Deliveries" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="bookings" fill="#9CA3AF" name="Total Bookings" radius={[4, 4, 0, 0]} isAnimationActive={false} />
+                    <Bar dataKey="onTime" fill="#0F766E" name="On-Time Deliveries" radius={[4, 4, 0, 0]} isAnimationActive={false} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>

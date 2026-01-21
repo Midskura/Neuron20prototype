@@ -9,6 +9,9 @@ export interface User {
   role: 'rep' | 'manager' | 'director';
   created_at: string;
   is_active: boolean;
+  // Operations-specific fields for team assignment
+  service_type?: 'Forwarding' | 'Brokerage' | 'Trucking' | 'Marine Insurance' | 'Others' | null;
+  operations_role?: 'Manager' | 'Supervisor' | 'Handler' | null;
 }
 
 interface DevRoleOverride {
@@ -28,6 +31,7 @@ interface UserContextType {
   effectiveRole: string;
   devOverride: DevRoleOverride | null;
   setDevOverride: (override: DevRoleOverride | null) => void;
+  setUser: (user: User | null) => void; // Add direct user setter for dev login
 }
 
 const UserContext = createContext<UserContextType | undefined>(undefined);
@@ -80,117 +84,115 @@ export function UserProvider({ children }: { children: ReactNode }) {
         // Check if projectId and publicAnonKey are defined
         if (!projectId || !publicAnonKey) {
           console.warn('Supabase configuration not found. Skipping user initialization.');
-          return;
-        }
-
-        const usersResponse = await fetch(
-          `https://${projectId}.supabase.co/functions/v1/make-server-c142e950/users`,
-          {
-            headers: {
-              'Authorization': `Bearer ${publicAnonKey}`,
-            },
-          }
-        );
-        
-        if (!usersResponse.ok) {
-          console.warn('Failed to fetch users. Server may not be ready yet.');
-          return;
-        }
-        
-        const usersResult = await usersResponse.json();
-        
-        // Check if users need migration (old department format: "BD", "PD")
-        const needsMigration = usersResult.success && usersResult.data.length > 0 && 
-          usersResult.data.some((u: any) => u.department === "BD" || u.department === "PD");
-        
-        // If no users exist OR users need migration, seed them
-        if ((usersResult.success && usersResult.data.length === 0) || needsMigration) {
-          if (needsMigration) {
-            console.log('Old user format detected. Migrating to new department names...');
-            // Clear stored user session since department format changed
-            localStorage.removeItem('neuron_user');
-            setUser(null);
-          } else {
-            console.log('No users found. Auto-seeding test users...');
-          }
-          
-          const seedResponse = await fetch(
-            `https://${projectId}.supabase.co/functions/v1/make-server-c142e950/auth/seed-users`,
+          // Don't return early - still check for stored session below
+        } else {
+          const usersResponse = await fetch(
+            `https://${projectId}.supabase.co/functions/v1/make-server-c142e950/users`,
             {
-              method: 'POST',
               headers: {
-                'Content-Type': 'application/json',
                 'Authorization': `Bearer ${publicAnonKey}`,
               },
             }
           );
           
-          if (!seedResponse.ok) {
-            console.warn('Failed to seed users. Server may not be ready yet.');
-            return;
-          }
-          
-          const seedResult = await seedResponse.json();
-          
-          if (seedResult.success) {
-            console.log('✅ Test users seeded successfully with new department names!');
-            if (needsMigration) {
-              console.log('🔄 Migration complete. Please log in again.');
-            }
+          if (!usersResponse.ok) {
+            console.warn('Failed to fetch users. Server may not be ready yet.');
+            // Don't return early - still check for stored session below
           } else {
-            console.error('Failed to seed users:', seedResult.error);
-          }
-        }
-        
-        // Auto-seed ticket types if they don't exist
-        const ticketTypesResponse = await fetch(
-          `https://${projectId}.supabase.co/functions/v1/make-server-c142e950/ticket-types`,
-          {
-            headers: {
-              'Authorization': `Bearer ${publicAnonKey}`,
-            },
-          }
-        );
-        
-        if (!ticketTypesResponse.ok) {
-          console.warn('Failed to fetch ticket types. Server may not be ready yet.');
-          return;
-        }
-        
-        const ticketTypesResult = await ticketTypesResponse.json();
-        
-        if (ticketTypesResult.success && ticketTypesResult.data.length === 0) {
-          console.log('No ticket types found. Auto-seeding ticket types...');
-          
-          const seedTicketTypesResponse = await fetch(
-            `https://${projectId}.supabase.co/functions/v1/make-server-c142e950/ticket-types/seed`,
-            {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${publicAnonKey}`,
-              },
+            const usersResult = await usersResponse.json();
+            
+            // Check if users need migration (old department format: "BD", "PD")
+            const needsMigration = usersResult.success && usersResult.data.length > 0 && 
+              usersResult.data.some((u: any) => u.department === "BD" || u.department === "PD");
+            
+            // If no users exist OR users need migration, seed them
+            if ((usersResult.success && usersResult.data.length === 0) || needsMigration) {
+              if (needsMigration) {
+                console.log('Old user format detected. Migrating to new department names...');
+                // Clear stored user session since department format changed
+                localStorage.removeItem('neuron_user');
+                setUser(null);
+              } else {
+                console.log('No users found. Auto-seeding test users...');
+              }
+              
+              const seedResponse = await fetch(
+                `https://${projectId}.supabase.co/functions/v1/make-server-c142e950/users/seed`,
+                {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${publicAnonKey}`,
+                  },
+                }
+              );
+              
+              if (!seedResponse.ok) {
+                console.warn('Failed to seed users. Server may not be ready yet.');
+              } else {
+                const seedResult = await seedResponse.json();
+                
+                if (seedResult.success) {
+                  console.log('✅ Test users seeded successfully with new department names!');
+                  if (needsMigration) {
+                    console.log('🔄 Migration complete. Please log in again.');
+                  }
+                } else {
+                  console.error('Failed to seed users:', seedResult.error);
+                }
+              }
             }
-          );
-          
-          if (!seedTicketTypesResponse.ok) {
-            console.warn('Failed to seed ticket types. Server may not be ready yet.');
-            return;
-          }
-          
-          const seedTicketTypesResult = await seedTicketTypesResponse.json();
-          
-          if (seedTicketTypesResult.success) {
-            console.log('✅ Ticket types seeded successfully!');
-          } else {
-            console.error('Failed to seed ticket types:', seedTicketTypesResult.error);
+            
+            // Auto-seed ticket types if they don't exist
+            const ticketTypesResponse = await fetch(
+              `https://${projectId}.supabase.co/functions/v1/make-server-c142e950/ticket-types`,
+              {
+                headers: {
+                  'Authorization': `Bearer ${publicAnonKey}`,
+                },
+              }
+            );
+            
+            if (!ticketTypesResponse.ok) {
+              console.warn('Failed to fetch ticket types. Server may not be ready yet.');
+            } else {
+              const ticketTypesResult = await ticketTypesResponse.json();
+              
+              if (ticketTypesResult.success && ticketTypesResult.data.length === 0) {
+                console.log('No ticket types found. Auto-seeding ticket types...');
+                
+                const seedTicketTypesResponse = await fetch(
+                  `https://${projectId}.supabase.co/functions/v1/make-server-c142e950/ticket-types/seed`,
+                  {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'Authorization': `Bearer ${publicAnonKey}`,
+                    },
+                  }
+                );
+                
+                if (!seedTicketTypesResponse.ok) {
+                  console.warn('Failed to seed ticket types. Server may not be ready yet.');
+                } else {
+                  const seedTicketTypesResult = await seedTicketTypesResponse.json();
+                  
+                  if (seedTicketTypesResult.success) {
+                    console.log('✅ Ticket types seeded successfully!');
+                  } else {
+                    console.error('Failed to seed ticket types:', seedTicketTypesResult.error);
+                  }
+                }
+              }
+            }
           }
         }
       } catch (error) {
         console.error('Error during auto-initialization:', error);
+        // Don't block the app from loading even if initialization fails
       }
       
-      // Then check for existing session
+      // Then check for existing session (this should ALWAYS run)
       const storedUser = localStorage.getItem('neuron_user');
       if (storedUser) {
         try {
@@ -208,6 +210,8 @@ export function UserProvider({ children }: { children: ReactNode }) {
           localStorage.removeItem('neuron_user');
         }
       }
+      
+      // ALWAYS set loading to false at the end
       setIsLoading(false);
     };
     
@@ -264,6 +268,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
         effectiveRole,
         devOverride,
         setDevOverride,
+        setUser, // Add direct user setter for dev login
       }}
     >
       {children}

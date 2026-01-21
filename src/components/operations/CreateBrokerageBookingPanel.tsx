@@ -1,21 +1,92 @@
-import { X, FileCheck, Package, FileText } from "lucide-react";
-import { useState } from "react";
+import { X, FileCheck, Package, FileText, Users, Info } from "lucide-react";
+import { useState, useEffect } from "react";
 import { projectId, publicAnonKey } from "../../utils/supabase/info";
 import { toast } from "../ui/toast-utils";
+import { TeamAssignmentForm, type TeamAssignment } from "../pricing/TeamAssignmentForm";
+import type { User } from "../../hooks/useUser";
+import { CustomDropdown } from "../bd/CustomDropdown";
+
+// Brokerage Booking Form Data Interface
+interface BrokerageBookingFormData {
+  // New: Brokerage Type
+  brokerageType: "Standard" | "All-Inclusive" | "Non-Regular" | "";
+  
+  // General Information
+  customerName: string;
+  accountOwner: string;
+  accountHandler: string;
+  customsEntryType: string;
+  assessmentType: string;
+  releaseType: string;
+  declarationType: string;
+  quotationReferenceNumber: string;
+  projectNumber?: string;
+  status: string;
+  
+  // Entry Details
+  consignee: string;
+  accountNumber: string;
+  registryNumber: string;
+  mblMawb: string;
+  hblHawb: string;
+  invoiceNumber: string;
+  invoiceValue: string;
+  shipmentOrigin: string;
+  entryNumber: string;
+  releaseDate: string;
+  deliveryAddress: string;
+  broker: string;
+  commodityDescription: string;
+  hsCode: string;
+  dutyRate: string;
+  vatRate: string;
+  otherCharges: string;
+  remarks: string;
+  
+  // New: Quotation Builder fields
+  pod?: string;
+  mode?: string;
+  cargoType?: string;
+  countryOfOrigin?: string;
+  preferentialTreatment?: string;
+  
+  // Team assignments (for Pricing module)
+  assigned_manager_id?: string;
+  assigned_manager_name?: string;
+  assigned_supervisor_id?: string;
+  assigned_supervisor_name?: string;
+  assigned_handler_id?: string;
+  assigned_handler_name?: string;
+}
 
 interface CreateBrokerageBookingPanelProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess: () => void;
+  onSuccess: (bookingData?: any) => void; // Updated to accept optional booking data
+  prefillData?: Partial<BrokerageBookingFormData>; // NEW: For auto-fill from project
+  source?: "operations" | "pricing"; // NEW: Indicates where the panel is being used
+  customerId?: string; // NEW: For team assignment
+  serviceType?: string; // NEW: For team assignment
+  currentUser?: User | null; // NEW: Current user for team assignment
 }
 
 export function CreateBrokerageBookingPanel({
   isOpen,
   onClose,
   onSuccess,
+  prefillData,
+  source = "operations",
+  customerId,
+  serviceType = "Brokerage",
+  currentUser,
 }: CreateBrokerageBookingPanelProps) {
   const [loading, setLoading] = useState(false);
-  const [formData, setFormData] = useState({
+  const [hoveredType, setHoveredType] = useState<string | null>(null);
+  const [teamAssignment, setTeamAssignment] = useState<TeamAssignment | null>(null);
+  
+  // Initialize form data with prefill if provided
+  const [formData, setFormData] = useState<BrokerageBookingFormData>({
+    brokerageType: "",
     customerName: "",
     accountOwner: "",
     accountHandler: "",
@@ -43,13 +114,32 @@ export function CreateBrokerageBookingPanel({
     vatRate: "",
     otherCharges: "",
     remarks: "",
+    pod: "",
+    mode: "",
+    cargoType: "",
+    countryOfOrigin: "",
+    preferentialTreatment: "",
   });
+
+  // Apply prefill data when component mounts or prefillData changes
+  useEffect(() => {
+    if (prefillData) {
+      setFormData(prev => ({
+        ...prev,
+        ...prefillData,
+      }));
+    }
+  }, [prefillData]);
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
   ) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleBrokerageTypeChange = (type: "Standard" | "All-Inclusive" | "Non-Regular") => {
+    setFormData((prev) => ({ ...prev, brokerageType: type }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -59,10 +149,29 @@ export function CreateBrokerageBookingPanel({
       toast.error("Customer Name is required");
       return;
     }
+
+    // If from Pricing module, require team assignments
+    if (source === "pricing" && !teamAssignment) {
+      toast.error("Please complete team assignments");
+      return;
+    }
     
     setLoading(true);
 
     try {
+      // Prepare submission data
+      const submissionData = { ...formData };
+      
+      // Add team assignments if from Pricing
+      if (source === "pricing" && teamAssignment) {
+        submissionData.assigned_manager_id = teamAssignment.manager.id;
+        submissionData.assigned_manager_name = teamAssignment.manager.name;
+        submissionData.assigned_supervisor_id = teamAssignment.supervisor?.id;
+        submissionData.assigned_supervisor_name = teamAssignment.supervisor?.name;
+        submissionData.assigned_handler_id = teamAssignment.handler?.id;
+        submissionData.assigned_handler_name = teamAssignment.handler?.name;
+      }
+
       const response = await fetch(
         `https://${projectId}.supabase.co/functions/v1/make-server-c142e950/brokerage-bookings`,
         {
@@ -71,7 +180,7 @@ export function CreateBrokerageBookingPanel({
             "Content-Type": "application/json",
             Authorization: `Bearer ${publicAnonKey}`,
           },
-          body: JSON.stringify(formData),
+          body: JSON.stringify(submissionData),
         }
       );
 
@@ -82,7 +191,32 @@ export function CreateBrokerageBookingPanel({
       const result = await response.json();
       if (result.success) {
         toast.success("Brokerage booking created successfully");
-        onSuccess();
+        
+        // Save team preference if requested and from Pricing
+        if (source === "pricing" && teamAssignment?.saveAsDefault && customerId) {
+          try {
+            await fetch(
+              `https://${projectId}.supabase.co/functions/v1/make-server-c142e950/client-handler-preferences`,
+              {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${publicAnonKey}`,
+                },
+                body: JSON.stringify({
+                  client_id: customerId,
+                  service_type: serviceType,
+                  preferred_supervisor_id: teamAssignment.supervisor?.id,
+                  preferred_handler_id: teamAssignment.handler?.id,
+                }),
+              }
+            );
+          } catch (error) {
+            console.error("Error saving team preference:", error);
+          }
+        }
+        
+        onSuccess(result.data); // Pass the booking data
         onClose();
       } else {
         toast.error("Failed to create booking: " + result.error);
@@ -97,7 +231,33 @@ export function CreateBrokerageBookingPanel({
 
   if (!isOpen) return null;
 
-  const isFormValid = formData.customerName.trim() !== "";
+  const isFormValid = formData.customerName.trim() !== "" && 
+    (source === "operations" || (source === "pricing" && teamAssignment !== null));
+  
+  // Helper function to check if a field is pre-filled
+  const isPrefilled = (fieldName: keyof BrokerageBookingFormData): boolean => {
+    return prefillData ? prefillData[fieldName] !== undefined : false;
+  };
+  
+  // Helper function to get input style with prefill indication
+  const getInputStyle = (fieldName: keyof BrokerageBookingFormData) => {
+    const baseStyle = {
+      border: "1px solid var(--neuron-ui-border)",
+      color: "var(--neuron-ink-primary)",
+    };
+    
+    if (isPrefilled(fieldName)) {
+      return {
+        ...baseStyle,
+        backgroundColor: "#F0FDF4", // Light green for pre-filled fields
+      };
+    }
+    
+    return {
+      ...baseStyle,
+      backgroundColor: "#FFFFFF",
+    };
+  };
 
   return (
     <>
@@ -156,13 +316,69 @@ export function CreateBrokerageBookingPanel({
             </button>
           </div>
           <p style={{ fontSize: "14px", color: "#667085" }}>
-            Create a new customs brokerage entry booking
+            {source === "pricing" 
+              ? "Create a new brokerage booking from project specifications" 
+              : "Create a new customs brokerage entry booking"}
           </p>
         </div>
 
         {/* Form Content */}
         <div className="flex-1 overflow-auto px-12 py-8">
           <form onSubmit={handleSubmit} id="create-brokerage-form">
+            {/* Brokerage Type Selection */}
+            <div className="mb-8">
+              <div className="flex items-center gap-2 mb-4">
+                <Package size={16} style={{ color: "#0F766E" }} />
+                <h3 style={{ fontSize: "14px", fontWeight: 600, color: "#12332B", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                  Brokerage Type
+                </h3>
+              </div>
+
+              <div style={{ display: "flex", gap: "8px" }}>
+                {["Standard", "All-Inclusive", "Non-Regular"].map(type => {
+                  const isSelected = formData.brokerageType === type;
+                  const isHovered = hoveredType === type;
+                  
+                  let backgroundColor = "white";
+                  let borderColor = "var(--neuron-ui-border)";
+                  let textColor = "var(--neuron-ink-base)";
+                  
+                  if (isSelected) {
+                    backgroundColor = "#0F766E";
+                    borderColor = "#0F766E";
+                    textColor = "white";
+                  } else if (isHovered) {
+                    backgroundColor = "#F8FBFB";
+                    borderColor = "#0F766E";
+                  }
+                  
+                  return (
+                    <button
+                      key={type}
+                      type="button"
+                      onClick={() => handleBrokerageTypeChange(type as any)}
+                      onMouseEnter={() => setHoveredType(type)}
+                      onMouseLeave={() => setHoveredType(null)}
+                      style={{
+                        padding: "10px 20px",
+                        fontSize: "13px",
+                        fontWeight: 500,
+                        color: textColor,
+                        backgroundColor: backgroundColor,
+                        border: `1px solid ${borderColor}`,
+                        borderRadius: "6px",
+                        cursor: "pointer",
+                        transition: "all 0.15s ease",
+                        flex: 1
+                      }}
+                    >
+                      {type}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
             {/* General Information */}
             <div className="mb-8">
               <div className="flex items-center gap-2 mb-4">
@@ -185,13 +401,26 @@ export function CreateBrokerageBookingPanel({
                     onChange={handleChange}
                     placeholder="Enter customer name"
                     className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
-                    style={{
-                      border: "1px solid var(--neuron-ui-border)",
-                      backgroundColor: "#FFFFFF",
-                      color: "var(--neuron-ink-primary)",
-                    }}
+                    style={getInputStyle("customerName")}
                   />
                 </div>
+
+                {formData.projectNumber && (
+                  <div>
+                    <label className="block mb-1.5" style={{ fontSize: "13px", fontWeight: 500, color: "#12332B" }}>
+                      Project Number
+                    </label>
+                    <input
+                      type="text"
+                      name="projectNumber"
+                      value={formData.projectNumber}
+                      onChange={handleChange}
+                      placeholder="Project reference"
+                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                      style={getInputStyle("projectNumber")}
+                    />
+                  </div>
+                )}
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
@@ -205,11 +434,7 @@ export function CreateBrokerageBookingPanel({
                       onChange={handleChange}
                       placeholder="Account owner"
                       className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
-                      style={{
-                        border: "1px solid var(--neuron-ui-border)",
-                        backgroundColor: "#FFFFFF",
-                        color: "var(--neuron-ink-primary)",
-                      }}
+                      style={getInputStyle("accountOwner")}
                     />
                   </div>
 
@@ -224,11 +449,7 @@ export function CreateBrokerageBookingPanel({
                       onChange={handleChange}
                       placeholder="Account handler"
                       className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
-                      style={{
-                        border: "1px solid var(--neuron-ui-border)",
-                        backgroundColor: "#FFFFFF",
-                        color: "var(--neuron-ink-primary)",
-                      }}
+                      style={getInputStyle("accountHandler")}
                     />
                   </div>
                 </div>
@@ -245,11 +466,7 @@ export function CreateBrokerageBookingPanel({
                       onChange={handleChange}
                       placeholder="e.g., Formal, Informal"
                       className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
-                      style={{
-                        border: "1px solid var(--neuron-ui-border)",
-                        backgroundColor: "#FFFFFF",
-                        color: "var(--neuron-ink-primary)",
-                      }}
+                      style={getInputStyle("customsEntryType")}
                     />
                   </div>
 
@@ -264,11 +481,7 @@ export function CreateBrokerageBookingPanel({
                       onChange={handleChange}
                       placeholder="e.g., Green, Yellow, Red"
                       className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
-                      style={{
-                        border: "1px solid var(--neuron-ui-border)",
-                        backgroundColor: "#FFFFFF",
-                        color: "var(--neuron-ink-primary)",
-                      }}
+                      style={getInputStyle("assessmentType")}
                     />
                   </div>
                 </div>
@@ -285,11 +498,7 @@ export function CreateBrokerageBookingPanel({
                       onChange={handleChange}
                       placeholder="e.g., Full, Partial"
                       className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
-                      style={{
-                        border: "1px solid var(--neuron-ui-border)",
-                        backgroundColor: "#FFFFFF",
-                        color: "var(--neuron-ink-primary)",
-                      }}
+                      style={getInputStyle("releaseType")}
                     />
                   </div>
 
@@ -304,11 +513,7 @@ export function CreateBrokerageBookingPanel({
                       onChange={handleChange}
                       placeholder="e.g., Import, Export"
                       className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
-                      style={{
-                        border: "1px solid var(--neuron-ui-border)",
-                        backgroundColor: "#FFFFFF",
-                        color: "var(--neuron-ink-primary)",
-                      }}
+                      style={getInputStyle("declarationType")}
                     />
                   </div>
                 </div>
@@ -325,41 +530,125 @@ export function CreateBrokerageBookingPanel({
                       onChange={handleChange}
                       placeholder="Quotation reference"
                       className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
-                      style={{
-                        border: "1px solid var(--neuron-ui-border)",
-                        backgroundColor: "#FFFFFF",
-                        color: "var(--neuron-ink-primary)",
-                      }}
+                      style={getInputStyle("quotationReferenceNumber")}
                     />
                   </div>
 
-                  <div>
-                    <label className="block mb-1.5" style={{ fontSize: "13px", fontWeight: 500, color: "#12332B" }}>
-                      Status
-                    </label>
-                    <select
-                      name="status"
-                      value={formData.status}
-                      onChange={handleChange}
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
-                      style={{
-                        border: "1px solid var(--neuron-ui-border)",
-                        backgroundColor: "#FFFFFF",
-                        color: "var(--neuron-ink-primary)",
-                      }}
-                    >
-                      <option value="Draft">Draft</option>
-                      <option value="Confirmed">Confirmed</option>
-                      <option value="In Progress">In Progress</option>
-                      <option value="Pending">Pending</option>
-                      <option value="On Hold">On Hold</option>
-                      <option value="Completed">Completed</option>
-                      <option value="Cancelled">Cancelled</option>
-                    </select>
-                  </div>
+                  <CustomDropdown
+                    label="Status"
+                    value={formData.status}
+                    onChange={(value) => handleChange({ target: { name: "status", value } } as any)}
+                    options={[
+                      { value: "Draft", label: "Draft" },
+                      { value: "Confirmed", label: "Confirmed" },
+                      { value: "In Progress", label: "In Progress" },
+                      { value: "Pending", label: "Pending" },
+                      { value: "On Hold", label: "On Hold" },
+                      { value: "Completed", label: "Completed" },
+                      { value: "Cancelled", label: "Cancelled" },
+                    ]}
+                    placeholder="Select Status..."
+                    fullWidth
+                  />
                 </div>
               </div>
             </div>
+
+            {/* Shipment Details - Conditional based on Brokerage Type */}
+            {formData.brokerageType && (
+              <div className="mb-8">
+                <div className="flex items-center gap-2 mb-4">
+                  <Package size={16} style={{ color: "#0F766E" }} />
+                  <h3 style={{ fontSize: "14px", fontWeight: 600, color: "#12332B", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                    Shipment Details
+                  </h3>
+                </div>
+
+                <div className="space-y-4">
+                  {/* POD */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <CustomDropdown
+                      label="POD (Port of Discharge)"
+                      value={formData.pod}
+                      onChange={(value) => handleChange({ target: { name: "pod", value } } as any)}
+                      options={[
+                        { value: "NAIA", label: "NAIA" },
+                        { value: "MICP", label: "MICP" },
+                        { value: "POM", label: "POM" },
+                      ]}
+                      placeholder="Select POD..."
+                      fullWidth
+                    />
+
+                    <CustomDropdown
+                      label="Mode"
+                      value={formData.mode}
+                      onChange={(value) => handleChange({ target: { name: "mode", value } } as any)}
+                      options={[
+                        { value: "FCL", label: "FCL" },
+                        { value: "LCL", label: "LCL" },
+                        { value: "AIR", label: "AIR" },
+                        { value: "Multi-modal", label: "Multi-modal" },
+                      ]}
+                      placeholder="Select Mode..."
+                      fullWidth
+                    />
+                  </div>
+
+                  {/* Cargo Type */}
+                  <CustomDropdown
+                    label="Cargo Type"
+                    value={formData.cargoType}
+                    onChange={(value) => handleChange({ target: { name: "cargoType", value } } as any)}
+                    options={[
+                      { value: "Dry", label: "Dry" },
+                      { value: "Reefer", label: "Reefer" },
+                      { value: "Breakbulk", label: "Breakbulk" },
+                      { value: "RORO", label: "RORO" },
+                    ]}
+                    placeholder="Select Cargo Type..."
+                    fullWidth
+                  />
+
+                  {/* All-Inclusive Specific Fields */}
+                  {formData.brokerageType === "All-Inclusive" && (
+                    <>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block mb-1.5" style={{ fontSize: "13px", fontWeight: 500, color: "#12332B" }}>
+                            Country of Origin
+                          </label>
+                          <input
+                            type="text"
+                            name="countryOfOrigin"
+                            value={formData.countryOfOrigin}
+                            onChange={handleChange}
+                            placeholder="Enter country of origin"
+                            className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                            style={getInputStyle("countryOfOrigin")}
+                          />
+                        </div>
+
+                        <CustomDropdown
+                          label="Preferential Treatment"
+                          value={formData.preferentialTreatment}
+                          onChange={(value) => handleChange({ target: { name: "preferentialTreatment", value } } as any)}
+                          options={[
+                            { value: "Form E", label: "Form E" },
+                            { value: "Form D", label: "Form D" },
+                            { value: "Form AI", label: "Form AI" },
+                            { value: "Form AK", label: "Form AK" },
+                            { value: "Form JP", label: "Form JP" },
+                          ]}
+                          placeholder="Select treatment..."
+                          fullWidth
+                        />
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Entry Details */}
             <div className="mb-8">
@@ -383,11 +672,7 @@ export function CreateBrokerageBookingPanel({
                       onChange={handleChange}
                       placeholder="Consignee name"
                       className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
-                      style={{
-                        border: "1px solid var(--neuron-ui-border)",
-                        backgroundColor: "#FFFFFF",
-                        color: "var(--neuron-ink-primary)",
-                      }}
+                      style={getInputStyle("consignee")}
                     />
                   </div>
 
@@ -402,11 +687,7 @@ export function CreateBrokerageBookingPanel({
                       onChange={handleChange}
                       placeholder="Account number"
                       className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
-                      style={{
-                        border: "1px solid var(--neuron-ui-border)",
-                        backgroundColor: "#FFFFFF",
-                        color: "var(--neuron-ink-primary)",
-                      }}
+                      style={getInputStyle("accountNumber")}
                     />
                   </div>
                 </div>
@@ -423,11 +704,7 @@ export function CreateBrokerageBookingPanel({
                       onChange={handleChange}
                       placeholder="Registry number"
                       className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
-                      style={{
-                        border: "1px solid var(--neuron-ui-border)",
-                        backgroundColor: "#FFFFFF",
-                        color: "var(--neuron-ink-primary)",
-                      }}
+                      style={getInputStyle("registryNumber")}
                     />
                   </div>
 
@@ -442,11 +719,7 @@ export function CreateBrokerageBookingPanel({
                       onChange={handleChange}
                       placeholder="Entry number"
                       className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
-                      style={{
-                        border: "1px solid var(--neuron-ui-border)",
-                        backgroundColor: "#FFFFFF",
-                        color: "var(--neuron-ink-primary)",
-                      }}
+                      style={getInputStyle("entryNumber")}
                     />
                   </div>
                 </div>
@@ -463,11 +736,7 @@ export function CreateBrokerageBookingPanel({
                       onChange={handleChange}
                       placeholder="Master bill of lading"
                       className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
-                      style={{
-                        border: "1px solid var(--neuron-ui-border)",
-                        backgroundColor: "#FFFFFF",
-                        color: "var(--neuron-ink-primary)",
-                      }}
+                      style={getInputStyle("mblMawb")}
                     />
                   </div>
 
@@ -482,11 +751,7 @@ export function CreateBrokerageBookingPanel({
                       onChange={handleChange}
                       placeholder="House bill of lading"
                       className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
-                      style={{
-                        border: "1px solid var(--neuron-ui-border)",
-                        backgroundColor: "#FFFFFF",
-                        color: "var(--neuron-ink-primary)",
-                      }}
+                      style={getInputStyle("hblHawb")}
                     />
                   </div>
                 </div>
@@ -503,11 +768,7 @@ export function CreateBrokerageBookingPanel({
                       onChange={handleChange}
                       placeholder="Invoice number"
                       className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
-                      style={{
-                        border: "1px solid var(--neuron-ui-border)",
-                        backgroundColor: "#FFFFFF",
-                        color: "var(--neuron-ink-primary)",
-                      }}
+                      style={getInputStyle("invoiceNumber")}
                     />
                   </div>
 
@@ -522,11 +783,7 @@ export function CreateBrokerageBookingPanel({
                       onChange={handleChange}
                       placeholder="e.g., USD 50,000"
                       className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
-                      style={{
-                        border: "1px solid var(--neuron-ui-border)",
-                        backgroundColor: "#FFFFFF",
-                        color: "var(--neuron-ink-primary)",
-                      }}
+                      style={getInputStyle("invoiceValue")}
                     />
                   </div>
                 </div>
@@ -543,11 +800,7 @@ export function CreateBrokerageBookingPanel({
                       onChange={handleChange}
                       placeholder="Origin country"
                       className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
-                      style={{
-                        border: "1px solid var(--neuron-ui-border)",
-                        backgroundColor: "#FFFFFF",
-                        color: "var(--neuron-ink-primary)",
-                      }}
+                      style={getInputStyle("shipmentOrigin")}
                     />
                   </div>
 
@@ -561,11 +814,7 @@ export function CreateBrokerageBookingPanel({
                       value={formData.releaseDate}
                       onChange={handleChange}
                       className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
-                      style={{
-                        border: "1px solid var(--neuron-ui-border)",
-                        backgroundColor: "#FFFFFF",
-                        color: "var(--neuron-ink-primary)",
-                      }}
+                      style={getInputStyle("releaseDate")}
                     />
                   </div>
                 </div>
@@ -582,11 +831,7 @@ export function CreateBrokerageBookingPanel({
                       onChange={handleChange}
                       placeholder="Broker name"
                       className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
-                      style={{
-                        border: "1px solid var(--neuron-ui-border)",
-                        backgroundColor: "#FFFFFF",
-                        color: "var(--neuron-ink-primary)",
-                      }}
+                      style={getInputStyle("broker")}
                     />
                   </div>
                 </div>
@@ -602,11 +847,7 @@ export function CreateBrokerageBookingPanel({
                     rows={2}
                     placeholder="Enter delivery address"
                     className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px] resize-none"
-                    style={{
-                      border: "1px solid var(--neuron-ui-border)",
-                      backgroundColor: "#FFFFFF",
-                      color: "var(--neuron-ink-primary)",
-                    }}
+                    style={getInputStyle("deliveryAddress")}
                   />
                 </div>
               </div>
@@ -633,11 +874,7 @@ export function CreateBrokerageBookingPanel({
                     rows={2}
                     placeholder="Describe the commodity"
                     className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px] resize-none"
-                    style={{
-                      border: "1px solid var(--neuron-ui-border)",
-                      backgroundColor: "#FFFFFF",
-                      color: "var(--neuron-ink-primary)",
-                    }}
+                    style={getInputStyle("commodityDescription")}
                   />
                 </div>
 
@@ -653,11 +890,7 @@ export function CreateBrokerageBookingPanel({
                       onChange={handleChange}
                       placeholder="Harmonized System code"
                       className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
-                      style={{
-                        border: "1px solid var(--neuron-ui-border)",
-                        backgroundColor: "#FFFFFF",
-                        color: "var(--neuron-ink-primary)",
-                      }}
+                      style={getInputStyle("hsCode")}
                     />
                   </div>
 
@@ -672,11 +905,7 @@ export function CreateBrokerageBookingPanel({
                       onChange={handleChange}
                       placeholder="e.g., 5%"
                       className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
-                      style={{
-                        border: "1px solid var(--neuron-ui-border)",
-                        backgroundColor: "#FFFFFF",
-                        color: "var(--neuron-ink-primary)",
-                      }}
+                      style={getInputStyle("dutyRate")}
                     />
                   </div>
                 </div>
@@ -693,11 +922,7 @@ export function CreateBrokerageBookingPanel({
                       onChange={handleChange}
                       placeholder="e.g., 12%"
                       className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
-                      style={{
-                        border: "1px solid var(--neuron-ui-border)",
-                        backgroundColor: "#FFFFFF",
-                        color: "var(--neuron-ink-primary)",
-                      }}
+                      style={getInputStyle("vatRate")}
                     />
                   </div>
 
@@ -712,11 +937,7 @@ export function CreateBrokerageBookingPanel({
                       onChange={handleChange}
                       placeholder="Other charges"
                       className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
-                      style={{
-                        border: "1px solid var(--neuron-ui-border)",
-                        backgroundColor: "#FFFFFF",
-                        color: "var(--neuron-ink-primary)",
-                      }}
+                      style={getInputStyle("otherCharges")}
                     />
                   </div>
                 </div>
@@ -732,15 +953,36 @@ export function CreateBrokerageBookingPanel({
                     rows={2}
                     placeholder="Additional notes or remarks"
                     className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px] resize-none"
-                    style={{
-                      border: "1px solid var(--neuron-ui-border)",
-                      backgroundColor: "#FFFFFF",
-                      color: "var(--neuron-ink-primary)",
-                    }}
+                    style={getInputStyle("remarks")}
                   />
                 </div>
               </div>
             </div>
+
+            {/* Team Assignment - Only show when from Pricing */}
+            {source === "pricing" && customerId && (
+              <div className="mb-8">
+                <div className="flex items-center gap-2 mb-4">
+                  <Users size={16} style={{ color: "#0F766E" }} />
+                  <h3 style={{ fontSize: "14px", fontWeight: 600, color: "#12332B", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                    Team Assignment
+                  </h3>
+                </div>
+                
+                <div style={{
+                  padding: "20px",
+                  backgroundColor: "#F9FAFB",
+                  border: "1px solid var(--neuron-ui-border)",
+                  borderRadius: "8px"
+                }}>
+                  <TeamAssignmentForm
+                    serviceType={serviceType as any}
+                    customerId={customerId}
+                    onChange={setTeamAssignment}
+                  />
+                </div>
+              </div>
+            )}
           </form>
         </div>
 

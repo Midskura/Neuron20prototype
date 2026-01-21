@@ -1,9 +1,8 @@
-import { ArrowLeft, Building2, MapPin, Briefcase, Edit, Users, Plus, Mail, Phone, User, CheckCircle, Clock, AlertCircle, Calendar, Paperclip, Upload, MessageSquare, Send, FileText } from "lucide-react";
+import { ArrowLeft, Building2, MapPin, Briefcase, Edit, Users, Plus, Mail, Phone, User, CheckCircle, Clock, AlertCircle, Calendar, Paperclip, Upload, MessageSquare, Send, FileText, MessageCircle, Linkedin, StickyNote } from "lucide-react";
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import type { Customer, Contact, Industry, CustomerStatus, Task, Activity } from "../../types/bd";
 import type { QuotationNew } from "../../types/pricing";
-import { SimpleDropdown } from "./SimpleDropdown";
 import { CustomDropdown } from "./CustomDropdown";
 import { TaskDetailInline } from "./TaskDetailInline";
 import { ActivityDetailInline } from "./ActivityDetailInline";
@@ -143,14 +142,24 @@ export function CustomerDetail({ customer, onBack, onCreateInquiry, onViewInquir
         headers: { Authorization: `Bearer ${publicAnonKey}` },
         cache: 'no-store',
       });
+      
+      if (!response.ok) {
+        console.error(`HTTP error fetching activities! status: ${response.status}`);
+        setActivities([]);
+        setIsLoadingActivities(false);
+        return;
+      }
+      
       const result = await response.json();
       if (result.success) {
         setActivities(result.data);
       } else {
+        console.error("Failed to fetch activities:", result.error);
         setActivities([]);
       }
     } catch (error) {
       console.error("Error fetching activities:", error);
+      // Silently fail - set empty array
       setActivities([]);
     } finally {
       setIsLoadingActivities(false);
@@ -545,6 +554,21 @@ export function CustomerDetail({ customer, onBack, onCreateInquiry, onViewInquir
                       {formatDate(customer.created_at)}
                     </p>
                   </div>
+
+                  {/* Notes */}
+                  {customer.notes && (
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <MessageSquare size={14} style={{ color: "var(--neuron-ink-muted)" }} />
+                        <label className="text-[11px] font-medium uppercase tracking-wide" style={{ color: "var(--neuron-ink-muted)" }}>
+                          Notes
+                        </label>
+                      </div>
+                      <p className="text-[13px] pl-6 whitespace-pre-wrap" style={{ color: "var(--neuron-ink-primary)" }}>
+                        {customer.notes}
+                      </p>
+                    </div>
+                  )}
                 </div>
               ) : (
                 // Edit Mode
@@ -645,6 +669,25 @@ export function CustomerDetail({ customer, onBack, onCreateInquiry, onViewInquir
                       value={editedCustomer.lead_source}
                       onChange={(e) => setEditedCustomer({ ...editedCustomer, lead_source: e.target.value })}
                       className="w-full px-3 py-2 rounded-lg text-[13px] focus:outline-none focus:ring-2"
+                      style={{
+                        border: "1px solid var(--neuron-ui-border)",
+                        backgroundColor: "#FFFFFF",
+                        color: "var(--neuron-ink-primary)"
+                      }}
+                    />
+                  </div>
+
+                  {/* Notes */}
+                  <div>
+                    <label className="block text-[11px] font-medium uppercase tracking-wide mb-1.5" style={{ color: "var(--neuron-ink-muted)" }}>
+                      Notes
+                    </label>
+                    <textarea
+                      value={editedCustomer.notes || ''}
+                      onChange={(e) => setEditedCustomer({ ...editedCustomer, notes: e.target.value })}
+                      rows={3}
+                      placeholder="Additional information about the customer..."
+                      className="w-full px-3 py-2 rounded-lg text-[13px] focus:outline-none focus:ring-2 resize-none"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
                         backgroundColor: "#FFFFFF",
@@ -979,8 +1022,19 @@ export function CustomerDetail({ customer, onBack, onCreateInquiry, onViewInquir
                               <label className="block text-[11px] font-medium uppercase tracking-wide mb-2" style={{ color: "#667085" }}>
                                 Type *
                               </label>
-                              <SimpleDropdown
-                                options={["Call", "Email", "Meeting", "SMS", "Viber", "WhatsApp", "WeChat", "LinkedIn", "Note", "Marketing Email"]}
+                              <CustomDropdown
+                                options={[
+                                  { value: "Call", label: "Call", icon: <Phone size={16} /> },
+                                  { value: "Email", label: "Email", icon: <Mail size={16} /> },
+                                  { value: "Meeting", label: "Meeting", icon: <Users size={16} /> },
+                                  { value: "SMS", label: "SMS", icon: <Send size={16} /> },
+                                  { value: "Viber", label: "Viber", icon: <MessageCircle size={16} /> },
+                                  { value: "WhatsApp", label: "WhatsApp", icon: <MessageSquare size={16} /> },
+                                  { value: "WeChat", label: "WeChat", icon: <MessageSquare size={16} /> },
+                                  { value: "LinkedIn", label: "LinkedIn", icon: <Linkedin size={16} /> },
+                                  { value: "Note", label: "Note", icon: <StickyNote size={16} /> },
+                                  { value: "Marketing Email", label: "Marketing Email", icon: <MessageSquare size={16} /> }
+                                ]}
                                 value={newActivity.type || "Call"}
                                 onChange={(value) => setNewActivity({ ...newActivity, type: value })}
                               />
@@ -1134,19 +1188,8 @@ export function CustomerDetail({ customer, onBack, onCreateInquiry, onViewInquir
                               <div
                                 key={activity.id}
                                 onClick={() => {
-                                  // If activity is linked to a task, find and show the task
-                                  if (activity.task_id) {
-                                    const linkedTask = tasks.find(t => t.id === activity.task_id);
-                                    if (linkedTask) {
-                                      setSelectedTask(linkedTask);
-                                      setEditedTask(linkedTask);
-                                      setIsEditingTask(false);
-                                      setActiveTab("tasks");
-                                    }
-                                  } else {
-                                    // Show activity detail view
-                                    setSelectedActivity(activity);
-                                  }
+                                  // Always show activity detail view when clicking an activity
+                                  setSelectedActivity(activity);
                                 }}
                                 className="p-4 rounded-lg cursor-pointer transition-all"
                                 style={{
@@ -1199,6 +1242,16 @@ export function CustomerDetail({ customer, onBack, onCreateInquiry, onViewInquir
                   <ActivityDetailInline
                     activity={selectedActivity}
                     onBack={() => setSelectedActivity(null)}
+                    onUpdate={async () => {
+                      // Refresh activities list
+                      await fetchActivities();
+                      setSelectedActivity(null);
+                    }}
+                    onDelete={async () => {
+                      // Refresh activities list and go back
+                      await fetchActivities();
+                      setSelectedActivity(null);
+                    }}
                     contactInfo={selectedActivity.contact_id ? contacts.find(c => c.id === selectedActivity.contact_id) : null}
                     customerInfo={customer}
                     userName={selectedActivity.user_id ? users.find(u => u.id === selectedActivity.user_id)?.name : undefined}

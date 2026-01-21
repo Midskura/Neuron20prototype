@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { X, FileText, Building2, User, Package, MapPin, Ship, Truck, Shield, MoreHorizontal, Plus, ChevronDown, ChevronRight, Trash2 } from "lucide-react";
-import { SimpleDropdown } from "./SimpleDropdown";
 import { CustomDropdown } from "./CustomDropdown";
 import { BrokerageFormV2 } from "../pricing/quotations/BrokerageFormV2";
 import { ForwardingFormV2 } from "../pricing/quotations/ForwardingFormV2";
@@ -376,10 +375,10 @@ export function AddInquiryPanel({ onClose, onSave }: AddInquiryPanelProps) {
                     Loading customers...
                   </div>
                 ) : (
-                  <SimpleDropdown
+                  <CustomDropdown
                     value={customerId}
                     onChange={setCustomerId}
-                    options={customers.map(c => ({ value: c.id, label: c.name }))}
+                    options={customers.map(c => ({ value: c.id, label: c.name, icon: <Building2 size={16} /> }))}
                     placeholder="Select customer"
                   />
                 )}
@@ -404,7 +403,7 @@ export function AddInquiryPanel({ onClose, onSave }: AddInquiryPanelProps) {
                   )}
                 </label>
                 {customerId && availableContacts.length > 0 ? (
-                  <SimpleDropdown
+                  <CustomDropdown
                     value={contactPerson}
                     onChange={(value) => {
                       const contact = availableContacts.find(c => c.name === value);
@@ -417,7 +416,8 @@ export function AddInquiryPanel({ onClose, onSave }: AddInquiryPanelProps) {
                       }
                     }}
                     options={availableContacts.map(c => ({ 
-                      value: c.name, 
+                      value: c.name,
+                      icon: <User size={16} />, 
                       label: `${c.name}${c.title ? ` - ${c.title}` : ''}` 
                     }))} 
                     placeholder="Select or type a name"
@@ -700,10 +700,20 @@ export function AddInquiryPanel({ onClose, onSave }: AddInquiryPanelProps) {
                   >
                     Incoterm
                   </label>
-                  <SimpleDropdown
+                  <CustomDropdown
                     value={incoterm}
                     onChange={(value) => setIncoterm(value as Incoterm)}
-                    options={["EXW", "FOB", "CIF", "FCA", "CPT", "CIP", "DAP", "DPU", "DDP"]}
+                    options={[
+                      { value: "EXW", label: "EXW" },
+                      { value: "FOB", label: "FOB" },
+                      { value: "CIF", label: "CIF" },
+                      { value: "FCA", label: "FCA" },
+                      { value: "CPT", label: "CPT" },
+                      { value: "CIP", label: "CIP" },
+                      { value: "DAP", label: "DAP" },
+                      { value: "DPU", label: "DPU" },
+                      { value: "DDP", label: "DDP" }
+                    ]}
                     placeholder="Select"
                   />
                 </div>

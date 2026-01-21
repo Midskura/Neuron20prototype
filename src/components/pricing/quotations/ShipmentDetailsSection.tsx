@@ -1,5 +1,5 @@
-import { Ship } from "lucide-react";
-import { SimpleDropdown } from "../../bd/SimpleDropdown";
+import { Ship, Plane, Truck, Container, Box, FileText, ArrowRightLeft } from "lucide-react";
+import { CustomDropdown } from "../../bd/CustomDropdown";
 
 interface ShipmentDetailsSectionProps {
   movement: "IMPORT" | "EXPORT";
@@ -93,10 +93,13 @@ export function ShipmentDetailsSection({
                 }}>
                   Movement *
                 </label>
-                <SimpleDropdown
+                <CustomDropdown
                   value={movement}
                   onChange={(value) => setMovement(value as "IMPORT" | "EXPORT")}
-                  options={["IMPORT", "EXPORT"]}
+                  options={[
+                    { value: "IMPORT", label: "IMPORT", icon: <ArrowRightLeft size={16} /> },
+                    { value: "EXPORT", label: "EXPORT", icon: <ArrowRightLeft size={16} /> }
+                  ]}
                   placeholder="Select movement"
                 />
               </div>
@@ -111,10 +114,14 @@ export function ShipmentDetailsSection({
                 }}>
                   Category *
                 </label>
-                <SimpleDropdown
+                <CustomDropdown
                   value={category}
                   onChange={(value) => setCategory(value as "SEA FREIGHT" | "AIR FREIGHT" | "LAND FREIGHT")}
-                  options={["SEA FREIGHT", "AIR FREIGHT", "LAND FREIGHT"]}
+                  options={[
+                    { value: "SEA FREIGHT", label: "SEA FREIGHT", icon: <Ship size={16} /> },
+                    { value: "AIR FREIGHT", label: "AIR FREIGHT", icon: <Plane size={16} /> },
+                    { value: "LAND FREIGHT", label: "LAND FREIGHT", icon: <Truck size={16} /> }
+                  ]}
                   placeholder="Select category"
                 />
               </div>
@@ -132,10 +139,15 @@ export function ShipmentDetailsSection({
                 }}>
                   Shipment Freight *
                 </label>
-                <SimpleDropdown
+                <CustomDropdown
                   value={shipmentFreight}
                   onChange={(value) => setShipmentFreight(value as any)}
-                  options={["LCL", "FCL", "CONSOLIDATION", "BREAK BULK"]}
+                  options={[
+                    { value: "LCL", label: "LCL", icon: <Box size={16} /> },
+                    { value: "FCL", label: "FCL", icon: <Container size={16} /> },
+                    { value: "CONSOLIDATION", label: "CONSOLIDATION", icon: <Box size={16} /> },
+                    { value: "BREAK BULK", label: "BREAK BULK", icon: <Container size={16} /> }
+                  ]}
                   placeholder="Select type"
                 />
               </div>
@@ -150,10 +162,20 @@ export function ShipmentDetailsSection({
                 }}>
                   Incoterm
                 </label>
-                <SimpleDropdown
+                <CustomDropdown
                   value={incoterm}
                   onChange={setIncoterm}
-                  options={["EXW", "FOB", "CIF", "FCA", "CPT", "CIP", "DAP", "DPU", "DDP"]}
+                  options={[
+                    { value: "EXW", label: "EXW", icon: <FileText size={16} /> },
+                    { value: "FOB", label: "FOB", icon: <FileText size={16} /> },
+                    { value: "CIF", label: "CIF", icon: <FileText size={16} /> },
+                    { value: "FCA", label: "FCA", icon: <FileText size={16} /> },
+                    { value: "CPT", label: "CPT", icon: <FileText size={16} /> },
+                    { value: "CIP", label: "CIP", icon: <FileText size={16} /> },
+                    { value: "DAP", label: "DAP", icon: <FileText size={16} /> },
+                    { value: "DPU", label: "DPU", icon: <FileText size={16} /> },
+                    { value: "DDP", label: "DDP", icon: <FileText size={16} /> }
+                  ]}
                   placeholder="Select incoterm"
                 />
               </div>

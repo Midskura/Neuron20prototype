@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
 import { EVouchersList } from "./accounting/EVouchersList";
+import { CollectionsContent } from "./accounting/CollectionsContent";
+import { BillingsContent } from "./accounting/BillingsContent";
 import type { EVoucher } from "../types/evoucher";
 
 type AccountingView = "evouchers" | "billings" | "collections" | "expenses" | "ledger" | "reports";
@@ -42,19 +44,9 @@ export function Accounting({ view = "evouchers" }: AccountingProps) {
           </>
         )}
 
-        {view === "billings" && (
-          <div style={{ padding: "32px 48px" }}>
-            <h2 style={{ fontSize: "24px", fontWeight: 600, color: "#12332B" }}>Billings</h2>
-            <p style={{ fontSize: "14px", color: "#667085", marginTop: "8px" }}>Manage customer invoices and billing</p>
-          </div>
-        )}
+        {view === "billings" && <BillingsContent />}
 
-        {view === "collections" && (
-          <div style={{ padding: "32px 48px" }}>
-            <h2 style={{ fontSize: "24px", fontWeight: 600, color: "#12332B" }}>Collections</h2>
-            <p style={{ fontSize: "14px", color: "#667085", marginTop: "8px" }}>Track customer payments and receipts</p>
-          </div>
-        )}
+        {view === "collections" && <CollectionsContent />}
 
         {view === "expenses" && (
           <div style={{ padding: "32px 48px" }}>

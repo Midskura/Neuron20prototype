@@ -1,5 +1,5 @@
-import { Truck, MapPin } from "lucide-react";
-import { SimpleDropdown } from "../../bd/SimpleDropdown";
+import { Truck, MapPin, PackageCheck } from "lucide-react";
+import { CustomDropdown } from "../../bd/CustomDropdown";
 import type { TruckingDetails, TruckType } from "../../../types/pricing";
 
 interface TruckingFormV2Props {
@@ -58,10 +58,22 @@ export function TruckingFormV2({ data, onChange }: TruckingFormV2Props) {
           <label style={{ display: "block", fontSize: "11px", fontWeight: 500, color: "#667085", marginBottom: "4px" }}>
             Truck Type *
           </label>
-          <SimpleDropdown
+          <CustomDropdown
             value={data.truck_type || ""}
             onChange={(value) => updateField('truck_type', value as TruckType)}
-            options={["10W", "Closed Van", "Open Truck", "Refrigerated", "Flatbed", "Wing Van", "AW", "DW", "2W", "3W", "4Br"]}
+            options={[
+              { value: "10W", label: "10W", icon: <Truck size={16} /> },
+              { value: "Closed Van", label: "Closed Van", icon: <Truck size={16} /> },
+              { value: "Open Truck", label: "Open Truck", icon: <Truck size={16} /> },
+              { value: "Refrigerated", label: "Refrigerated", icon: <Truck size={16} /> },
+              { value: "Flatbed", label: "Flatbed", icon: <Truck size={16} /> },
+              { value: "Wing Van", label: "Wing Van", icon: <Truck size={16} /> },
+              { value: "AW", label: "AW", icon: <Truck size={16} /> },
+              { value: "DW", label: "DW", icon: <Truck size={16} /> },
+              { value: "2W", label: "2W", icon: <Truck size={16} /> },
+              { value: "3W", label: "3W", icon: <Truck size={16} /> },
+              { value: "4Br", label: "4Br", icon: <Truck size={16} /> }
+            ]}
             placeholder="Select truck type"
           />
         </div>

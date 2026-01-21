@@ -8,7 +8,7 @@ import { PricingContactDetail } from "./pricing/PricingContactDetail";
 import { CustomersListWithFilters } from "./crm/CustomersListWithFilters";
 import { CustomerDetail } from "./bd/CustomerDetail";
 import { PricingCustomerDetail } from "./pricing/PricingCustomerDetail";
-import { VendorsList } from "./pricing/VendorsList";
+import { NetworkPartnersModule } from "./pricing/NetworkPartnersModule";
 import { PricingReports } from "./pricing/PricingReports";
 import type { Contact, Customer } from "../types/bd";
 import { ContactsModuleWithBackend } from "./crm/ContactsModuleWithBackend";
@@ -228,6 +228,32 @@ export function Pricing({ view = "contacts", onViewInquiry, inquiryId, currentUs
     }
   };
 
+  const handleDeleteQuotation = async () => {
+    if (!selectedQuotation) return;
+    
+    try {
+      const response = await fetch(`${API_URL}/quotations/${selectedQuotation.id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${publicAnonKey}`,
+        }
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        console.log("Quotation deleted successfully");
+        await fetchQuotations(); // Refresh list
+        setSubView("list"); // Go back to list
+        setSelectedQuotation(null);
+      } else {
+        console.error('Error deleting quotation:', result.error);
+      }
+    } catch (error) {
+      console.error('Error deleting quotation:', error);
+    }
+  };
+
   const handleCreateInquiry = (customer: Customer) => {
     // Pre-fill customer info and open quotation builder
     const inquiryTemplate: Partial<QuotationNew> = {
@@ -302,6 +328,7 @@ export function Pricing({ view = "contacts", onViewInquiry, inquiryId, currentUs
                   console.log("Project conversion not available for PD users");
                 }}
                 currentUser={currentUser}
+                onDelete={handleDeleteQuotation}
               />
             )}
             {subView === "create" && (
@@ -317,7 +344,7 @@ export function Pricing({ view = "contacts", onViewInquiry, inquiryId, currentUs
 
 
 
-        {view === "vendors" && <VendorsList />}
+        {view === "vendors" && <NetworkPartnersModule />}
 
         {view === "reports" && <PricingReports />}
       </div>

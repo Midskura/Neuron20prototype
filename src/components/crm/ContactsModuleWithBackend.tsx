@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Search, Plus, Mail, Phone, Building2, User } from "lucide-react";
+import { Search, Plus, Mail, Phone, Building2, User, CircleDot } from "lucide-react";
 import type { Contact } from "../../types/contact";
 import { ContactCreationModal } from "./ContactCreationModal";
 import { ContactDetailView } from "./ContactDetailView";
@@ -7,6 +7,7 @@ import { QuotationBuilderV3 } from "../pricing/quotations/QuotationBuilderV3";
 import { projectId, publicAnonKey } from "../../utils/supabase/info";
 import { toast } from "../ui/toast-utils";
 import type { QuotationNew } from "../../types/pricing";
+import { CustomDropdown } from "../bd/CustomDropdown";
 
 const API_URL = `https://${projectId}.supabase.co/functions/v1/make-server-c142e950`;
 
@@ -383,31 +384,18 @@ export function ContactsModuleWithBackend({ onViewQuotation, contactId }: Contac
           </div>
 
           {/* Status Filter */}
-          <select
+          <CustomDropdown
             value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            style={{
-              padding: "10px 36px 10px 14px",
-              border: "1px solid var(--neuron-ui-border)",
-              borderRadius: "8px",
-              fontSize: "14px",
-              color: "var(--neuron-ink-secondary)",
-              backgroundColor: "white",
-              cursor: "pointer",
-              outline: "none",
-              appearance: "none",
-              backgroundImage: `url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1.5L6 6.5L11 1.5' stroke='%236B7280' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")`,
-              backgroundRepeat: "no-repeat",
-              backgroundPosition: "right 12px center",
-              minWidth: "150px",
-            }}
-          >
-            <option>All Statuses</option>
-            <option>Lead</option>
-            <option>Prospect</option>
-            <option>MQL</option>
-            <option>Customer</option>
-          </select>
+            onChange={setStatusFilter}
+            options={[
+              { value: "All Statuses", label: "All Statuses", icon: <CircleDot size={16} /> },
+              { value: "Lead", label: "Lead", icon: <CircleDot size={16} style={{ color: "#6B7280" }} /> },
+              { value: "Prospect", label: "Prospect", icon: <CircleDot size={16} style={{ color: "#F59E0B" }} /> },
+              { value: "MQL", label: "MQL", icon: <CircleDot size={16} style={{ color: "#3B82F6" }} /> },
+              { value: "Customer", label: "Customer", icon: <CircleDot size={16} style={{ color: "#10B981" }} /> }
+            ]}
+            placeholder="Filter by status"
+          />
         </div>
       </div>
 

@@ -1,14 +1,18 @@
-import { X, FileText, User, Calendar, Building2, CheckCircle, XCircle, Clock, ArrowRight } from "lucide-react";
+import { X, FileText, User, Calendar, Building2, CheckCircle, XCircle, Clock, ArrowRight, ExternalLink } from "lucide-react";
 import { PhilippinePeso } from "../icons/PhilippinePeso";
+import { EVoucherStatusBadge } from "./evouchers/EVoucherStatusBadge";
+import { EVoucherWorkflowPanel } from "./evouchers/EVoucherWorkflowPanel";
+import { EVoucherHistoryTimeline } from "./evouchers/EVoucherHistoryTimeline";
 import type { EVoucher } from "../../types/evoucher";
 
 interface EVoucherDetailViewProps {
   evoucher: EVoucher;
   onClose: () => void;
-  currentUser?: { name: string; email: string; role?: string };
+  currentUser?: { id: string; name: string; email: string; role?: string; department?: string };
+  onStatusChange?: () => void;
 }
 
-export function EVoucherDetailView({ evoucher, onClose, currentUser }: EVoucherDetailViewProps) {
+export function EVoucherDetailView({ evoucher, onClose, currentUser, onStatusChange }: EVoucherDetailViewProps) {
   const getStatusColor = (status: string) => {
     switch (status) {
       case "Approved":
@@ -269,48 +273,54 @@ export function EVoucherDetailView({ evoucher, onClose, currentUser }: EVoucherD
                   Workflow History
                 </h3>
                 <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-                  {evoucher.workflow_history.map((item, index) => {
-                    const isLast = index === evoucher.workflow_history.length - 1;
-                    return (
-                      <div key={item.id} style={{ display: "flex", gap: "12px" }}>
-                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-                          <div
-                            style={{
-                              width: "8px",
-                              height: "8px",
-                              borderRadius: "50%",
-                              backgroundColor: isLast ? "#0F766E" : "#CBD5E1",
-                            }}
-                          />
-                          {!isLast && (
-                            <div style={{ width: "2px", flex: 1, backgroundColor: "#E2E8F0", minHeight: "24px" }} />
-                          )}
-                        </div>
-                        <div style={{ flex: 1, paddingBottom: isLast ? "0" : "8px" }}>
-                          <div style={{ fontSize: "14px", fontWeight: 500, color: "#374151", marginBottom: "2px" }}>
-                            {item.action}
+                  {(evoucher.workflow_history || []).length === 0 ? (
+                    <div style={{ fontSize: "14px", color: "#667085", textAlign: "center", padding: "20px" }}>
+                      No workflow history yet
+                    </div>
+                  ) : (
+                    (evoucher.workflow_history || []).map((item, index) => {
+                      const isLast = index === (evoucher.workflow_history || []).length - 1;
+                      return (
+                        <div key={item.id} style={{ display: "flex", gap: "12px" }}>
+                          <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+                            <div
+                              style={{
+                                width: "8px",
+                                height: "8px",
+                                borderRadius: "50%",
+                                backgroundColor: isLast ? "#0F766E" : "#CBD5E1",
+                              }}
+                            />
+                            {!isLast && (
+                              <div style={{ width: "2px", flex: 1, backgroundColor: "#E2E8F0", minHeight: "24px" }} />
+                            )}
                           </div>
-                          <div style={{ fontSize: "13px", color: "#667085" }}>
-                            {item.user_name} ({item.user_role})
-                          </div>
-                          <div style={{ fontSize: "12px", color: "#98A2B3" }}>
-                            {new Date(item.timestamp).toLocaleString('en-PH', { 
-                              month: 'short', 
-                              day: 'numeric', 
-                              year: 'numeric',
-                              hour: '2-digit',
-                              minute: '2-digit'
-                            })}
-                          </div>
-                          {item.remarks && (
-                            <div style={{ fontSize: "13px", color: "#667085", marginTop: "4px", fontStyle: "italic" }}>
-                              "{item.remarks}"
+                          <div style={{ flex: 1, paddingBottom: isLast ? "0" : "8px" }}>
+                            <div style={{ fontSize: "14px", fontWeight: 500, color: "#374151", marginBottom: "2px" }}>
+                              {item.action}
                             </div>
-                          )}
+                            <div style={{ fontSize: "13px", color: "#667085" }}>
+                              {item.user_name} ({item.user_role})
+                            </div>
+                            <div style={{ fontSize: "12px", color: "#98A2B3" }}>
+                              {new Date(item.timestamp).toLocaleString('en-PH', { 
+                                month: 'short', 
+                                day: 'numeric', 
+                                year: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })}
+                            </div>
+                            {item.remarks && (
+                              <div style={{ fontSize: "13px", color: "#667085", marginTop: "4px", fontStyle: "italic" }}>
+                                "{item.remarks}"
+                              </div>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })
+                  )}
                 </div>
               </div>
             </div>
@@ -356,7 +366,7 @@ export function EVoucherDetailView({ evoucher, onClose, currentUser }: EVoucherD
               </div>
 
               {/* Approvers Card */}
-              {evoucher.approvers.length > 0 && (
+              {evoucher.approvers && evoucher.approvers.length > 0 && (
                 <div
                   style={{
                     padding: "20px",
@@ -368,7 +378,7 @@ export function EVoucherDetailView({ evoucher, onClose, currentUser }: EVoucherD
                     Approvers
                   </h3>
                   <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                    {evoucher.approvers.map((approver) => (
+                    {(evoucher.approvers || []).map((approver) => (
                       <div key={approver.id} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                         <CheckCircle size={16} style={{ color: "#059669" }} />
                         <div style={{ flex: 1 }}>

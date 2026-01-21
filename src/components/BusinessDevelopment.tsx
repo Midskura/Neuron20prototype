@@ -6,16 +6,17 @@ import { ContactDetail } from "./bd/ContactDetail";
 import { TasksList } from "./bd/TasksList";
 import { TaskDetailInline } from "./bd/TaskDetailInline";
 import { ActivitiesList } from "./bd/ActivitiesList";
+import { ActivityDetailInline } from "./bd/ActivityDetailInline";
 import { BudgetRequestList } from "./bd/BudgetRequestList";
 import { BDReports } from "./bd/BDReports";
 import { QuotationsListWithFilters } from "./pricing/QuotationsListWithFilters";
 import { QuotationBuilder } from "./bd/QuotationBuilder";
 import { QuotationDetail } from "./pricing/QuotationDetail";
-import { ProjectsList } from "./bd/ProjectsList";
-import { ProjectDetail } from "./bd/ProjectDetail";
+import { ProjectsModule } from "./projects/ProjectsModule";
 import type { Contact } from "../types/bd";
 import type { Customer } from "../types/bd";
 import type { Task } from "../types/bd";
+import type { Activity } from "../types/bd";
 import type { QuotationNew, Project } from "../types/pricing";
 import { projectId, publicAnonKey } from '../utils/supabase/info';
 import { toast } from "./ui/toast-utils";
@@ -42,12 +43,20 @@ export function BusinessDevelopment({ view: initialView = "contacts", onCreateIn
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [selectedActivity, setSelectedActivity] = useState<Activity | null>(null);
   const [selectedQuotation, setSelectedQuotation] = useState<QuotationNew | null>(null);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [quotations, setQuotations] = useState<QuotationNew[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [customerDetailKey, setCustomerDetailKey] = useState(0);
+  
+  // State for fetched related data
+  const [activityContactInfo, setActivityContactInfo] = useState<Contact | null>(null);
+  const [activityCustomerInfo, setActivityCustomerInfo] = useState<Customer | null>(null);
+  const [activityUserName, setActivityUserName] = useState<string>("—");
+  const [taskContacts, setTaskContacts] = useState<any[]>([]);
+  const [taskCustomers, setTaskCustomers] = useState<any[]>([]);
 
   // Map department name to userDepartment format
   const userDepartment: "BD" | "PD" = "BD"; // Always BD since this is the Business Development module
@@ -143,6 +152,7 @@ export function BusinessDevelopment({ view: initialView = "contacts", onCreateIn
     setSelectedContact(null);
     setSelectedCustomer(null);
     setSelectedTask(null);
+    setSelectedActivity(null);
     setSelectedQuotation(null);
     setSelectedProject(null);
   }, [view]);
@@ -184,9 +194,9 @@ export function BusinessDevelopment({ view: initialView = "contacts", onCreateIn
             const backendContact = result.data;
             const bdContact: Contact = {
               id: backendContact.id,
-              name: backendContact.name,
-              first_name: backendContact.name.split(' ')[0] || backendContact.name,
-              last_name: backendContact.name.split(' ').slice(1).join(' ') || '',
+              name: `${backendContact.first_name || ''} ${backendContact.last_name || ''}`.trim(),
+              first_name: backendContact.first_name || '',
+              last_name: backendContact.last_name || '',
               email: backendContact.email,
               phone: backendContact.phone || '',
               mobile_number: backendContact.phone || '',
@@ -220,6 +230,133 @@ export function BusinessDevelopment({ view: initialView = "contacts", onCreateIn
     fetchContactById();
   }, [contactId, view]);
 
+  // Fetch related data when an activity is selected
+  useEffect(() => {
+    const fetchActivityRelatedData = async () => {
+      if (!selectedActivity) {
+        setActivityContactInfo(null);
+        setActivityCustomerInfo(null);
+        setActivityUserName("—");
+        return;
+      }
+
+      // Fetch contact info if contact_id exists
+      if (selectedActivity.contact_id) {
+        try {
+          const response = await fetch(`${API_URL}/contacts/${selectedActivity.contact_id}`, {
+            headers: {
+              'Authorization': `Bearer ${publicAnonKey}`,
+              'Content-Type': 'application/json'
+            }
+          });
+          const result = await response.json();
+          if (result.success && result.data) {
+            const backendContact = result.data;
+            const bdContact: Contact = {
+              id: backendContact.id,
+              name: `${backendContact.first_name || ''} ${backendContact.last_name || ''}`.trim(),
+              first_name: backendContact.first_name || '',
+              last_name: backendContact.last_name || '',
+              email: backendContact.email,
+              phone: backendContact.phone || '',
+              mobile_number: backendContact.phone || '',
+              company_id: backendContact.customer_id || backendContact.id,
+              lifecycle_stage: backendContact.status === "Customer" ? "Customer" : 
+                               backendContact.status === "MQL" ? "MQL" : 
+                               backendContact.status === "Prospect" ? "SQL" : "Lead",
+              lead_status: "Connected",
+              job_title: backendContact.title || '',
+              title: backendContact.title || null,
+              customer_id: backendContact.customer_id || null,
+              owner_id: '',
+              notes: backendContact.notes || null,
+              created_by: null,
+              created_at: backendContact.created_date || backendContact.created_at,
+              updated_at: backendContact.updated_at
+            };
+            setActivityContactInfo(bdContact);
+          }
+        } catch (error) {
+          console.error('Error fetching activity contact:', error);
+        }
+      }
+
+      // Fetch customer info if customer_id exists
+      if (selectedActivity.customer_id) {
+        try {
+          const response = await fetch(`${API_URL}/customers/${selectedActivity.customer_id}`, {
+            headers: {
+              'Authorization': `Bearer ${publicAnonKey}`,
+              'Content-Type': 'application/json'
+            }
+          });
+          const result = await response.json();
+          if (result.success && result.data) {
+            setActivityCustomerInfo(result.data);
+          }
+        } catch (error) {
+          console.error('Error fetching activity customer:', error);
+        }
+      }
+
+      // Set user name from activity user_id
+      if (selectedActivity.user_id) {
+        setActivityUserName(selectedActivity.user_id);
+      }
+    };
+
+    fetchActivityRelatedData();
+  }, [selectedActivity]);
+
+  // Fetch related data when a task is selected
+  useEffect(() => {
+    const fetchTaskRelatedData = async () => {
+      if (!selectedTask) {
+        setTaskContacts([]);
+        setTaskCustomers([]);
+        return;
+      }
+
+      // Fetch contact if contact_id exists
+      if (selectedTask.contact_id) {
+        try {
+          const response = await fetch(`${API_URL}/contacts/${selectedTask.contact_id}`, {
+            headers: {
+              'Authorization': `Bearer ${publicAnonKey}`,
+              'Content-Type': 'application/json'
+            }
+          });
+          const result = await response.json();
+          if (result.success && result.data) {
+            setTaskContacts([result.data]);
+          }
+        } catch (error) {
+          console.error('Error fetching task contact:', error);
+        }
+      }
+
+      // Fetch customer if customer_id exists
+      if (selectedTask.customer_id) {
+        try {
+          const response = await fetch(`${API_URL}/customers/${selectedTask.customer_id}`, {
+            headers: {
+              'Authorization': `Bearer ${publicAnonKey}`,
+              'Content-Type': 'application/json'
+            }
+          });
+          const result = await response.json();
+          if (result.success && result.data) {
+            setTaskCustomers([result.data]);
+          }
+        } catch (error) {
+          console.error('Error fetching task customer:', error);
+        }
+      }
+    };
+
+    fetchTaskRelatedData();
+  }, [selectedTask]);
+
   const handleViewContact = (contact: Contact) => {
     setSelectedContact(contact);
     setSubView("detail");
@@ -247,6 +384,16 @@ export function BusinessDevelopment({ view: initialView = "contacts", onCreateIn
 
   const handleBackFromTask = () => {
     setSelectedTask(null);
+    setSubView("list");
+  };
+
+  const handleViewActivity = (activity: Activity) => {
+    setSelectedActivity(activity);
+    setSubView("detail");
+  };
+
+  const handleBackFromActivity = () => {
+    setSelectedActivity(null);
     setSubView("list");
   };
 
@@ -350,6 +497,35 @@ export function BusinessDevelopment({ view: initialView = "contacts", onCreateIn
       }
     } catch (error) {
       console.error('Error updating quotation:', error);
+    }
+  };
+
+  const handleDeleteQuotation = async () => {
+    if (!selectedQuotation) return;
+    
+    try {
+      const response = await fetch(`${API_URL}/quotations/${selectedQuotation.id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${publicAnonKey}`,
+        }
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        console.log("Quotation deleted successfully");
+        toast.success("Quotation deleted successfully");
+        await fetchQuotations(); // Refresh list
+        setSubView("list"); // Go back to list
+        setSelectedQuotation(null);
+      } else {
+        console.error('Error deleting quotation:', result.error);
+        toast.error("Error deleting quotation", result.error);
+      }
+    } catch (error) {
+      console.error('Error deleting quotation:', error);
+      toast.error("Unable to delete quotation");
     }
   };
 
@@ -476,13 +652,41 @@ export function BusinessDevelopment({ view: initialView = "contacts", onCreateIn
               <TasksList onViewTask={handleViewTask} />
             )}
             {subView === "detail" && selectedTask && (
-              <TaskDetailInline task={selectedTask} onBack={handleBackFromTask} />
+              <div className="h-full" style={{ padding: "32px 48px", background: "#FFFFFF" }}>
+                <TaskDetailInline 
+                  task={selectedTask} 
+                  onBack={handleBackFromTask}
+                  customers={taskCustomers}
+                  contacts={taskContacts}
+                />
+              </div>
             )}
           </>
         )}
 
         {view === "activities" && (
-          <ActivitiesList />
+          <>
+            {!selectedActivity ? (
+              <ActivitiesList onViewActivity={handleViewActivity} />
+            ) : (
+              <div className="h-full" style={{ padding: "32px 48px", background: "#FFFFFF" }}>
+                <ActivityDetailInline
+                  activity={selectedActivity}
+                  onBack={handleBackFromActivity}
+                  onUpdate={() => {
+                    // Refresh activities list if needed
+                    handleBackFromActivity();
+                  }}
+                  onDelete={() => {
+                    handleBackFromActivity();
+                  }}
+                  contactInfo={activityContactInfo}
+                  customerInfo={activityCustomerInfo}
+                  userName={activityUserName}
+                />
+              </div>
+            )}
+          </>
         )}
 
         {view === "budget-requests" && (
@@ -550,6 +754,7 @@ export function BusinessDevelopment({ view: initialView = "contacts", onCreateIn
                   }
                 }}
                 currentUser={currentUser}
+                onDelete={handleDeleteQuotation}
               />
             )}
             {subView === "builder" && (
@@ -571,38 +776,15 @@ export function BusinessDevelopment({ view: initialView = "contacts", onCreateIn
         )}
 
         {view === "projects" && (
-          <>
-            {subView === "list" && (
-              <ProjectsList
-                projects={projects}
-                onSelectProject={(project) => {
-                  setSelectedProject(project);
-                  setSubView("detail");
-                }}
-                isLoading={isLoading}
-              />
-            )}
-            {subView === "detail" && selectedProject && (
-              <ProjectDetail
-                project={selectedProject}
-                onBack={() => {
-                  setSelectedProject(null);
-                  setSubView("list");
-                  fetchProjects(); // Refresh projects list
-                }}
-                onUpdate={() => {
-                  // Refresh the project data
-                  fetchProjects();
-                }}
-                currentUser={currentUser ? {
-                  id: "user-bd-rep-001", // TODO: Get from actual user context
-                  name: currentUser.name,
-                  email: currentUser.email,
-                  department: currentUser.department
-                } : undefined}
-              />
-            )}
-          </>
+          <ProjectsModule
+            currentUser={currentUser ? {
+              id: "user-bd-rep-001", // TODO: Get from actual user context
+              name: currentUser.name,
+              email: currentUser.email,
+              department: currentUser.department
+            } : undefined}
+            onCreateTicket={onCreateTicket}
+          />
         )}
       </div>
     </div>

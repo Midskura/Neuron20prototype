@@ -3,6 +3,7 @@ import { ArrowLeft, MoreVertical, Lock, Edit3, Clock, ChevronRight, User } from 
 import type { ForwardingBooking, ExecutionStatus } from "../../../types/operations";
 import { BillingsTab } from "../shared/BillingsTab";
 import { ExpensesTab } from "../shared/ExpensesTab";
+import { BookingCommentsTab } from "../../shared/BookingCommentsTab";
 
 interface ForwardingBookingDetailsProps {
   booking: ForwardingBooking;
@@ -11,7 +12,7 @@ interface ForwardingBookingDetailsProps {
   currentUser?: { name: string; email: string; department: string } | null;
 }
 
-type DetailTab = "booking-info" | "billings" | "expenses";
+type DetailTab = "booking-info" | "billings" | "expenses" | "comments";
 
 const STATUS_COLORS: Record<ExecutionStatus, string> = {
   "Draft": "bg-gray-100 text-gray-700 border-gray-300",
@@ -48,43 +49,9 @@ const initialActivityLog: ActivityLogEntry[] = [
 ];
 
 // Field locking rules based on status
+// NOTE: All fields are now editable regardless of status since changes are tracked in activity log
 function isFieldLocked(fieldName: string, status: ExecutionStatus): { locked: boolean; reason: string } {
-  // Completed bookings - lock all operational fields
-  if (status === "Completed") {
-    const operationalFields = [
-      "accountHandler", "typeOfEntry", "cargoType", "deliveryAddress",
-      "consignee", "shipper", "mblMawb", "hblHawb", "registryNumber",
-      "carrier", "forwarder", "countryOfOrigin", "aolPol", "aodPod",
-      "eta", "grossWeight", "dimensions", "commodityDescription",
-      "preferentialTreatment", "warehouseLocation"
-    ];
-    
-    if (operationalFields.includes(fieldName)) {
-      return { locked: true, reason: "This field is locked because the booking is Completed" };
-    }
-  }
-
-  // Cancelled bookings - lock everything
-  if (status === "Cancelled") {
-    return { locked: true, reason: "This field is locked because the booking is Cancelled" };
-  }
-
-  // In Progress - lock routing and carrier information
-  if (status === "In Progress") {
-    const routingFields = ["aolPol", "aodPod", "carrier", "forwarder"];
-    if (routingFields.includes(fieldName)) {
-      return { locked: true, reason: "This field is locked because the booking is In Progress" };
-    }
-  }
-
-  // Confirmed - lock customer-facing fields
-  if (status === "Confirmed" || status === "In Progress") {
-    const customerFields = ["deliveryAddress", "cargoType", "typeOfEntry"];
-    if (customerFields.includes(fieldName)) {
-      return { locked: true, reason: "This field is locked because the booking is Confirmed" };
-    }
-  }
-
+  // All fields are editable - changes will be tracked in the activity log
   return { locked: false, reason: "" };
 }
 
@@ -316,6 +283,23 @@ export function ForwardingBookingDetails({
         >
           Expenses
         </button>
+        <button
+          onClick={() => setActiveTab("comments")}
+          style={{
+            padding: "16px 0",
+            background: "none",
+            border: "none",
+            borderBottom: activeTab === "comments" ? "2px solid #0F766E" : "2px solid transparent",
+            color: activeTab === "comments" ? "#0F766E" : "#667085",
+            fontSize: "14px",
+            fontWeight: 600,
+            cursor: "pointer",
+            transition: "all 0.2s ease",
+            marginBottom: "-1px"
+          }}
+        >
+          Comments
+        </button>
       </div>
 
       {/* Content with Timeline Sidebar */}
@@ -350,6 +334,14 @@ export function ForwardingBookingDetails({
               bookingId={booking.bookingId}
               bookingType="forwarding"
               currentUser={currentUser}
+            />
+          )}
+          {activeTab === "comments" && (
+            <BookingCommentsTab
+              bookingId={booking.bookingId}
+              currentUserId={currentUser?.email || "unknown"}
+              currentUserName={currentUser?.name || "Unknown User"}
+              currentUserDepartment={currentUser?.department || "Operations"}
             />
           )}
         </div>
@@ -828,18 +820,7 @@ function EditableField({
             className="edit-icon"
           />
         )}
-        {saveSuccess && (
-          <span style={{
-            position: "absolute",
-            right: "14px",
-            top: "50%",
-            transform: "translateY(-50%)",
-            fontSize: "12px",
-            color: "#10B981"
-          }}>
-            ✓ Saved
-          </span>
-        )}
+        {/* Removed "✓ Saved" indicator */}
       </div>
       <style>{`
         div:hover .edit-icon {
@@ -1318,142 +1299,105 @@ function BookingInformationTab({
           </h2>
 
           <div style={{ display: "grid", gap: "20px" }}>
-            <div>
-              <label style={{
-                display: "block",
-                fontSize: "13px",
-                fontWeight: 500,
-                color: "var(--neuron-ink-base)",
-                marginBottom: "8px"
-              }}>
-                Container Numbers
-              </label>
-              <div style={{
-                padding: "10px 14px",
-                backgroundColor: "#FAFBFC",
-                border: "1px solid var(--neuron-ui-border)",
-                borderRadius: "6px",
-                fontSize: "14px",
-                color: "var(--neuron-ink-primary)"
-              }}>
-                {booking.containerNumbers && booking.containerNumbers.length > 0
-                  ? booking.containerNumbers.join(", ")
-                  : "—"}
-              </div>
-            </div>
+            <EditableField
+              fieldName="containerNumbers"
+              label="Container Numbers"
+              value={booking.containerNumbers && booking.containerNumbers.length > 0
+                ? booking.containerNumbers.join(", ")
+                : ""}
+              type="textarea"
+              status={booking.status}
+              placeholder="Enter container numbers separated by commas..."
+              onSave={(value) => {
+                console.log("Saving Container Numbers:", value);
+                const containerArray = value.split(",").map(c => c.trim()).filter(c => c !== "");
+                onBookingUpdated();
+                addActivity("containerNumbers", 
+                  booking.containerNumbers?.join(", ") || "", 
+                  value);
+                setEditedBooking(prev => ({ ...prev, containerNumbers: containerArray }));
+              }}
+            />
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "20px" }}>
-              <div>
-                <label style={{
-                  display: "block",
-                  fontSize: "13px",
-                  fontWeight: 500,
-                  color: "var(--neuron-ink-base)",
-                  marginBottom: "8px"
-                }}>
-                  Det/Dem Validity
-                </label>
-                <div style={{
-                  padding: "10px 14px",
-                  backgroundColor: "#FAFBFC",
-                  border: "1px solid var(--neuron-ui-border)",
-                  borderRadius: "6px",
-                  fontSize: "14px",
-                  color: "var(--neuron-ink-primary)"
-                }}>
-                  {booking.detDemValidity ? new Date(booking.detDemValidity).toLocaleDateString() : "—"}
-                </div>
-              </div>
+              <EditableField
+                fieldName="detDemValidity"
+                label="Det/Dem Validity"
+                value={booking.detDemValidity || ""}
+                type="date"
+                status={booking.status}
+                placeholder="Select date..."
+                onSave={(value) => {
+                  console.log("Saving Det/Dem Validity:", value);
+                  onBookingUpdated();
+                  addActivity("detDemValidity", booking.detDemValidity || "", value);
+                  setEditedBooking(prev => ({ ...prev, detDemValidity: value }));
+                }}
+              />
 
-              <div>
-                <label style={{
-                  display: "block",
-                  fontSize: "13px",
-                  fontWeight: 500,
-                  color: "var(--neuron-ink-base)",
-                  marginBottom: "8px"
-                }}>
-                  Storage Validity
-                </label>
-                <div style={{
-                  padding: "10px 14px",
-                  backgroundColor: "#FAFBFC",
-                  border: "1px solid var(--neuron-ui-border)",
-                  borderRadius: "6px",
-                  fontSize: "14px",
-                  color: "var(--neuron-ink-primary)"
-                }}>
-                  {booking.storageValidity ? new Date(booking.storageValidity).toLocaleDateString() : "—"}
-                </div>
-              </div>
+              <EditableField
+                fieldName="storageValidity"
+                label="Storage Validity"
+                value={booking.storageValidity || ""}
+                type="date"
+                status={booking.status}
+                placeholder="Select date..."
+                onSave={(value) => {
+                  console.log("Saving Storage Validity:", value);
+                  onBookingUpdated();
+                  addActivity("storageValidity", booking.storageValidity || "", value);
+                  setEditedBooking(prev => ({ ...prev, storageValidity: value }));
+                }}
+              />
 
-              <div>
-                <label style={{
-                  display: "block",
-                  fontSize: "13px",
-                  fontWeight: 500,
-                  color: "var(--neuron-ink-base)",
-                  marginBottom: "8px"
-                }}>
-                  CRO Availability
-                </label>
-                <div style={{
-                  padding: "10px 14px",
-                  backgroundColor: "#FAFBFC",
-                  border: "1px solid var(--neuron-ui-border)",
-                  borderRadius: "6px",
-                  fontSize: "14px",
-                  color: "var(--neuron-ink-primary)"
-                }}>
-                  {booking.croAvailability ? new Date(booking.croAvailability).toLocaleDateString() : "—"}
-                </div>
-              </div>
+              <EditableField
+                fieldName="croAvailability"
+                label="CRO Availability"
+                value={booking.croAvailability || ""}
+                type="date"
+                status={booking.status}
+                placeholder="Select date..."
+                onSave={(value) => {
+                  console.log("Saving CRO Availability:", value);
+                  onBookingUpdated();
+                  addActivity("croAvailability", booking.croAvailability || "", value);
+                  setEditedBooking(prev => ({ ...prev, croAvailability: value }));
+                }}
+              />
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}>
-              <div>
-                <label style={{
-                  display: "block",
-                  fontSize: "13px",
-                  fontWeight: 500,
-                  color: "var(--neuron-ink-base)",
-                  marginBottom: "8px"
-                }}>
-                  Container Deposit
-                </label>
-                <div style={{
-                  padding: "10px 14px",
-                  backgroundColor: "#FAFBFC",
-                  border: "1px solid var(--neuron-ui-border)",
-                  borderRadius: "6px",
-                  fontSize: "14px",
-                  color: "var(--neuron-ink-primary)"
-                }}>
-                  {booking.containerDeposit ? "Yes" : "No"}
-                </div>
-              </div>
+              <EditableField
+                fieldName="containerDeposit"
+                label="Container Deposit"
+                value={booking.containerDeposit ? "Yes" : "No"}
+                type="select"
+                options={["Yes", "No"]}
+                status={booking.status}
+                onSave={(value) => {
+                  console.log("Saving Container Deposit:", value);
+                  const boolValue = value === "Yes";
+                  onBookingUpdated();
+                  addActivity("containerDeposit", 
+                    booking.containerDeposit ? "Yes" : "No", 
+                    value);
+                  setEditedBooking(prev => ({ ...prev, containerDeposit: boolValue }));
+                }}
+              />
 
-              <div>
-                <label style={{
-                  display: "block",
-                  fontSize: "13px",
-                  fontWeight: 500,
-                  color: "var(--neuron-ink-base)",
-                  marginBottom: "8px"
-                }}>
-                  Empty Return
-                </label>
-                <div style={{
-                  padding: "10px 14px",
-                  backgroundColor: "#FAFBFC",
-                  border: "1px solid var(--neuron-ui-border)",
-                  borderRadius: "6px",
-                  fontSize: "14px",
-                  color: "var(--neuron-ink-primary)"
-                }}>
-                  {booking.emptyReturn || "—"}
-                </div>
-              </div>
+              <EditableField
+                fieldName="emptyReturn"
+                label="Empty Return"
+                value={booking.emptyReturn || ""}
+                status={booking.status}
+                placeholder="Enter empty return location..."
+                onSave={(value) => {
+                  console.log("Saving Empty Return:", value);
+                  onBookingUpdated();
+                  addActivity("emptyReturn", booking.emptyReturn || "", value);
+                  setEditedBooking(prev => ({ ...prev, emptyReturn: value }));
+                }}
+              />
             </div>
           </div>
         </div>

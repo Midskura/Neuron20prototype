@@ -1,8 +1,56 @@
 import { Hono } from "npm:hono";
 import { cors } from "npm:hono/cors";
 import { logger } from "npm:hono/logger";
+import { createClient } from "npm:@supabase/supabase-js@2";
 import * as kv from "./kv_store.tsx";
+import * as accountingHandlers from "./accounting-handlers.tsx";
+
 const app = new Hono();
+
+// Initialize Supabase client for storage
+const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
+const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+
+// Only initialize Supabase client if credentials are available
+let supabase: any = null;
+if (supabaseUrl && supabaseServiceKey) {
+  try {
+    supabase = createClient(supabaseUrl, supabaseServiceKey);
+    console.log("✅ Supabase client initialized for storage");
+  } catch (error) {
+    console.error("Error initializing Supabase client:", error);
+  }
+}
+
+// Initialize storage bucket for comment attachments
+const COMMENT_ATTACHMENTS_BUCKET = "make-c142e950-comment-attachments";
+
+// Create bucket on startup if it doesn't exist (don't block server startup)
+if (supabase) {
+  (async () => {
+    try {
+      const { data: buckets } = await supabase.storage.listBuckets();
+      const bucketExists = buckets?.some((bucket: any) => bucket.name === COMMENT_ATTACHMENTS_BUCKET);
+      
+      if (!bucketExists) {
+        const { error } = await supabase.storage.createBucket(COMMENT_ATTACHMENTS_BUCKET, {
+          public: false,
+          fileSizeLimit: 52428800, // 50MB limit
+        });
+        
+        if (error) {
+          console.error("Error creating comment attachments bucket:", error);
+        } else {
+          console.log("✅ Created comment attachments bucket:", COMMENT_ATTACHMENTS_BUCKET);
+        }
+      } else {
+        console.log("✅ Comment attachments bucket already exists:", COMMENT_ATTACHMENTS_BUCKET);
+      }
+    } catch (error) {
+      console.error("Error initializing storage bucket:", error);
+    }
+  })();
+}
 
 // Enable logger
 app.use('*', logger(console.log));
@@ -98,6 +146,8 @@ app.get("/make-server-c142e950/users", async (c) => {
   try {
     const department = c.req.query("department");
     const role = c.req.query("role");
+    const service_type = c.req.query("service_type");
+    const operations_role = c.req.query("operations_role");
     
     // Get all users
     let users = await kv.getByPrefix("user:");
@@ -110,6 +160,16 @@ app.get("/make-server-c142e950/users", async (c) => {
     // Filter by role if provided
     if (role) {
       users = users.filter((u: any) => u.role === role);
+    }
+    
+    // Filter by service_type if provided (Operations team assignments)
+    if (service_type) {
+      users = users.filter((u: any) => u.service_type === service_type);
+    }
+    
+    // Filter by operations_role if provided (Manager, Supervisor, Handler)
+    if (operations_role) {
+      users = users.filter((u: any) => u.operations_role === operations_role);
     }
     
     // Only return active users
@@ -126,7 +186,7 @@ app.get("/make-server-c142e950/users", async (c) => {
       a.name.localeCompare(b.name)
     );
     
-    console.log(`Fetched ${usersWithoutPasswords.length} users (department: ${department || 'all'}, role: ${role || 'all'})`);
+    console.log(`Fetched ${usersWithoutPasswords.length} users (department: ${department || 'all'}, role: ${role || 'all'}, service_type: ${service_type || 'all'}, operations_role: ${operations_role || 'all'})`);
     
     return c.json({ success: true, data: usersWithoutPasswords });
   } catch (error) {
@@ -136,7 +196,7 @@ app.get("/make-server-c142e950/users", async (c) => {
 });
 
 // Seed initial users (development only - call once to set up test users)
-app.post("/make-server-c142e950/auth/seed-users", async (c) => {
+app.post("/make-server-c142e950/users/seed", async (c) => {
   try {
     // First, clear existing users to avoid duplicates
     const existingUsers = await kv.getByPrefix("user:");
@@ -188,13 +248,368 @@ app.post("/make-server-c142e950/auth/seed-users", async (c) => {
         created_at: new Date().toISOString(),
         is_active: true
       },
+      // ===== FORWARDING TEAM =====
       {
-        id: "user-ops-rep-001",
-        email: "ops.rep@neuron.ph",
+        id: "user-ops-fwd-manager-001",
+        email: "fwd.manager@neuron.ph",
         password: "password123",
         name: "Carlos Mendoza",
         department: "Operations",
+        role: "manager",
+        service_type: "Forwarding",
+        operations_role: "Manager",
+        created_at: new Date().toISOString(),
+        is_active: true
+      },
+      {
+        id: "user-ops-fwd-supervisor-001",
+        email: "fwd.supervisor1@neuron.ph",
+        password: "password123",
+        name: "Maria Santos",
+        department: "Operations",
         role: "rep",
+        service_type: "Forwarding",
+        operations_role: "Supervisor",
+        created_at: new Date().toISOString(),
+        is_active: true
+      },
+      {
+        id: "user-ops-fwd-supervisor-002",
+        email: "fwd.supervisor2@neuron.ph",
+        password: "password123",
+        name: "Ricardo Cruz",
+        department: "Operations",
+        role: "rep",
+        service_type: "Forwarding",
+        operations_role: "Supervisor",
+        created_at: new Date().toISOString(),
+        is_active: true
+      },
+      {
+        id: "user-ops-fwd-handler-001",
+        email: "fwd.handler1@neuron.ph",
+        password: "password123",
+        name: "Juan Dela Cruz",
+        department: "Operations",
+        role: "rep",
+        service_type: "Forwarding",
+        operations_role: "Handler",
+        created_at: new Date().toISOString(),
+        is_active: true
+      },
+      {
+        id: "user-ops-fwd-handler-002",
+        email: "fwd.handler2@neuron.ph",
+        password: "password123",
+        name: "Anna Reyes",
+        department: "Operations",
+        role: "rep",
+        service_type: "Forwarding",
+        operations_role: "Handler",
+        created_at: new Date().toISOString(),
+        is_active: true
+      },
+      {
+        id: "user-ops-fwd-handler-003",
+        email: "fwd.handler3@neuron.ph",
+        password: "password123",
+        name: "Miguel Torres",
+        department: "Operations",
+        role: "rep",
+        service_type: "Forwarding",
+        operations_role: "Handler",
+        created_at: new Date().toISOString(),
+        is_active: true
+      },
+      // ===== BROKERAGE TEAM =====
+      {
+        id: "user-ops-brk-manager-001",
+        email: "brk.manager@neuron.ph",
+        password: "password123",
+        name: "Linda Villanueva",
+        department: "Operations",
+        role: "manager",
+        service_type: "Brokerage",
+        operations_role: "Manager",
+        created_at: new Date().toISOString(),
+        is_active: true
+      },
+      {
+        id: "user-ops-brk-supervisor-001",
+        email: "brk.supervisor1@neuron.ph",
+        password: "password123",
+        name: "Roberto Gonzales",
+        department: "Operations",
+        role: "rep",
+        service_type: "Brokerage",
+        operations_role: "Supervisor",
+        created_at: new Date().toISOString(),
+        is_active: true
+      },
+      {
+        id: "user-ops-brk-supervisor-002",
+        email: "brk.supervisor2@neuron.ph",
+        password: "password123",
+        name: "Elena Martinez",
+        department: "Operations",
+        role: "rep",
+        service_type: "Brokerage",
+        operations_role: "Supervisor",
+        created_at: new Date().toISOString(),
+        is_active: true
+      },
+      {
+        id: "user-ops-brk-handler-001",
+        email: "brk.handler1@neuron.ph",
+        password: "password123",
+        name: "Paolo Fernandez",
+        department: "Operations",
+        role: "rep",
+        service_type: "Brokerage",
+        operations_role: "Handler",
+        created_at: new Date().toISOString(),
+        is_active: true
+      },
+      {
+        id: "user-ops-brk-handler-002",
+        email: "brk.handler2@neuron.ph",
+        password: "password123",
+        name: "Cristina Lopez",
+        department: "Operations",
+        role: "rep",
+        service_type: "Brokerage",
+        operations_role: "Handler",
+        created_at: new Date().toISOString(),
+        is_active: true
+      },
+      {
+        id: "user-ops-brk-handler-003",
+        email: "brk.handler3@neuron.ph",
+        password: "password123",
+        name: "Daniel Ramos",
+        department: "Operations",
+        role: "rep",
+        service_type: "Brokerage",
+        operations_role: "Handler",
+        created_at: new Date().toISOString(),
+        is_active: true
+      },
+      // ===== TRUCKING TEAM =====
+      {
+        id: "user-ops-trk-manager-001",
+        email: "trk.manager@neuron.ph",
+        password: "password123",
+        name: "Antonio Dela Rosa",
+        department: "Operations",
+        role: "manager",
+        service_type: "Trucking",
+        operations_role: "Manager",
+        created_at: new Date().toISOString(),
+        is_active: true
+      },
+      {
+        id: "user-ops-trk-supervisor-001",
+        email: "trk.supervisor1@neuron.ph",
+        password: "password123",
+        name: "Josephine Garcia",
+        department: "Operations",
+        role: "rep",
+        service_type: "Trucking",
+        operations_role: "Supervisor",
+        created_at: new Date().toISOString(),
+        is_active: true
+      },
+      {
+        id: "user-ops-trk-supervisor-002",
+        email: "trk.supervisor2@neuron.ph",
+        password: "password123",
+        name: "Ramon Vasquez",
+        department: "Operations",
+        role: "rep",
+        service_type: "Trucking",
+        operations_role: "Supervisor",
+        created_at: new Date().toISOString(),
+        is_active: true
+      },
+      {
+        id: "user-ops-trk-handler-001",
+        email: "trk.handler1@neuron.ph",
+        password: "password123",
+        name: "Benjamin Santos",
+        department: "Operations",
+        role: "rep",
+        service_type: "Trucking",
+        operations_role: "Handler",
+        created_at: new Date().toISOString(),
+        is_active: true
+      },
+      {
+        id: "user-ops-trk-handler-002",
+        email: "trk.handler2@neuron.ph",
+        password: "password123",
+        name: "Isabella Cruz",
+        department: "Operations",
+        role: "rep",
+        service_type: "Trucking",
+        operations_role: "Handler",
+        created_at: new Date().toISOString(),
+        is_active: true
+      },
+      {
+        id: "user-ops-trk-handler-003",
+        email: "trk.handler3@neuron.ph",
+        password: "password123",
+        name: "Gabriel Morales",
+        department: "Operations",
+        role: "rep",
+        service_type: "Trucking",
+        operations_role: "Handler",
+        created_at: new Date().toISOString(),
+        is_active: true
+      },
+      // ===== MARINE INSURANCE TEAM =====
+      {
+        id: "user-ops-mar-manager-001",
+        email: "mar.manager@neuron.ph",
+        password: "password123",
+        name: "Patricia Alvarez",
+        department: "Operations",
+        role: "manager",
+        service_type: "Marine Insurance",
+        operations_role: "Manager",
+        created_at: new Date().toISOString(),
+        is_active: true
+      },
+      {
+        id: "user-ops-mar-supervisor-001",
+        email: "mar.supervisor1@neuron.ph",
+        password: "password123",
+        name: "Fernando Aquino",
+        department: "Operations",
+        role: "rep",
+        service_type: "Marine Insurance",
+        operations_role: "Supervisor",
+        created_at: new Date().toISOString(),
+        is_active: true
+      },
+      {
+        id: "user-ops-mar-supervisor-002",
+        email: "mar.supervisor2@neuron.ph",
+        password: "password123",
+        name: "Sandra Flores",
+        department: "Operations",
+        role: "rep",
+        service_type: "Marine Insurance",
+        operations_role: "Supervisor",
+        created_at: new Date().toISOString(),
+        is_active: true
+      },
+      {
+        id: "user-ops-mar-handler-001",
+        email: "mar.handler1@neuron.ph",
+        password: "password123",
+        name: "Luis Mendez",
+        department: "Operations",
+        role: "rep",
+        service_type: "Marine Insurance",
+        operations_role: "Handler",
+        created_at: new Date().toISOString(),
+        is_active: true
+      },
+      {
+        id: "user-ops-mar-handler-002",
+        email: "mar.handler2@neuron.ph",
+        password: "password123",
+        name: "Carmen Rivera",
+        department: "Operations",
+        role: "rep",
+        service_type: "Marine Insurance",
+        operations_role: "Handler",
+        created_at: new Date().toISOString(),
+        is_active: true
+      },
+      {
+        id: "user-ops-mar-handler-003",
+        email: "mar.handler3@neuron.ph",
+        password: "password123",
+        name: "Oscar Diaz",
+        department: "Operations",
+        role: "rep",
+        service_type: "Marine Insurance",
+        operations_role: "Handler",
+        created_at: new Date().toISOString(),
+        is_active: true
+      },
+      // ===== OTHERS TEAM =====
+      {
+        id: "user-ops-oth-manager-001",
+        email: "oth.manager@neuron.ph",
+        password: "password123",
+        name: "Victoria Castro",
+        department: "Operations",
+        role: "manager",
+        service_type: "Others",
+        operations_role: "Manager",
+        created_at: new Date().toISOString(),
+        is_active: true
+      },
+      {
+        id: "user-ops-oth-supervisor-001",
+        email: "oth.supervisor1@neuron.ph",
+        password: "password123",
+        name: "Rodrigo Salazar",
+        department: "Operations",
+        role: "rep",
+        service_type: "Others",
+        operations_role: "Supervisor",
+        created_at: new Date().toISOString(),
+        is_active: true
+      },
+      {
+        id: "user-ops-oth-supervisor-002",
+        email: "oth.supervisor2@neuron.ph",
+        password: "password123",
+        name: "Margarita Herrera",
+        department: "Operations",
+        role: "rep",
+        service_type: "Others",
+        operations_role: "Supervisor",
+        created_at: new Date().toISOString(),
+        is_active: true
+      },
+      {
+        id: "user-ops-oth-handler-001",
+        email: "oth.handler1@neuron.ph",
+        password: "password123",
+        name: "Alfredo Jimenez",
+        department: "Operations",
+        role: "rep",
+        service_type: "Others",
+        operations_role: "Handler",
+        created_at: new Date().toISOString(),
+        is_active: true
+      },
+      {
+        id: "user-ops-oth-handler-002",
+        email: "oth.handler2@neuron.ph",
+        password: "password123",
+        name: "Teresa Castillo",
+        department: "Operations",
+        role: "rep",
+        service_type: "Others",
+        operations_role: "Handler",
+        created_at: new Date().toISOString(),
+        is_active: true
+      },
+      {
+        id: "user-ops-oth-handler-003",
+        email: "oth.handler3@neuron.ph",
+        password: "password123",
+        name: "Francisco Navarro",
+        department: "Operations",
+        role: "rep",
+        service_type: "Others",
+        operations_role: "Handler",
         created_at: new Date().toISOString(),
         is_active: true
       },
@@ -219,10 +634,151 @@ app.post("/make-server-c142e950/auth/seed-users", async (c) => {
     return c.json({ 
       success: true, 
       message: `Seeded ${seedUsers.length} users successfully`,
+      summary: {
+        users: seedUsers.length
+      },
       users: seedUsers.map(u => ({ email: u.email, department: u.department, role: u.role }))
     });
   } catch (error) {
     console.error("Error seeding users:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Seed client handler preferences (development only)
+app.post("/make-server-c142e950/client-handler-preferences/seed", async (c) => {
+  try {
+    // Clear existing preferences
+    const existingPrefs = await kv.getByPrefix("client-handler-preference:");
+    if (existingPrefs.length > 0) {
+      console.log(`Clearing ${existingPrefs.length} existing preferences before re-seeding...`);
+      for (const pref of existingPrefs) {
+        await kv.del(`client-handler-preference:${pref.id}`);
+      }
+    }
+    
+    const now = new Date().toISOString();
+    
+    const seedPreferences = [
+      {
+        id: "pref-001",
+        customer_id: "CUST-001", // Pacific Electronics Manufacturing Corp.
+        service_type: "Forwarding",
+        preferred_manager_id: "user-ops-fwd-manager-001",
+        preferred_manager_name: "Carlos Mendoza",
+        preferred_supervisor_id: "user-ops-fwd-supervisor-001",
+        preferred_supervisor_name: "Maria Santos",
+        preferred_handler_id: "user-ops-fwd-handler-001",
+        preferred_handler_name: "Juan Dela Cruz",
+        created_at: now,
+        updated_at: now
+      },
+      {
+        id: "pref-002",
+        customer_id: "CUST-002", // Manila Fashion Distributors Inc.
+        service_type: "Brokerage",
+        preferred_manager_id: "user-ops-brk-manager-001",
+        preferred_manager_name: "Linda Villanueva",
+        preferred_supervisor_id: "user-ops-brk-supervisor-001",
+        preferred_supervisor_name: "Roberto Gonzales",
+        preferred_handler_id: "user-ops-brk-handler-002",
+        preferred_handler_name: "Cristina Lopez",
+        created_at: now,
+        updated_at: now
+      },
+      {
+        id: "pref-003",
+        customer_id: "CUST-003", // Cebu Food Products Corporation
+        service_type: "Forwarding",
+        preferred_manager_id: "user-ops-fwd-manager-001",
+        preferred_manager_name: "Carlos Mendoza",
+        preferred_supervisor_id: "user-ops-fwd-supervisor-002",
+        preferred_supervisor_name: "Ricardo Cruz",
+        preferred_handler_id: "user-ops-fwd-handler-002",
+        preferred_handler_name: "Anna Reyes",
+        created_at: now,
+        updated_at: now
+      },
+      {
+        id: "pref-004",
+        customer_id: "CUST-004", // AutoParts Solutions Philippines
+        service_type: "Trucking",
+        preferred_manager_id: "user-ops-trk-manager-001",
+        preferred_manager_name: "Antonio Dela Rosa",
+        preferred_supervisor_id: "user-ops-trk-supervisor-001",
+        preferred_supervisor_name: "Josephine Garcia",
+        preferred_handler_id: "user-ops-trk-handler-001",
+        preferred_handler_name: "Benjamin Santos",
+        created_at: now,
+        updated_at: now
+      },
+      {
+        id: "pref-005",
+        customer_id: "CUST-005", // BuildRight Construction Supplies
+        service_type: "Forwarding",
+        preferred_manager_id: "user-ops-fwd-manager-001",
+        preferred_manager_name: "Carlos Mendoza",
+        preferred_supervisor_id: "user-ops-fwd-supervisor-001",
+        preferred_supervisor_name: "Maria Santos",
+        preferred_handler_id: "user-ops-fwd-handler-003",
+        preferred_handler_name: "Miguel Torres",
+        created_at: now,
+        updated_at: now
+      },
+      {
+        id: "pref-006",
+        customer_id: "CUST-006", // MedSupply Pharmaceuticals Inc.
+        service_type: "Marine Insurance",
+        preferred_manager_id: "user-ops-mar-manager-001",
+        preferred_manager_name: "Patricia Alvarez",
+        preferred_supervisor_id: "user-ops-mar-supervisor-001",
+        preferred_supervisor_name: "Fernando Aquino",
+        preferred_handler_id: "user-ops-mar-handler-001",
+        preferred_handler_name: "Luis Mendez",
+        created_at: now,
+        updated_at: now
+      },
+      {
+        id: "pref-007",
+        customer_id: "CUST-001", // Pacific Electronics - Brokerage service
+        service_type: "Brokerage",
+        preferred_manager_id: "user-ops-brk-manager-001",
+        preferred_manager_name: "Linda Villanueva",
+        preferred_supervisor_id: "user-ops-brk-supervisor-002",
+        preferred_supervisor_name: "Elena Martinez",
+        preferred_handler_id: "user-ops-brk-handler-001",
+        preferred_handler_name: "Paolo Fernandez",
+        created_at: now,
+        updated_at: now
+      },
+      {
+        id: "pref-008",
+        customer_id: "CUST-002", // Manila Fashion - Trucking service
+        service_type: "Trucking",
+        preferred_manager_id: "user-ops-trk-manager-001",
+        preferred_manager_name: "Antonio Dela Rosa",
+        preferred_supervisor_id: "user-ops-trk-supervisor-002",
+        preferred_supervisor_name: "Ramon Vasquez",
+        preferred_handler_id: "user-ops-trk-handler-002",
+        preferred_handler_name: "Isabella Cruz",
+        created_at: now,
+        updated_at: now
+      }
+    ];
+    
+    // Save each preference to KV store
+    for (const pref of seedPreferences) {
+      await kv.set(`client-handler-preference:${pref.id}`, pref);
+      console.log(`Seeded handler preference: ${pref.customer_id} - ${pref.service_type}`);
+    }
+    
+    return c.json({ 
+      success: true, 
+      message: `Seeded ${seedPreferences.length} client handler preferences successfully`,
+      count: seedPreferences.length
+    });
+  } catch (error) {
+    console.error("Error seeding client handler preferences:", error);
     return c.json({ success: false, error: String(error) }, 500);
   }
 });
@@ -244,6 +800,110 @@ app.delete("/make-server-c142e950/auth/clear-users", async (c) => {
     });
   } catch (error) {
     console.error("Error clearing users:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// ==================== CLIENT HANDLER PREFERENCES API ====================
+
+// Create or update a client handler preference
+app.post("/make-server-c142e950/client-handler-preferences", async (c) => {
+  try {
+    const body = await c.req.json();
+    const { customer_id, service_type, preferred_manager_id, preferred_manager_name, preferred_supervisor_id, preferred_supervisor_name, preferred_handler_id, preferred_handler_name } = body;
+    
+    // Validate required fields
+    if (!customer_id || !service_type || !preferred_manager_id || !preferred_supervisor_id || !preferred_handler_id) {
+      return c.json({ success: false, error: "Missing required fields" }, 400);
+    }
+    
+    // Check if preference already exists
+    const existingPreferences = await kv.getByPrefix("client-handler-preference:");
+    const existing = existingPreferences.find((p: any) => 
+      p.customer_id === customer_id && p.service_type === service_type
+    );
+    
+    const now = new Date().toISOString();
+    const preferenceId = existing?.id || `pref-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
+    const preference = {
+      id: preferenceId,
+      customer_id,
+      service_type,
+      preferred_manager_id,
+      preferred_manager_name,
+      preferred_supervisor_id,
+      preferred_supervisor_name,
+      preferred_handler_id,
+      preferred_handler_name,
+      created_at: existing?.created_at || now,
+      updated_at: now
+    };
+    
+    await kv.set(`client-handler-preference:${preferenceId}`, preference);
+    
+    console.log(`${existing ? 'Updated' : 'Created'} handler preference for customer ${customer_id}, service ${service_type}`);
+    
+    return c.json({ success: true, data: preference });
+  } catch (error) {
+    console.error("Error saving client handler preference:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Get a specific client handler preference
+app.get("/make-server-c142e950/client-handler-preferences/:customer_id/:service_type", async (c) => {
+  try {
+    const customer_id = c.req.param("customer_id");
+    const service_type = c.req.param("service_type");
+    
+    const preferences = await kv.getByPrefix("client-handler-preference:");
+    const preference = preferences.find((p: any) => 
+      p.customer_id === customer_id && p.service_type === service_type
+    );
+    
+    if (!preference) {
+      return c.json({ success: true, data: null });
+    }
+    
+    console.log(`Found handler preference for customer ${customer_id}, service ${service_type}`);
+    
+    return c.json({ success: true, data: preference });
+  } catch (error) {
+    console.error("Error fetching client handler preference:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Get all client handler preferences (admin only)
+app.get("/make-server-c142e950/client-handler-preferences", async (c) => {
+  try {
+    const preferences = await kv.getByPrefix("client-handler-preference:");
+    
+    // Sort by customer_id
+    preferences.sort((a: any, b: any) => a.customer_id.localeCompare(b.customer_id));
+    
+    console.log(`Fetched ${preferences.length} handler preferences`);
+    
+    return c.json({ success: true, data: preferences });
+  } catch (error) {
+    console.error("Error fetching client handler preferences:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Delete a client handler preference
+app.delete("/make-server-c142e950/client-handler-preferences/:id", async (c) => {
+  try {
+    const id = c.req.param("id");
+    
+    await kv.del(`client-handler-preference:${id}`);
+    
+    console.log(`Deleted handler preference: ${id}`);
+    
+    return c.json({ success: true, message: "Preference deleted successfully" });
+  } catch (error) {
+    console.error("Error deleting client handler preference:", error);
     return c.json({ success: false, error: String(error) }, 500);
   }
 });
@@ -1940,6 +2600,14 @@ app.post("/make-server-c142e950/projects/:id/link-booking", async (c) => {
     const id = c.req.param("id");
     const { bookingId, bookingNumber, serviceType, status, createdBy } = await c.req.json();
     
+    // Validate required fields
+    if (!bookingId || !bookingNumber || !serviceType) {
+      return c.json({ 
+        success: false, 
+        error: "Missing required fields: bookingId, bookingNumber, and serviceType are required" 
+      }, 400);
+    }
+    
     const project = await kv.get(`project:${id}`);
     
     if (!project) {
@@ -1951,10 +2619,20 @@ app.post("/make-server-c142e950/projects/:id/link-booking", async (c) => {
       project.linkedBookings = [];
     }
     
-    // Check if already linked
+    // Check if already linked (by bookingId)
     const alreadyLinked = project.linkedBookings.some((b: any) => b.bookingId === bookingId);
     if (alreadyLinked) {
       return c.json({ success: true, data: project }); // Already linked, just return success
+    }
+    
+    // VALIDATION: Check if a booking for this service type already exists
+    const serviceTypeExists = project.linkedBookings.some((b: any) => b.serviceType === serviceType);
+    if (serviceTypeExists) {
+      const existingBooking = project.linkedBookings.find((b: any) => b.serviceType === serviceType);
+      return c.json({ 
+        success: false, 
+        error: `A ${serviceType} booking (${existingBooking?.bookingNumber || 'unknown'}) already exists for this project. Only one booking per service type is allowed.`
+      }, 400);
     }
     
     project.linkedBookings.push({
@@ -2027,6 +2705,109 @@ app.post("/make-server-c142e950/projects/:id/unlink-booking", async (c) => {
     return c.json({ success: true, data: project });
   } catch (error) {
     console.error("Error unlinking booking from project:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Clean up orphaned booking references from project
+app.post("/make-server-c142e950/projects/:id/cleanup-orphaned-bookings", async (c) => {
+  try {
+    const id = c.req.param("id");
+    
+    const project = await kv.get(`project:${id}`);
+    
+    if (!project) {
+      return c.json({ success: false, error: "Project not found" }, 404);
+    }
+    
+    if (!project.linkedBookings || project.linkedBookings.length === 0) {
+      return c.json({ 
+        success: true, 
+        data: project,
+        message: "No linked bookings to clean up"
+      });
+    }
+    
+    const originalCount = project.linkedBookings.length;
+    const verifiedBookings: any[] = [];
+    const orphanedBookings: string[] = [];
+    
+    // Verify each linked booking exists
+    for (const booking of project.linkedBookings) {
+      const serviceType = booking.serviceType || booking.service;
+      let bookingKey = "";
+      
+      switch (serviceType) {
+        case "Forwarding":
+          bookingKey = `forwarding_booking:${booking.bookingId}`;
+          break;
+        case "Brokerage":
+          bookingKey = `brokerage_booking:${booking.bookingId}`;
+          break;
+        case "Trucking":
+          bookingKey = `trucking_booking:${booking.bookingId}`;
+          break;
+        case "Marine Insurance":
+          bookingKey = `marine_insurance_booking:${booking.bookingId}`;
+          break;
+        case "Others":
+          bookingKey = `others_booking:${booking.bookingId}`;
+          break;
+        default:
+          console.warn(`Unknown service type: ${serviceType} for booking ${booking.bookingId}`);
+          orphanedBookings.push(booking.bookingId);
+          continue;
+      }
+      
+      // Check if booking exists
+      const existingBooking = await kv.get(bookingKey);
+      
+      if (existingBooking) {
+        verifiedBookings.push(booking);
+      } else {
+        orphanedBookings.push(booking.bookingId);
+        console.log(`🧹 Found orphaned booking reference: ${booking.bookingId}`);
+      }
+    }
+    
+    // Update project with only verified bookings
+    project.linkedBookings = verifiedBookings;
+    
+    // Recalculate booking_status
+    const totalServices = project.services?.length || 0;
+    const bookedServices = new Set(verifiedBookings.map((b: any) => b.serviceType)).size;
+    
+    if (bookedServices === 0) {
+      project.booking_status = "No Bookings Yet";
+    } else if (bookedServices >= totalServices) {
+      project.booking_status = "Fully Booked";
+    } else {
+      project.booking_status = "Partially Booked";
+    }
+    
+    project.updated_at = new Date().toISOString();
+    await kv.set(`project:${id}`, project);
+    
+    console.log(
+      `✅ Cleaned up project ${project.project_number}: ` +
+      `Removed ${orphanedBookings.length} orphaned booking(s), ` +
+      `${verifiedBookings.length} valid booking(s) remain. ` +
+      `Status: ${project.booking_status}`
+    );
+    
+    return c.json({ 
+      success: true, 
+      data: project,
+      message: `Removed ${orphanedBookings.length} orphaned booking reference(s)`,
+      details: {
+        originalCount,
+        verifiedCount: verifiedBookings.length,
+        orphanedCount: orphanedBookings.length,
+        orphanedBookings
+      }
+    });
+  } catch (error) {
+    console.error("Error cleaning up orphaned bookings:", error);
     return c.json({ success: false, error: String(error) }, 500);
   }
 });
@@ -2614,9 +3395,10 @@ app.post("/make-server-c142e950/expenses", async (c) => {
 // Get all expenses (with optional filters)
 app.get("/make-server-c142e950/expenses", async (c) => {
   try {
+    // Support both camelCase (from Operations) and snake_case (from Accounting)
+    const bookingId = c.req.query("bookingId") || c.req.query("booking_id");
     const status = c.req.query("status");
     const search = c.req.query("search");
-    const booking_id = c.req.query("booking_id");
     const created_by = c.req.query("created_by");
     const date_from = c.req.query("date_from");
     const date_to = c.req.query("date_to");
@@ -2630,9 +3412,12 @@ app.get("/make-server-c142e950/expenses", async (c) => {
     
     let filtered = expenses;
     
-    // Filter by booking_id if provided
-    if (booking_id) {
-      filtered = filtered.filter((e: any) => e.booking_id === booking_id);
+    // Filter by booking_id/bookingId if provided (supports both field names in data)
+    if (bookingId) {
+      filtered = filtered.filter((e: any) => 
+        e.booking_id === bookingId || e.bookingId === bookingId
+      );
+      console.log(`Filtering expenses for bookingId: ${bookingId}, found ${filtered.length} expenses`);
     }
     
     // Filter by created_by if provided
@@ -2644,7 +3429,7 @@ app.get("/make-server-c142e950/expenses", async (c) => {
     if (date_from) {
       const fromDate = new Date(date_from);
       filtered = filtered.filter((e: any) => 
-        new Date(e.created_at) >= fromDate
+        new Date(e.created_at || e.createdAt).getTime() >= fromDate.getTime()
       );
     }
     
@@ -2652,15 +3437,16 @@ app.get("/make-server-c142e950/expenses", async (c) => {
       const toDate = new Date(date_to);
       toDate.setHours(23, 59, 59, 999);
       filtered = filtered.filter((e: any) => 
-        new Date(e.created_at) <= toDate
+        new Date(e.created_at || e.createdAt).getTime() <= toDate.getTime()
       );
     }
     
-    // Filter by search query (searches expense_name and id)
+    // Filter by search query (searches expense_name, description and id)
     if (search) {
       const searchLower = search.toLowerCase();
       filtered = filtered.filter((e: any) => 
         e.expense_name?.toLowerCase().includes(searchLower) ||
+        e.description?.toLowerCase().includes(searchLower) ||
         e.id?.toLowerCase().includes(searchLower) ||
         e.category?.toLowerCase().includes(searchLower)
       );
@@ -2678,13 +3464,13 @@ app.get("/make-server-c142e950/expenses", async (c) => {
       let aVal, bVal;
       switch (sort_by) {
         case "created_at":
-          aVal = new Date(a.created_at).getTime();
-          bVal = new Date(b.created_at).getTime();
+          aVal = new Date(a.created_at || a.createdAt).getTime();
+          bVal = new Date(b.created_at || b.createdAt).getTime();
           break;
         case "updated_at":
         default:
-          aVal = new Date(a.updated_at).getTime();
-          bVal = new Date(b.updated_at).getTime();
+          aVal = new Date(a.updated_at || a.updatedAt).getTime();
+          bVal = new Date(b.updated_at || b.updatedAt).getTime();
           break;
       }
       return sort_order === "asc" 
@@ -2694,7 +3480,7 @@ app.get("/make-server-c142e950/expenses", async (c) => {
     
     const paginated = limit ? filtered.slice(offset, offset + limit) : filtered;
     
-    console.log(`Fetched ${paginated.length}/${total} expenses (status: ${status}, search: ${search})`);
+    console.log(`Fetched ${paginated.length}/${total} expenses (bookingId: ${bookingId}, status: ${status}, search: ${search})`);
     
     return c.json({ 
       success: true, 
@@ -2860,91 +3646,8 @@ app.post("/make-server-c142e950/entities/seed", async (c) => {
     }
     
     // === SEED CONTACTS ===
-    const contacts = [
-      {
-        id: "contact-1",
-        name: "Juan Dela Cruz",
-        email: "juan@abclogistics.ph",
-        phone: "+63 917 123 4567",
-        company: "ABC Logistics Corp",
-        customer_id: "customer-1",
-        job_title: "Operations Manager",
-        status: "Active",
-        created_date: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString(),
-        updated_at: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
-        last_activity: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString()
-      },
-      {
-        id: "contact-2",
-        name: "Maria Santos",
-        email: "maria@abclogistics.ph",
-        phone: "+63 917 234 5678",
-        company: "ABC Logistics Corp",
-        customer_id: "customer-1",
-        job_title: "Procurement Head",
-        status: "Active",
-        created_date: new Date(Date.now() - 85 * 24 * 60 * 60 * 1000).toISOString(),
-        updated_at: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(),
-        last_activity: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString()
-      },
-      {
-        id: "contact-3",
-        name: "Pedro Reyes",
-        email: "pedro@xyzmanufacturing.ph",
-        phone: "+63 917 345 6789",
-        company: "XYZ Manufacturing Inc",
-        customer_id: "customer-2",
-        job_title: "Logistics Director",
-        status: "Active",
-        created_date: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString(),
-        updated_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-        last_activity: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString()
-      },
-      {
-        id: "contact-4",
-        name: "Ana Garcia",
-        email: "ana@globaltrading.ph",
-        phone: "+63 917 456 7890",
-        company: "Global Trading Solutions",
-        customer_id: "customer-3",
-        job_title: "Supply Chain Manager",
-        status: "Active",
-        created_date: new Date(Date.now() - 45 * 24 * 60 * 60 * 1000).toISOString(),
-        updated_at: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-        last_activity: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString()
-      },
-      {
-        id: "contact-5",
-        name: "Carlos Mendoza",
-        email: "carlos@pacificimport.ph",
-        phone: "+63 917 567 8901",
-        company: "Pacific Import Export",
-        customer_id: "customer-4",
-        job_title: "Import Manager",
-        status: "Lead",
-        created_date: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
-        updated_at: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-        last_activity: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
-      },
-      {
-        id: "contact-6",
-        name: "Sofia Rodriguez",
-        email: "sofia@metroretail.ph",
-        phone: "+63 917 678 9012",
-        company: "Metro Retail Group",
-        customer_id: "customer-5",
-        job_title: "Purchasing Director",
-        status: "Active",
-        created_date: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000).toISOString(),
-        updated_at: new Date().toISOString(),
-        last_activity: new Date().toISOString()
-      }
-    ];
-    
-    for (const contact of contacts) {
-      await kv.set(`contact:${contact.id}`, contact);
-      results.contacts.push(contact);
-    }
+    // ⚠️ REMOVED: Contact seed data has been removed to prevent fake data pollution
+    // Users should create real contacts through the UI instead
     
     // === SEED QUOTATIONS ===
     const quotations = [
@@ -3519,19 +4222,72 @@ function generateBookingId(type: string): string {
   return `${prefix}-${year}-${random}`;
 }
 
+// Helper function to unlink a booking from its project
+async function unlinkBookingFromProject(booking: any, bookingId: string): Promise<void> {
+  const projectIdentifier = booking.projectId || booking.projectNumber;
+  if (!projectIdentifier) {
+    return; // No project to unlink from
+  }
+  
+  let project;
+  
+  // Try to get by ID first, then by number
+  if (booking.projectId) {
+    project = await kv.get(`project:${booking.projectId}`);
+  } else if (booking.projectNumber) {
+    // Find project by project_number
+    const allProjects = await kv.getByPrefix("project:");
+    project = allProjects.find((p: any) => p.project_number === booking.projectNumber);
+  }
+  
+  if (project && project.linkedBookings) {
+    const initialLength = project.linkedBookings.length;
+    project.linkedBookings = project.linkedBookings.filter((b: any) => b.bookingId !== bookingId);
+    
+    if (project.linkedBookings.length !== initialLength) {
+      // Recalculate booking status
+      const totalServices = project.services?.length || 0;
+      const bookedServices = new Set(project.linkedBookings.map((b: any) => b.serviceType)).size;
+      
+      if (bookedServices === 0) {
+        project.booking_status = "No Bookings Yet";
+      } else if (bookedServices >= totalServices) {
+        project.booking_status = "Fully Booked";
+      } else {
+        project.booking_status = "Partially Booked";
+      }
+      
+      project.updated_at = new Date().toISOString();
+      await kv.set(`project:${project.id}`, project);
+      console.log(`✓ Unlinked booking ${bookingId} from project ${project.project_number}`);
+    }
+  }
+}
+
 // ==================== FORWARDING BOOKINGS ====================
 
 // Get all forwarding bookings
 app.get("/make-server-c142e950/forwarding-bookings", async (c) => {
   try {
-    const bookings = await kv.getByPrefix("forwarding_booking:");
+    const assigned_to_user_id = c.req.query("assigned_to_user_id");
+    
+    let bookings = await kv.getByPrefix("forwarding_booking:");
+    
+    // Filter by assigned user if provided (Operations team filtering)
+    if (assigned_to_user_id) {
+      bookings = bookings.filter((b: any) => 
+        b.assigned_manager_id === assigned_to_user_id ||
+        b.assigned_supervisor_id === assigned_to_user_id ||
+        b.assigned_handler_id === assigned_to_user_id
+      );
+    }
     
     // Sort by createdAt descending (newest first)
     bookings.sort((a: any, b: any) => 
       new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
     
-    console.log(`Fetched ${bookings.length} forwarding bookings`);
+    console.log(`Fetched ${bookings.length} forwarding bookings${assigned_to_user_id ? ` for user ${assigned_to_user_id}` : ''}`);
     
     return c.json({ success: true, data: bookings });
   } catch (error) {
@@ -3627,6 +4383,9 @@ app.delete("/make-server-c142e950/forwarding-bookings/:id", async (c) => {
       return c.json({ success: false, error: "Booking not found" }, 404);
     }
     
+    // Unlink from project if linked
+    await unlinkBookingFromProject(existing, id);
+    
     await kv.del(`forwarding_booking:${id}`);
     
     // Also delete associated billings and expenses
@@ -3659,14 +4418,25 @@ app.delete("/make-server-c142e950/forwarding-bookings/:id", async (c) => {
 // Get all trucking bookings
 app.get("/make-server-c142e950/trucking-bookings", async (c) => {
   try {
-    const bookings = await kv.getByPrefix("trucking_booking:");
+    const assigned_to_user_id = c.req.query("assigned_to_user_id");
+    
+    let bookings = await kv.getByPrefix("trucking_booking:");
+    
+    // Filter by assigned user if provided (Operations team filtering)
+    if (assigned_to_user_id) {
+      bookings = bookings.filter((b: any) => 
+        b.assigned_manager_id === assigned_to_user_id ||
+        b.assigned_supervisor_id === assigned_to_user_id ||
+        b.assigned_handler_id === assigned_to_user_id
+      );
+    }
     
     // Sort by createdAt descending (newest first)
     bookings.sort((a: any, b: any) => 
       new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
     
-    console.log(`Retrieved ${bookings.length} trucking bookings`);
+    console.log(`Retrieved ${bookings.length} trucking bookings${assigned_to_user_id ? ` for user ${assigned_to_user_id}` : ''}`);
     
     return c.json({ success: true, data: bookings });
   } catch (error) {
@@ -3768,6 +4538,9 @@ app.delete("/make-server-c142e950/trucking-bookings/:id", async (c) => {
       return c.json({ success: false, error: "Booking not found" }, 404);
     }
     
+    // Unlink from project if linked
+    await unlinkBookingFromProject(existing, id);
+    
     await kv.del(`trucking_booking:${id}`);
     
     // Also delete associated billings and expenses
@@ -3800,14 +4573,25 @@ app.delete("/make-server-c142e950/trucking-bookings/:id", async (c) => {
 // Get all marine insurance bookings
 app.get("/make-server-c142e950/marine-insurance-bookings", async (c) => {
   try {
-    const bookings = await kv.getByPrefix("marine_insurance_booking:");
+    const assigned_to_user_id = c.req.query("assigned_to_user_id");
+    
+    let bookings = await kv.getByPrefix("marine_insurance_booking:");
+    
+    // Filter by assigned user if provided (Operations team filtering)
+    if (assigned_to_user_id) {
+      bookings = bookings.filter((b: any) => 
+        b.assigned_manager_id === assigned_to_user_id ||
+        b.assigned_supervisor_id === assigned_to_user_id ||
+        b.assigned_handler_id === assigned_to_user_id
+      );
+    }
     
     // Sort by createdAt descending (newest first)
     bookings.sort((a: any, b: any) => 
       new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
     
-    console.log(`Retrieved ${bookings.length} marine insurance bookings`);
+    console.log(`Retrieved ${bookings.length} marine insurance bookings${assigned_to_user_id ? ` for user ${assigned_to_user_id}` : ''}`);
     
     return c.json({ success: true, data: bookings });
   } catch (error) {
@@ -3909,6 +4693,9 @@ app.delete("/make-server-c142e950/marine-insurance-bookings/:id", async (c) => {
       return c.json({ success: false, error: "Booking not found" }, 404);
     }
     
+    // Unlink from project if linked
+    await unlinkBookingFromProject(existing, id);
+    
     await kv.del(`marine_insurance_booking:${id}`);
     
     // Also delete associated billings and expenses
@@ -3941,14 +4728,25 @@ app.delete("/make-server-c142e950/marine-insurance-bookings/:id", async (c) => {
 // Get all brokerage bookings
 app.get("/make-server-c142e950/brokerage-bookings", async (c) => {
   try {
-    const bookings = await kv.getByPrefix("brokerage_booking:");
+    const assigned_to_user_id = c.req.query("assigned_to_user_id");
+    
+    let bookings = await kv.getByPrefix("brokerage_booking:");
+    
+    // Filter by assigned user if provided (Operations team filtering)
+    if (assigned_to_user_id) {
+      bookings = bookings.filter((b: any) => 
+        b.assigned_manager_id === assigned_to_user_id ||
+        b.assigned_supervisor_id === assigned_to_user_id ||
+        b.assigned_handler_id === assigned_to_user_id
+      );
+    }
     
     // Sort by createdAt descending (newest first)
     bookings.sort((a: any, b: any) => 
       new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
     
-    console.log(`Retrieved ${bookings.length} brokerage bookings`);
+    console.log(`Retrieved ${bookings.length} brokerage bookings${assigned_to_user_id ? ` for user ${assigned_to_user_id}` : ''}`);
     
     return c.json({ success: true, data: bookings });
   } catch (error) {
@@ -4050,6 +4848,9 @@ app.delete("/make-server-c142e950/brokerage-bookings/:id", async (c) => {
       return c.json({ success: false, error: "Booking not found" }, 404);
     }
     
+    // Unlink from project if linked
+    await unlinkBookingFromProject(existing, id);
+    
     await kv.del(`brokerage_booking:${id}`);
     
     // Also delete associated billings and expenses
@@ -4082,14 +4883,25 @@ app.delete("/make-server-c142e950/brokerage-bookings/:id", async (c) => {
 // Get all others bookings
 app.get("/make-server-c142e950/others-bookings", async (c) => {
   try {
-    const bookings = await kv.getByPrefix("others_booking:");
+    const assigned_to_user_id = c.req.query("assigned_to_user_id");
+    
+    let bookings = await kv.getByPrefix("others_booking:");
+    
+    // Filter by assigned user if provided (Operations team filtering)
+    if (assigned_to_user_id) {
+      bookings = bookings.filter((b: any) => 
+        b.assigned_manager_id === assigned_to_user_id ||
+        b.assigned_supervisor_id === assigned_to_user_id ||
+        b.assigned_handler_id === assigned_to_user_id
+      );
+    }
     
     // Sort by createdAt descending (newest first)
     bookings.sort((a: any, b: any) => 
       new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
     
-    console.log(`Retrieved ${bookings.length} others bookings`);
+    console.log(`Retrieved ${bookings.length} others bookings${assigned_to_user_id ? ` for user ${assigned_to_user_id}` : ''}`);
     
     return c.json({ success: true, data: bookings });
   } catch (error) {
@@ -4190,6 +5002,9 @@ app.delete("/make-server-c142e950/others-bookings/:id", async (c) => {
     if (!existing) {
       return c.json({ success: false, error: "Booking not found" }, 404);
     }
+    
+    // Unlink from project if linked
+    await unlinkBookingFromProject(existing, id);
     
     await kv.del(`others_booking:${id}`);
     
@@ -4327,31 +5142,8 @@ app.delete("/make-server-c142e950/billings/:id", async (c) => {
 
 // ==================== EXPENSES ====================
 
-// Get expenses by booking ID
-app.get("/make-server-c142e950/expenses", async (c) => {
-  try {
-    const bookingId = c.req.query("bookingId");
-    
-    if (!bookingId) {
-      return c.json({ success: false, error: "bookingId parameter required" }, 400);
-    }
-    
-    const allExpenses = await kv.getByPrefix("expense:");
-    const bookingExpenses = allExpenses.filter((e: any) => e.bookingId === bookingId);
-    
-    // Sort by createdAt descending
-    bookingExpenses.sort((a: any, b: any) => 
-      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    );
-    
-    console.log(`Fetched ${bookingExpenses.length} expenses for booking ${bookingId}`);
-    
-    return c.json({ success: true, data: bookingExpenses });
-  } catch (error) {
-    console.error("Error fetching expenses:", error);
-    return c.json({ success: false, error: String(error) }, 500);
-  }
-});
+// NOTE: GET /expenses handler consolidated above (line ~3395) to support both
+// Accounting module (all expenses) and Operations module (filtered by bookingId)
 
 // Create expense
 app.post("/make-server-c142e950/expenses", async (c) => {
@@ -4431,6 +5223,806 @@ app.delete("/make-server-c142e950/expenses/:id", async (c) => {
     return c.json({ success: false, error: String(error) }, 500);
   }
 });
+
+// ==================== E-VOUCHERS API ====================
+
+// Helper function to generate E-Voucher number (EVRN-YEAR-XXX)
+async function generateEVoucherNumber(): Promise<string> {
+  const year = new Date().getFullYear();
+  const prefix = `EVRN-${year}-`;
+  
+  // Get all evouchers for current year
+  const allEVouchers = await kv.getByPrefix("evoucher:");
+  const currentYearEVouchers = allEVouchers.filter((ev: any) => 
+    ev.voucher_number && ev.voucher_number.startsWith(prefix)
+  );
+  
+  // Find highest number
+  let maxNumber = 0;
+  currentYearEVouchers.forEach((ev: any) => {
+    const match = ev.voucher_number.match(/EVRN-\d{4}-(\d{3})/);
+    if (match) {
+      const num = parseInt(match[1], 10);
+      if (num > maxNumber) maxNumber = num;
+    }
+  });
+  
+  // Increment and format
+  const nextNumber = (maxNumber + 1).toString().padStart(3, '0');
+  return `${prefix}${nextNumber}`;
+}
+
+// Helper function to generate type-specific E-Voucher number (EVRN-XX-YEAR-XXX)
+async function generateTypedEVoucherNumber(voucherType: string): Promise<string> {
+  const year = new Date().getFullYear();
+  
+  // Map voucher types to prefixes
+  const typePrefixes: Record<string, string> = {
+    'budget_request': 'BR',
+    'expense': 'EX',
+    'collection': 'CO',
+    'billing': 'BI'
+  };
+  
+  const typeCode = typePrefixes[voucherType] || 'GN'; // GN = General
+  const prefix = `EVRN-${typeCode}-${year}-`;
+  
+  // Get all existing E-Vouchers of this type to find the max number
+  const allEVouchers = await kv.getByPrefix('evoucher:');
+  let maxNumber = 0;
+  
+  allEVouchers.forEach((voucher: any) => {
+    if (voucher.voucher_number && voucher.voucher_number.startsWith(prefix)) {
+      const numPart = voucher.voucher_number.split('-').pop();
+      const num = parseInt(numPart || '0', 10);
+      if (num > maxNumber) maxNumber = num;
+    }
+  });
+  
+  // Increment and format
+  const nextNumber = (maxNumber + 1).toString().padStart(3, '0');
+  return `${prefix}${nextNumber}`;
+}
+
+// Helper function to add history entry
+async function addEVoucherHistory(evoucherId: string, action: string, userId: string, userName: string, userRole: string, previousStatus?: string, newStatus?: string, notes?: string) {
+  const historyId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  const historyEntry = {
+    id: historyId,
+    evoucher_id: evoucherId,
+    action,
+    previous_status: previousStatus,
+    new_status: newStatus,
+    performed_by: userId,
+    performed_by_name: userName,
+    performed_by_role: userRole,
+    notes,
+    created_at: new Date().toISOString()
+  };
+  
+  await kv.set(`evoucher_history:${evoucherId}:${historyId}`, historyEntry);
+  return historyEntry;
+}
+
+// Create new E-Voucher (draft)
+app.post("/make-server-c142e950/evouchers", async (c) => {
+  try {
+    let evoucherData;
+    
+    // Safely parse JSON with better error handling
+    try {
+      const text = await c.req.text();
+      console.log('Received E-Voucher request body length:', text.length);
+      
+      if (!text || text.trim() === '') {
+        return c.json({ success: false, error: "Request body is empty" }, 400);
+      }
+      
+      evoucherData = JSON.parse(text);
+    } catch (parseError) {
+      console.error("Error parsing E-Voucher request JSON:", parseError);
+      return c.json({ 
+        success: false, 
+        error: `Invalid JSON in request body: ${parseError instanceof Error ? parseError.message : String(parseError)}` 
+      }, 400);
+    }
+    
+    // Generate type-specific E-Voucher number
+    const voucherType = evoucherData.voucher_type || evoucherData.transaction_type || "expense";
+    const voucherNumber = await generateTypedEVoucherNumber(voucherType);
+    const id = `EV-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
+    const now = new Date().toISOString();
+    
+    // Ensure amount field exists (handle both 'amount' and 'total_amount')
+    const amount = evoucherData.amount ?? evoucherData.total_amount ?? 0;
+    
+    const evoucher = {
+      id,
+      voucher_number: voucherNumber,
+      status: evoucherData.status || "draft", // Allow setting status on creation
+      posted_to_ledger: false,
+      // Voucher type (new field)
+      voucher_type: voucherType,
+      // Universal transaction fields (with defaults for backward compatibility)
+      transaction_type: voucherType, // Keep for backward compatibility
+      source_module: evoucherData.source_module || "accounting",
+      // Ensure required fields have defaults
+      request_date: evoucherData.request_date || now,
+      currency: evoucherData.currency || "PHP",
+      amount: amount, // Standardize on 'amount' field
+      approvers: evoucherData.approvers || [],
+      workflow_history: evoucherData.workflow_history || [],
+      ...evoucherData,
+      amount: amount, // Set again after spread to ensure it's not overwritten
+      created_at: now,
+      updated_at: now
+    };
+    
+    await kv.set(`evoucher:${id}`, evoucher);
+    
+    // Add history entry
+    await addEVoucherHistory(
+      id,
+      "Created E-Voucher",
+      evoucherData.requestor_id || "system",
+      evoucherData.requestor_name || "System",
+      evoucherData.requestor_department || "User",
+      undefined,
+      "draft"
+    );
+    
+    console.log(`✅ Created E-Voucher ${voucherNumber} (${id}) [Type: ${evoucher.transaction_type}, Module: ${evoucher.source_module}]`);
+    
+    return c.json({ success: true, data: evoucher });
+  } catch (error) {
+    console.error("Error creating E-Voucher:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Get all E-Vouchers (with filters)
+app.get("/make-server-c142e950/evouchers", async (c) => {
+  try {
+    const status = c.req.query("status");
+    const transactionType = c.req.query("transaction_type");
+    const sourceModule = c.req.query("source_module");
+    const requestorId = c.req.query("requestor_id");
+    const dateFrom = c.req.query("date_from");
+    const dateTo = c.req.query("date_to");
+    const search = c.req.query("search");
+    
+    console.log(`🔍 [GET /evouchers] Fetching with filters:`, {
+      status: status || 'all',
+      transactionType: transactionType || 'all',
+      sourceModule: sourceModule || 'all',
+      requestorId,
+      dateFrom,
+      dateTo,
+      search
+    });
+    
+    let evouchers = await kv.getByPrefix("evoucher:");
+    
+    console.log(`📦 [GET /evouchers] Found ${evouchers.length} total E-Vouchers before filtering`);
+    
+    // Apply filters
+    if (status && status !== "all") {
+      evouchers = evouchers.filter((ev: any) => ev.status === status);
+      console.log(`📦 [GET /evouchers] After status filter: ${evouchers.length} E-Vouchers`);
+    }
+    
+    if (transactionType && transactionType !== "all") {
+      const beforeCount = evouchers.length;
+      evouchers = evouchers.filter((ev: any) => ev.transaction_type === transactionType);
+      console.log(`📦 [GET /evouchers] After transaction_type filter (${transactionType}): ${evouchers.length} E-Vouchers (was ${beforeCount})`);
+    }
+    
+    if (sourceModule && sourceModule !== "all") {
+      const beforeCount = evouchers.length;
+      evouchers = evouchers.filter((ev: any) => ev.source_module === sourceModule);
+      console.log(`📦 [GET /evouchers] After source_module filter (${sourceModule}): ${evouchers.length} E-Vouchers (was ${beforeCount})`);
+    }
+    
+    if (requestorId) {
+      evouchers = evouchers.filter((ev: any) => ev.requestor_id === requestorId);
+    }
+    
+    if (dateFrom) {
+      evouchers = evouchers.filter((ev: any) => 
+        new Date(ev.request_date || ev.created_at) >= new Date(dateFrom)
+      );
+    }
+    
+    if (dateTo) {
+      evouchers = evouchers.filter((ev: any) => 
+        new Date(ev.request_date || ev.created_at) <= new Date(dateTo)
+      );
+    }
+    
+    if (search) {
+      const searchLower = search.toLowerCase();
+      evouchers = evouchers.filter((ev: any) =>
+        ev.voucher_number?.toLowerCase().includes(searchLower) ||
+        ev.purpose?.toLowerCase().includes(searchLower) ||
+        ev.vendor_name?.toLowerCase().includes(searchLower) ||
+        ev.requestor_name?.toLowerCase().includes(searchLower)
+      );
+    }
+    
+    // Sort by created_at descending
+    evouchers.sort((a: any, b: any) => 
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
+    
+    console.log(`✅ [GET /evouchers] Returning ${evouchers.length} E-Vouchers`);
+    if (evouchers.length > 0) {
+      console.log(`📋 [GET /evouchers] First E-Voucher sample:`, {
+        id: evouchers[0].id,
+        voucher_number: evouchers[0].voucher_number,
+        transaction_type: evouchers[0].transaction_type,
+        source_module: evouchers[0].source_module,
+        status: evouchers[0].status
+      });
+    }
+    
+    return c.json({ success: true, data: evouchers });
+  } catch (error) {
+    console.error("Error fetching E-Vouchers:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Get pending approvals (Accounting Staff only)
+app.get("/make-server-c142e950/evouchers/pending", async (c) => {
+  try {
+    const evouchers = await kv.getByPrefix("evoucher:");
+    const pending = evouchers.filter((ev: any) => ev.status === "pending");
+    
+    // Sort by submitted_at ascending (oldest first)
+    pending.sort((a: any, b: any) => 
+      new Date(a.submitted_at || a.created_at).getTime() - 
+      new Date(b.submitted_at || b.created_at).getTime()
+    );
+    
+    console.log(`Fetched ${pending.length} pending E-Vouchers for approval`);
+    
+    return c.json({ success: true, data: pending });
+  } catch (error) {
+    console.error("Error fetching pending E-Vouchers:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Get user's own E-Vouchers
+app.get("/make-server-c142e950/evouchers/my-evouchers", async (c) => {
+  try {
+    const requestorId = c.req.query("requestor_id");
+    
+    if (!requestorId) {
+      return c.json({ success: false, error: "requestor_id required" }, 400);
+    }
+    
+    const evouchers = await kv.getByPrefix("evoucher:");
+    const myEVouchers = evouchers.filter((ev: any) => ev.requestor_id === requestorId);
+    
+    // Sort by created_at descending
+    myEVouchers.sort((a: any, b: any) => 
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
+    
+    console.log(`Fetched ${myEVouchers.length} E-Vouchers for user ${requestorId}`);
+    
+    return c.json({ success: true, data: myEVouchers });
+  } catch (error) {
+    console.error("Error fetching user E-Vouchers:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Get single E-Voucher by ID
+app.get("/make-server-c142e950/evouchers/:id", async (c) => {
+  try {
+    const id = c.req.param("id");
+    const evoucher = await kv.get(`evoucher:${id}`);
+    
+    if (!evoucher) {
+      return c.json({ success: false, error: "E-Voucher not found" }, 404);
+    }
+    
+    return c.json({ success: true, data: evoucher });
+  } catch (error) {
+    console.error("Error fetching E-Voucher:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Get E-Voucher history
+app.get("/make-server-c142e950/evouchers/:id/history", async (c) => {
+  try {
+    const id = c.req.param("id");
+    const history = await kv.getByPrefix(`evoucher_history:${id}:`);
+    
+    // Sort by created_at ascending (oldest first)
+    history.sort((a: any, b: any) => 
+      new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+    );
+    
+    return c.json({ success: true, data: history });
+  } catch (error) {
+    console.error("Error fetching E-Voucher history:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Update E-Voucher (draft only)
+app.put("/make-server-c142e950/evouchers/:id", async (c) => {
+  try {
+    const id = c.req.param("id");
+    const updates = await c.req.json();
+    
+    const existing = await kv.get(`evoucher:${id}`);
+    
+    if (!existing) {
+      return c.json({ success: false, error: "E-Voucher not found" }, 404);
+    }
+    
+    if (existing.status !== "draft") {
+      return c.json({ 
+        success: false, 
+        error: "Only draft E-Vouchers can be edited" 
+      }, 400);
+    }
+    
+    const updated = {
+      ...existing,
+      ...updates,
+      updated_at: new Date().toISOString()
+    };
+    
+    await kv.set(`evoucher:${id}`, updated);
+    
+    console.log(`Updated E-Voucher ${existing.voucher_number} (${id})`);
+    
+    return c.json({ success: true, data: updated });
+  } catch (error) {
+    console.error("Error updating E-Voucher:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Submit E-Voucher for approval
+app.post("/make-server-c142e950/evouchers/:id/submit", async (c) => {
+  try {
+    const id = c.req.param("id");
+    
+    let requestBody;
+    try {
+      const text = await c.req.text();
+      console.log('Received submit request body length:', text.length);
+      
+      if (!text || text.trim() === '') {
+        return c.json({ success: false, error: "Request body is empty" }, 400);
+      }
+      
+      requestBody = JSON.parse(text);
+    } catch (parseError) {
+      console.error("Error parsing submit request JSON:", parseError);
+      return c.json({ 
+        success: false, 
+        error: `Invalid JSON in request body: ${parseError instanceof Error ? parseError.message : String(parseError)}` 
+      }, 400);
+    }
+    
+    const { user_id, user_name, user_role } = requestBody;
+    
+    const existing = await kv.get(`evoucher:${id}`);
+    
+    if (!existing) {
+      return c.json({ success: false, error: "E-Voucher not found" }, 404);
+    }
+    
+    if (existing.status !== "draft") {
+      return c.json({ 
+        success: false, 
+        error: "Only draft E-Vouchers can be submitted" 
+      }, 400);
+    }
+    
+    const updated = {
+      ...existing,
+      status: "pending",
+      submitted_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+    
+    await kv.set(`evoucher:${id}`, updated);
+    
+    // Add history entry
+    await addEVoucherHistory(
+      id,
+      "Submitted for Approval",
+      user_id,
+      user_name,
+      user_role,
+      "draft",
+      "pending"
+    );
+    
+    console.log(`E-Voucher ${existing.voucher_number} submitted for approval`);
+    
+    return c.json({ success: true, data: updated });
+  } catch (error) {
+    console.error("Error submitting E-Voucher:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Approve E-Voucher (does NOT post to ledger - separate step)
+app.post("/make-server-c142e950/evouchers/:id/approve", async (c) => {
+  try {
+    const id = c.req.param("id");
+    const { user_id, user_name, user_role, notes } = await c.req.json();
+    
+    const existing = await kv.get(`evoucher:${id}`);
+    
+    if (!existing) {
+      return c.json({ success: false, error: "E-Voucher not found" }, 404);
+    }
+    
+    // Accept multiple statuses for approval
+    if (existing.status !== "pending" && existing.status !== "Submitted" && existing.status !== "Draft") {
+      return c.json({ 
+        success: false, 
+        error: "Only pending/submitted/draft E-Vouchers can be approved" 
+      }, 400);
+    }
+    
+    // Update E-Voucher to approved status (but NOT posted to ledger yet)
+    const updated = {
+      ...existing,
+      status: "Approved",
+      approved_at: new Date().toISOString(),
+      approved_by: user_id,
+      approved_by_name: user_name,
+      updated_at: new Date().toISOString()
+    };
+    
+    await kv.set(`evoucher:${id}`, updated);
+    
+    // Add history entry
+    await addEVoucherHistory(
+      id,
+      "Approved by Accounting",
+      user_id,
+      user_name,
+      user_role,
+      existing.status,
+      "Approved",
+      notes
+    );
+    
+    console.log(`E-Voucher ${existing.voucher_number} approved by ${user_name}`);
+    
+    return c.json({ 
+      success: true, 
+      data: updated
+    });
+  } catch (error) {
+    console.error("Error approving E-Voucher:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Post E-Voucher to Ledger (separate step after approval)
+// Routes to correct module based on transaction_type
+app.post("/make-server-c142e950/evouchers/:id/post-to-ledger", async (c) => {
+  try {
+    const id = c.req.param("id");
+    const { user_id, user_name, user_role } = await c.req.json();
+    
+    const existing = await kv.get(`evoucher:${id}`);
+    
+    if (!existing) {
+      return c.json({ success: false, error: "E-Voucher not found" }, 404);
+    }
+    
+    if (existing.status !== "Approved") {
+      return c.json({ 
+        success: false, 
+        error: "Only approved E-Vouchers can be posted to ledger" 
+      }, 400);
+    }
+    
+    if (existing.posted_to_ledger) {
+      return c.json({ 
+        success: false, 
+        error: "E-Voucher has already been posted to ledger" 
+      }, 400);
+    }
+    
+    // Route to correct module based on transaction_type
+    const transactionType = existing.transaction_type || "expense";
+    
+    switch (transactionType) {
+      case "collection":
+        // Delegate to collections handler
+        return accountingHandlers.postEVoucherToCollections(c);
+        
+      case "billing":
+        // Delegate to billings handler
+        return accountingHandlers.postEVoucherToBillings(c);
+        
+      case "expense":
+      case "budget_request":
+      case "adjustment":
+      case "reimbursement":
+      default:
+        // Create expense entry
+        const expenseId = `EXP-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        const expense = {
+          id: expenseId,
+          evoucher_id: id,
+          evoucher_number: existing.voucher_number,
+          date: existing.request_date || existing.created_at,
+          vendor: existing.vendor_name,
+          category: existing.expense_category || existing.gl_category,
+          sub_category: existing.sub_category || existing.gl_sub_category,
+          amount: existing.amount,
+          currency: existing.currency || "PHP",
+          description: existing.description || existing.purpose,
+          project_number: existing.project_number,
+          customer_name: existing.customer_name,
+          requestor_id: existing.requestor_id,
+          requestor_name: existing.requestor_name,
+          posted_by: user_id,
+          posted_by_name: user_name,
+          posted_at: new Date().toISOString(),
+          status: "posted",
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+        
+        await kv.set(`expense:${expenseId}`, expense);
+        
+        // Update E-Voucher status
+        const updated = {
+          ...existing,
+          status: "Posted",
+          posted_to_ledger: true,
+          ledger_entry_id: expenseId,
+          ledger_entry_type: "expense",
+          posted_at: new Date().toISOString(),
+          posted_by: user_id,
+          posted_by_name: user_name,
+          updated_at: new Date().toISOString()
+        };
+        
+        await kv.set(`evoucher:${id}`, updated);
+        
+        // Add history entry
+        await addEVoucherHistory(
+          id,
+          "Posted to Expenses Ledger",
+          user_id,
+          user_name,
+          user_role,
+          "Approved",
+          "Posted"
+        );
+        
+        console.log(`✅ E-Voucher ${existing.voucher_number} posted to Expenses (${expenseId})`);
+        
+        return c.json({ 
+          success: true, 
+          data: updated,
+          expense_id: expenseId
+        });
+    }
+  } catch (error) {
+    console.error("Error posting E-Voucher to ledger:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Reject E-Voucher
+app.post("/make-server-c142e950/evouchers/:id/reject", async (c) => {
+  try {
+    const id = c.req.param("id");
+    const { user_id, user_name, user_role, rejection_reason } = await c.req.json();
+    
+    const existing = await kv.get(`evoucher:${id}`);
+    
+    if (!existing) {
+      return c.json({ success: false, error: "E-Voucher not found" }, 404);
+    }
+    
+    if (existing.status !== "pending") {
+      return c.json({ 
+        success: false, 
+        error: "Only pending E-Vouchers can be rejected" 
+      }, 400);
+    }
+    
+    const updated = {
+      ...existing,
+      status: "rejected",
+      rejected_at: new Date().toISOString(),
+      rejected_by: user_id,
+      rejected_by_name: user_name,
+      rejection_reason,
+      updated_at: new Date().toISOString()
+    };
+    
+    await kv.set(`evoucher:${id}`, updated);
+    
+    // Add history entry
+    await addEVoucherHistory(
+      id,
+      "Rejected",
+      user_id,
+      user_name,
+      user_role,
+      "pending",
+      "rejected",
+      rejection_reason
+    );
+    
+    console.log(`E-Voucher ${existing.voucher_number} rejected by ${user_name}`);
+    
+    return c.json({ success: true, data: updated });
+  } catch (error) {
+    console.error("Error rejecting E-Voucher:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Cancel E-Voucher
+app.post("/make-server-c142e950/evouchers/:id/cancel", async (c) => {
+  try {
+    const id = c.req.param("id");
+    const { user_id, user_name, user_role } = await c.req.json();
+    
+    const existing = await kv.get(`evoucher:${id}`);
+    
+    if (!existing) {
+      return c.json({ success: false, error: "E-Voucher not found" }, 404);
+    }
+    
+    if (existing.status !== "draft" && existing.status !== "rejected") {
+      return c.json({ 
+        success: false, 
+        error: "Only draft or rejected E-Vouchers can be cancelled" 
+      }, 400);
+    }
+    
+    const previousStatus = existing.status;
+    
+    const updated = {
+      ...existing,
+      status: "cancelled",
+      cancelled_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+    
+    await kv.set(`evoucher:${id}`, updated);
+    
+    // Add history entry
+    await addEVoucherHistory(
+      id,
+      "Cancelled",
+      user_id,
+      user_name,
+      user_role,
+      previousStatus,
+      "cancelled"
+    );
+    
+    console.log(`E-Voucher ${existing.voucher_number} cancelled by ${user_name}`);
+    
+    return c.json({ success: true, data: updated });
+  } catch (error) {
+    console.error("Error cancelling E-Voucher:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Auto-Approve (Create & Approve in one step - Accounting Staff only)
+app.post("/make-server-c142e950/evouchers/auto-approve", async (c) => {
+  try {
+    const evoucherData = await c.req.json();
+    const { user_id, user_name, user_role } = evoucherData;
+    
+    // Generate E-Voucher number
+    const voucherNumber = await generateEVoucherNumber();
+    const id = `EV-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
+    // Create expense entry immediately
+    const expenseId = `EXP-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const expense = {
+      id: expenseId,
+      expense_name: evoucherData.purpose,
+      booking_id: evoucherData.project_number,
+      category: evoucherData.expense_category || evoucherData.gl_sub_category,
+      amount: evoucherData.amount,
+      currency: evoucherData.currency,
+      status: "Approved",
+      vendor: evoucherData.vendor_name,
+      description: evoucherData.description || evoucherData.purpose,
+      request_date: evoucherData.request_date || new Date().toISOString(),
+      created_from_evoucher_id: id,
+      created_by: user_id,
+      is_adjustment: false,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+    
+    await kv.set(`expense:${expenseId}`, expense);
+    
+    // Create E-Voucher in posted status
+    const evoucher = {
+      id,
+      voucher_number: voucherNumber,
+      status: "posted",
+      posted_to_ledger: true,
+      ledger_expense_id: expenseId,
+      approved_at: new Date().toISOString(),
+      approved_by: user_id,
+      approved_by_name: user_name,
+      submitted_at: new Date().toISOString(),
+      ...evoucherData,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+    
+    await kv.set(`evoucher:${id}`, evoucher);
+    
+    // Add history entries
+    await addEVoucherHistory(
+      id,
+      "Created with Auto-Approve",
+      user_id,
+      user_name,
+      user_role,
+      undefined,
+      "posted",
+      "Created and approved in one step by Accounting Staff"
+    );
+    
+    console.log(`Auto-approved E-Voucher ${voucherNumber} (${id}) → Expense ${expenseId}`);
+    
+    return c.json({ 
+      success: true, 
+      data: evoucher,
+      expense_id: expenseId
+    });
+  } catch (error) {
+    console.error("Error auto-approving E-Voucher:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// ==================== ACCOUNTING MODULE API (CLEAN & CONSOLIDATED) ====================
+// All accounting transactions MUST come from approved E-Vouchers
+// Direct creation bypassing E-Vouchers is NOT allowed
+
+// EXPENSES - Read-only, populated from posted E-Vouchers
+app.get("/make-server-c142e950/accounting/expenses", accountingHandlers.getExpenses);
+app.get("/make-server-c142e950/accounting/expenses/:id", accountingHandlers.getExpenseById);
+app.delete("/make-server-c142e950/accounting/expenses/:id", accountingHandlers.deleteExpense);
+
+// COLLECTIONS - Read-only, populated from posted E-Vouchers
+app.get("/make-server-c142e950/accounting/collections", accountingHandlers.getCollections);
+app.get("/make-server-c142e950/accounting/collections/:id", accountingHandlers.getCollectionById);
+app.post("/make-server-c142e950/evouchers/:id/post-to-collections", accountingHandlers.postEVoucherToCollections);
+app.delete("/make-server-c142e950/accounting/collections/:id", accountingHandlers.deleteCollection);
+
+// BILLINGS - Read-only, populated from posted E-Vouchers
+app.get("/make-server-c142e950/accounting/billings", accountingHandlers.getBillings);
+app.get("/make-server-c142e950/accounting/billings/:id", accountingHandlers.getBillingById);
+app.post("/make-server-c142e950/evouchers/:id/post-to-billings", accountingHandlers.postEVoucherToBillings);
+app.patch("/make-server-c142e950/accounting/billings/:id/payment", accountingHandlers.updateBillingPayment);
+app.delete("/make-server-c142e950/accounting/billings/:id", accountingHandlers.deleteBilling);
 
 // ==================== COMPREHENSIVE SEED DATA ====================
 // This creates realistic data showing the BD → PD → BD → OPS relay race in action
@@ -4609,10 +6201,14 @@ app.post("/make-server-c142e950/customers", async (c) => {
       id,
       name: data.name,
       industry: data.industry || null,
+      registered_address: data.registered_address || null,
+      status: data.status || "Prospect",
+      lead_source: data.lead_source || null,
+      owner_id: data.owner_id || null,
       credit_terms: data.credit_terms || "Net 30",
-      address: data.address || null,
       phone: data.phone || null,
       email: data.email || null,
+      notes: data.notes || null,
       created_at: new Date().toISOString(),
       created_by: data.created_by || null,
       updated_at: new Date().toISOString(),
@@ -4695,11 +6291,15 @@ app.post("/make-server-c142e950/customers/seed", async (c) => {
       {
         id: "CUST-001",
         name: "Manila Electronics Corp",
-        industry: "Electronics & Technology",
+        industry: "Electronics",
+        registered_address: "123 Ayala Avenue, Makati City",
+        status: "Active",
+        lead_source: "Referral",
+        owner_id: "user-bd-rep-001",
         credit_terms: "Net 30",
-        address: "123 Ayala Avenue, Makati City",
         phone: "+63 2 8123 4567",
         email: "procurement@mec.com.ph",
+        notes: null,
         created_at: new Date().toISOString(),
         created_by: "user-bd-rep-001",
         updated_at: new Date().toISOString(),
@@ -4707,11 +6307,15 @@ app.post("/make-server-c142e950/customers/seed", async (c) => {
       {
         id: "CUST-002",
         name: "Pacific Trading Inc",
-        industry: "Import/Export",
+        industry: "General Merchandise",
+        registered_address: "456 Roxas Boulevard, Pasay City",
+        status: "Active",
+        lead_source: "Cold Outreach",
+        owner_id: "user-bd-rep-001",
         credit_terms: "Net 45",
-        address: "456 Roxas Boulevard, Pasay City",
         phone: "+63 2 8234 5678",
         email: "operations@pacifictrade.ph",
+        notes: null,
         created_at: new Date().toISOString(),
         created_by: "user-bd-rep-001",
         updated_at: new Date().toISOString(),
@@ -4719,11 +6323,15 @@ app.post("/make-server-c142e950/customers/seed", async (c) => {
       {
         id: "CUST-003",
         name: "Global Garments Ltd",
-        industry: "Textile & Apparel",
+        industry: "Garments",
+        registered_address: "789 Ortigas Center, Pasig City",
+        status: "Active",
+        lead_source: "Website Inquiry",
+        owner_id: "user-bd-manager-001",
         credit_terms: "Net 30",
-        address: "789 Ortigas Center, Pasig City",
         phone: "+63 2 8345 6789",
         email: "logistics@globalgarments.ph",
+        notes: null,
         created_at: new Date().toISOString(),
         created_by: "user-bd-manager-001",
         updated_at: new Date().toISOString(),
@@ -4731,11 +6339,15 @@ app.post("/make-server-c142e950/customers/seed", async (c) => {
       {
         id: "CUST-004",
         name: "Prime Pharmaceuticals",
-        industry: "Healthcare & Pharma",
+        industry: "Pharmaceutical",
+        registered_address: "321 BGC, Taguig City",
+        status: "Prospect",
+        lead_source: "Trade Show",
+        owner_id: "user-bd-rep-001",
         credit_terms: "Net 15",
-        address: "321 BGC, Taguig City",
         phone: "+63 2 8456 7890",
         email: "supply@primepharma.ph",
+        notes: null,
         created_at: new Date().toISOString(),
         created_by: "user-bd-rep-001",
         updated_at: new Date().toISOString(),
@@ -4744,10 +6356,14 @@ app.post("/make-server-c142e950/customers/seed", async (c) => {
         id: "CUST-005",
         name: "Metro Food Distributors",
         industry: "Food & Beverage",
+        registered_address: "654 Quezon Avenue, Quezon City",
+        status: "Active",
+        lead_source: "Referral",
+        owner_id: "user-bd-manager-001",
         credit_terms: "Net 30",
-        address: "654 Quezon Avenue, Quezon City",
         phone: "+63 2 8567 8901",
         email: "procurement@metrofood.ph",
+        notes: null,
         created_at: new Date().toISOString(),
         created_by: "user-bd-manager-001",
         updated_at: new Date().toISOString(),
@@ -4885,11 +6501,15 @@ app.post("/make-server-c142e950/contacts", async (c) => {
     
     const contact = {
       id,
-      name: data.name,
+      first_name: data.first_name || null,
+      last_name: data.last_name || null,
       title: data.title || null,
       email: data.email || null,
       phone: data.phone || null,
       customer_id: data.customer_id || null, // Optional - can be standalone
+      owner_id: data.owner_id || null,
+      lifecycle_stage: data.lifecycle_stage || "Lead",
+      lead_status: data.lead_status || "New",
       company: data.company || "",
       status: data.status || "Lead",
       last_activity: now,
@@ -4900,9 +6520,11 @@ app.post("/make-server-c142e950/contacts", async (c) => {
       updated_at: now,
     };
     
+    const fullName = `${contact.first_name || ''} ${contact.last_name || ''}`.trim();
+    
     await kv.set(`contact:${id}`, contact);
     
-    console.log(`Created contact: ${id} - ${contact.name}${contact.customer_id ? ` for customer ${contact.customer_id}` : ''}`);
+    console.log(`Created contact: ${id} - ${fullName}${contact.customer_id ? ` for customer ${contact.customer_id}` : ''}`);
     
     return c.json({ success: true, data: contact });
   } catch (error) {
@@ -4942,249 +6564,8 @@ app.put("/make-server-c142e950/contacts/:id", async (c) => {
   }
 });
 
-// Delete contact
-app.delete("/make-server-c142e950/contacts/:id", async (c) => {
-  try {
-    const id = c.req.param("id");
-    
-    const existing = await kv.get(`contact:${id}`);
-    
-    if (!existing) {
-      return c.json({ success: false, error: "Contact not found" }, 404);
-    }
-    
-    await kv.del(`contact:${id}`);
-    
-    console.log(`Deleted contact: ${id}`);
-    
-    return c.json({ success: true, message: "Contact deleted successfully" });
-  } catch (error) {
-    console.error("Error deleting contact:", error);
-    return c.json({ success: false, error: String(error) }, 500);
-  }
-});
-
-// Seed contacts
-app.post("/make-server-c142e950/contacts/seed", async (c) => {
-  try {
-    // Clear existing contacts
-    const existingContacts = await kv.getByPrefix("contact:");
-    for (const contact of existingContacts) {
-      await kv.del(`contact:${contact.id}`);
-    }
-    
-    // Get customers to map company names
-    const customers = await kv.getByPrefix("customer:");
-    const customerMap = new Map(customers.map((c: any) => [c.id, c.name]));
-    
-    const now = new Date().toISOString();
-    const dateOnly = new Date().toISOString().split('T')[0];
-    
-    const seedContacts = [
-      // Manila Electronics Corp contacts
-      {
-        id: "CONTACT-001",
-        name: "Juan dela Cruz",
-        title: "Operations Manager",
-        email: "juan.delacruz@mec.com.ph",
-        phone: "+63 917 123 4567",
-        customer_id: "CUST-001",
-        company: customerMap.get("CUST-001") || "Manila Electronics Corp",
-        status: "Customer",
-        last_activity: now,
-        created_date: dateOnly,
-        notes: "Primary contact for all shipments",
-        created_at: now,
-        created_by: "user-bd-rep-001",
-        updated_at: now,
-      },
-      {
-        id: "CONTACT-002",
-        name: "Maria Santos",
-        title: "Procurement Head",
-        email: "maria.santos@mec.com.ph",
-        phone: "+63 917 234 5678",
-        customer_id: "CUST-001",
-        company: customerMap.get("CUST-001") || "Manila Electronics Corp",
-        status: "Customer",
-        last_activity: now,
-        created_date: dateOnly,
-        notes: "Handles purchasing and vendor relations",
-        created_at: now,
-        created_by: "user-bd-rep-001",
-        updated_at: now,
-      },
-      {
-        id: "CONTACT-003",
-        name: "Roberto Tan",
-        title: "Finance Director",
-        email: "roberto.tan@mec.com.ph",
-        phone: "+63 917 345 6789",
-        customer_id: "CUST-001",
-        company: customerMap.get("CUST-001") || "Manila Electronics Corp",
-        status: "Customer",
-        last_activity: now,
-        created_date: dateOnly,
-        notes: "Approves payments and credit terms",
-        created_at: now,
-        created_by: "user-bd-manager-001",
-        updated_at: now,
-      },
-      
-      // Pacific Trading Inc contacts
-      {
-        id: "CONTACT-004",
-        name: "Lisa Chen",
-        title: "Import Manager",
-        email: "lisa.chen@pacifictrade.ph",
-        phone: "+63 918 123 4567",
-        customer_id: "CUST-002",
-        company: customerMap.get("CUST-002") || "Pacific Trading Inc",
-        status: "Customer",
-        last_activity: now,
-        created_date: dateOnly,
-        notes: "Manages all import operations",
-        created_at: now,
-        created_by: "user-bd-rep-001",
-        updated_at: now,
-      },
-      {
-        id: "CONTACT-005",
-        name: "David Wong",
-        title: "Logistics Coordinator",
-        email: "david.wong@pacifictrade.ph",
-        phone: "+63 918 234 5678",
-        customer_id: "CUST-002",
-        company: customerMap.get("CUST-002") || "Pacific Trading Inc",
-        status: "Customer",
-        last_activity: now,
-        created_date: dateOnly,
-        notes: "Day-to-day shipment tracking",
-        created_at: now,
-        created_by: "user-bd-rep-001",
-        updated_at: now,
-      },
-      
-      // Global Garments Ltd contacts
-      {
-        id: "CONTACT-006",
-        name: "Anna Reyes",
-        title: "Supply Chain Manager",
-        email: "anna.reyes@globalgarments.ph",
-        phone: "+63 919 123 4567",
-        customer_id: "CUST-003",
-        company: customerMap.get("CUST-003") || "Global Garments Ltd",
-        status: "Customer",
-        last_activity: now,
-        created_date: dateOnly,
-        notes: "Primary contact for fabric imports",
-        created_at: now,
-        created_by: "user-bd-manager-001",
-        updated_at: now,
-      },
-      {
-        id: "CONTACT-007",
-        name: "Carlos Garcia",
-        title: "Warehouse Supervisor",
-        email: "carlos.garcia@globalgarments.ph",
-        phone: "+63 919 234 5678",
-        customer_id: "CUST-003",
-        company: customerMap.get("CUST-003") || "Global Garments Ltd",
-        status: "Customer",
-        last_activity: now,
-        created_date: dateOnly,
-        notes: "Coordinates deliveries and warehouse ops",
-        created_at: now,
-        created_by: "user-bd-manager-001",
-        updated_at: now,
-      },
-      
-      // Prime Pharmaceuticals contacts
-      {
-        id: "CONTACT-008",
-        name: "Dr. Patricia Lim",
-        title: "Supply Chain Director",
-        email: "patricia.lim@primepharma.ph",
-        phone: "+63 920 123 4567",
-        customer_id: "CUST-004",
-        company: customerMap.get("CUST-004") || "Prime Pharmaceuticals",
-        status: "Customer",
-        last_activity: now,
-        created_date: dateOnly,
-        notes: "Handles temperature-controlled shipments",
-        created_at: now,
-        created_by: "user-bd-rep-001",
-        updated_at: now,
-      },
-      {
-        id: "CONTACT-009",
-        name: "Michael Ramos",
-        title: "Regulatory Compliance Officer",
-        email: "michael.ramos@primepharma.ph",
-        phone: "+63 920 234 5678",
-        customer_id: "CUST-004",
-        company: customerMap.get("CUST-004") || "Prime Pharmaceuticals",
-        status: "Customer",
-        last_activity: now,
-        created_date: dateOnly,
-        notes: "Ensures FDA and customs compliance",
-        created_at: now,
-        created_by: "user-bd-rep-001",
-        updated_at: now,
-      },
-      
-      // Metro Food Distributors contacts
-      {
-        id: "CONTACT-010",
-        name: "Sofia Mendoza",
-        title: "Purchasing Manager",
-        email: "sofia.mendoza@metrofood.ph",
-        phone: "+63 921 123 4567",
-        customer_id: "CUST-005",
-        company: customerMap.get("CUST-005") || "Metro Food Distributors",
-        status: "Customer",
-        last_activity: now,
-        created_date: dateOnly,
-        notes: "Manages imported food products",
-        created_at: now,
-        created_by: "user-bd-manager-001",
-        updated_at: now,
-      },
-      {
-        id: "CONTACT-011",
-        name: "Ramon Cruz",
-        title: "Distribution Head",
-        email: "ramon.cruz@metrofood.ph",
-        phone: "+63 921 234 5678",
-        customer_id: "CUST-005",
-        company: customerMap.get("CUST-005") || "Metro Food Distributors",
-        status: "Customer",
-        last_activity: now,
-        created_date: dateOnly,
-        notes: "Coordinates with trucking and warehousing",
-        created_at: now,
-        created_by: "user-bd-manager-001",
-        updated_at: now,
-      },
-    ];
-    
-    for (const contact of seedContacts) {
-      await kv.set(`contact:${contact.id}`, contact);
-      console.log(`Seeded contact: ${contact.id} - ${contact.name} (${contact.customer_id})`);
-    }
-    
-    return c.json({ 
-      success: true, 
-      message: "Contacts seeded successfully",
-      data: seedContacts 
-    });
-  } catch (error) {
-    console.error("Error seeding contacts:", error);
-    return c.json({ success: false, error: String(error) }, 500);
-  }
-});
-
-// Clear all contacts
+// ⚠️ IMPORTANT: Specific routes must come BEFORE parameterized routes
+// Clear all contacts - must be before /contacts/:id
 app.delete("/make-server-c142e950/contacts/clear", async (c) => {
   try {
     const existingContacts = await kv.getByPrefix("contact:");
@@ -5207,6 +6588,80 @@ app.delete("/make-server-c142e950/contacts/clear", async (c) => {
     return c.json({ success: false, error: String(error) }, 500);
   }
 });
+
+// Migrate contacts from old schema (name field) to new schema (first_name, last_name)
+app.post("/make-server-c142e950/contacts/migrate-names", async (c) => {
+  try {
+    const contacts = await kv.getByPrefix("contact:");
+    let migratedCount = 0;
+    let skippedCount = 0;
+    
+    for (const contact of contacts) {
+      // Check if contact has old 'name' field but no first_name/last_name
+      if (contact.name && (!contact.first_name || !contact.last_name)) {
+        // Split name into first and last name
+        const nameParts = contact.name.trim().split(' ');
+        const first_name = nameParts[0] || '';
+        const last_name = nameParts.slice(1).join(' ') || '';
+        
+        // Update contact with new schema
+        const updatedContact = {
+          ...contact,
+          first_name,
+          last_name,
+          updated_at: new Date().toISOString()
+        };
+        
+        // Remove old 'name' field
+        delete updatedContact.name;
+        
+        await kv.set(`contact:${contact.id}`, updatedContact);
+        console.log(`Migrated contact ${contact.id}: "${contact.name}" → first_name: "${first_name}", last_name: "${last_name}"`);
+        migratedCount++;
+      } else {
+        skippedCount++;
+      }
+    }
+    
+    console.log(`Migration complete: ${migratedCount} migrated, ${skippedCount} skipped`);
+    
+    return c.json({ 
+      success: true, 
+      message: `Migrated ${migratedCount} contacts from old schema to new schema`,
+      migrated: migratedCount,
+      skipped: skippedCount
+    });
+  } catch (error) {
+    console.error("Error migrating contacts:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Delete contact (parameterized route must come after specific routes)
+app.delete("/make-server-c142e950/contacts/:id", async (c) => {
+  try {
+    const id = c.req.param("id");
+    
+    const existing = await kv.get(`contact:${id}`);
+    
+    if (!existing) {
+      return c.json({ success: false, error: "Contact not found" }, 404);
+    }
+    
+    await kv.del(`contact:${id}`);
+    
+    console.log(`Deleted contact: ${id}`);
+    
+    return c.json({ success: true, message: "Contact deleted successfully" });
+  } catch (error) {
+    console.error("Error deleting contact:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// ⚠️ REMOVED: Seed contacts endpoint
+// Contact seed data endpoint has been removed to prevent fake data pollution
+// Users should create real contacts through the UI instead
 
 // ==================== TASKS API ====================
 
@@ -5428,6 +6883,7 @@ app.post("/make-server-c142e950/activities", async (c) => {
       task_id: data.task_id || null,
       user_id: data.user_id,
       created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
     };
     
     await kv.set(`activity:${id}`, activity);
@@ -5437,6 +6893,29 @@ app.post("/make-server-c142e950/activities", async (c) => {
     return c.json({ success: true, data: activity });
   } catch (error) {
     console.error("Error creating activity:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Delete activity
+app.delete("/make-server-c142e950/activities/:id", async (c) => {
+  try {
+    const id = c.req.param("id");
+    
+    // Check if activity exists
+    const activity = await kv.get(`activity:${id}`);
+    if (!activity) {
+      return c.json({ success: false, error: "Activity not found" }, 404);
+    }
+    
+    // Delete the activity
+    await kv.del(`activity:${id}`);
+    
+    console.log(`Deleted activity: ${id}`);
+    
+    return c.json({ success: true, message: "Activity deleted successfully" });
+  } catch (error) {
+    console.error("Error deleting activity:", error);
     return c.json({ success: false, error: String(error) }, 500);
   }
 });
@@ -5551,6 +7030,187 @@ app.put("/make-server-c142e950/budget-requests/:id", async (c) => {
     return c.json({ success: true, data: budgetRequest });
   } catch (error) {
     console.error("Error updating budget request:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// ==================== EXPENSES API ====================
+
+// Get all expenses (optionally filter by date, category, vendor, project)
+app.get("/make-server-c142e950/expenses", async (c) => {
+  try {
+    const dateFrom = c.req.query("date_from");
+    const dateTo = c.req.query("date_to");
+    const category = c.req.query("category");
+    const vendorId = c.req.query("vendor_id");
+    const projectNumber = c.req.query("project_number");
+    const status = c.req.query("status");
+    
+    let expenses = await kv.getByPrefix("expense:");
+    
+    // Apply filters
+    if (dateFrom) {
+      expenses = expenses.filter((exp: any) => new Date(exp.request_date || exp.created_at) >= new Date(dateFrom));
+    }
+    if (dateTo) {
+      expenses = expenses.filter((exp: any) => new Date(exp.request_date || exp.created_at) <= new Date(dateTo));
+    }
+    if (category) {
+      expenses = expenses.filter((exp: any) => exp.expense_category === category);
+    }
+    if (vendorId) {
+      expenses = expenses.filter((exp: any) => exp.vendor_id === vendorId);
+    }
+    if (projectNumber) {
+      expenses = expenses.filter((exp: any) => exp.project_number === projectNumber);
+    }
+    if (status) {
+      expenses = expenses.filter((exp: any) => exp.status === status);
+    }
+    
+    // Sort by date descending (newest first)
+    expenses.sort((a: any, b: any) => {
+      return new Date(b.request_date || b.created_at).getTime() - new Date(a.request_date || a.created_at).getTime();
+    });
+    
+    console.log(`Fetched ${expenses.length} expenses`);
+    
+    return c.json({ success: true, data: expenses });
+  } catch (error) {
+    console.error("Error fetching expenses:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Get single expense by ID
+app.get("/make-server-c142e950/expenses/:id", async (c) => {
+  try {
+    const id = c.req.param("id");
+    const expense = await kv.get(`expense:${id}`);
+    
+    if (!expense) {
+      return c.json({ success: false, error: "Expense not found" }, 404);
+    }
+    
+    return c.json({ success: true, data: expense });
+  } catch (error) {
+    console.error("Error fetching expense:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Create expense
+app.post("/make-server-c142e950/expenses", async (c) => {
+  try {
+    const data = await c.req.json();
+    
+    // Use provided ID or generate new one
+    const id = data.id || `EXP-${Date.now()}`;
+    
+    const expense = {
+      ...data,
+      id,
+      created_at: data.created_at || new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    
+    await kv.set(`expense:${id}`, expense);
+    
+    console.log(`Created expense: ${id} - ${expense.description} - ${expense.amount}`);
+    
+    return c.json({ success: true, data: expense });
+  } catch (error) {
+    console.error("Error creating expense:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Update expense
+app.put("/make-server-c142e950/expenses/:id", async (c) => {
+  try {
+    const id = c.req.param("id");
+    const data = await c.req.json();
+    
+    const existing = await kv.get(`expense:${id}`);
+    
+    if (!existing) {
+      return c.json({ success: false, error: "Expense not found" }, 404);
+    }
+    
+    const expense = {
+      ...existing,
+      ...data,
+      id, // Ensure ID doesn't change
+      created_at: existing.created_at, // Preserve creation date
+      updated_at: new Date().toISOString(),
+    };
+    
+    await kv.set(`expense:${id}`, expense);
+    
+    console.log(`Updated expense: ${id} - ${expense.description}`);
+    
+    return c.json({ success: true, data: expense });
+  } catch (error) {
+    console.error("Error updating expense:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Delete expense
+app.delete("/make-server-c142e950/expenses/:id", async (c) => {
+  try {
+    const id = c.req.param("id");
+    
+    const existing = await kv.get(`expense:${id}`);
+    
+    if (!existing) {
+      return c.json({ success: false, error: "Expense not found" }, 404);
+    }
+    
+    await kv.del(`expense:${id}`);
+    
+    console.log(`Deleted expense: ${id}`);
+    
+    return c.json({ success: true, message: "Expense deleted successfully" });
+  } catch (error) {
+    console.error("Error deleting expense:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Get expense summary by category
+app.get("/make-server-c142e950/expenses/summary/by-category", async (c) => {
+  try {
+    const dateFrom = c.req.query("date_from");
+    const dateTo = c.req.query("date_to");
+    
+    let expenses = await kv.getByPrefix("expense:");
+    
+    // Apply date filters
+    if (dateFrom) {
+      expenses = expenses.filter((exp: any) => new Date(exp.request_date || exp.created_at) >= new Date(dateFrom));
+    }
+    if (dateTo) {
+      expenses = expenses.filter((exp: any) => new Date(exp.request_date || exp.created_at) <= new Date(dateTo));
+    }
+    
+    // Group by category and sum amounts
+    const summary: Record<string, { category: string; total: number; count: number }> = {};
+    
+    expenses.forEach((exp: any) => {
+      const category = exp.expense_category || "Uncategorized";
+      if (!summary[category]) {
+        summary[category] = { category, total: 0, count: 0 };
+      }
+      summary[category].total += exp.amount || 0;
+      summary[category].count += 1;
+    });
+    
+    const result = Object.values(summary).sort((a, b) => b.total - a.total);
+    
+    return c.json({ success: true, data: result });
+  } catch (error) {
+    console.error("Error fetching expense summary:", error);
     return c.json({ success: false, error: String(error) }, 500);
   }
 });
@@ -5886,6 +7546,1365 @@ app.delete("/make-server-c142e950/vendors/clear", async (c) => {
     });
   } catch (error) {
     console.error("Error clearing vendors:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// ==================== BD REPORTS API ====================
+
+// Get available report templates
+app.get("/make-server-c142e950/reports/templates", async (c) => {
+  try {
+    const templates = [
+      {
+        id: "quotation-performance",
+        name: "Quotation Performance Report",
+        description: "Overview of quotation metrics, win rates, and conversion statistics",
+        icon: "📊",
+        category: "Performance"
+      },
+      {
+        id: "customer-activity",
+        name: "Customer Activity Report",
+        description: "Customer engagement, quotations, and lifetime value analysis",
+        icon: "👥",
+        category: "Customers"
+      },
+      {
+        id: "rep-performance",
+        name: "BD Rep Performance Report",
+        description: "Individual and team performance metrics and comparisons",
+        icon: "🎯",
+        category: "Performance"
+      },
+      {
+        id: "pipeline-health",
+        name: "Pipeline Health Report",
+        description: "Pipeline stages, conversion rates, and velocity metrics",
+        icon: "💼",
+        category: "Pipeline"
+      },
+      {
+        id: "budget-requests",
+        name: "Budget Request Report",
+        description: "Overview of budget requests, approvals, and spending",
+        icon: "📈",
+        category: "Finance"
+      }
+    ];
+
+    return c.json({ success: true, data: templates });
+  } catch (error) {
+    console.error("Error fetching report templates:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Generate report based on configuration
+app.post("/make-server-c142e950/reports/generate", async (c) => {
+  try {
+    const config = await c.req.json();
+    const { templateId, dataSource, columns, filters, groupBy, aggregations, sortBy, dateRange } = config;
+
+    // Fetch data based on dataSource
+    let rawData: any[] = [];
+    
+    if (dataSource === "quotations" || templateId === "quotation-performance" || templateId === "pipeline-health") {
+      const quotations = await kv.getByPrefix("quotation:");
+      rawData = quotations;
+    } else if (dataSource === "customers" || templateId === "customer-activity") {
+      const customers = await kv.getByPrefix("customer:");
+      rawData = customers;
+    } else if (dataSource === "budget_requests" || templateId === "budget-requests") {
+      const budgetRequests = await kv.getByPrefix("budget_request:");
+      rawData = budgetRequests;
+    } else if (dataSource === "contacts") {
+      const contacts = await kv.getByPrefix("contact:");
+      rawData = contacts;
+    } else if (dataSource === "activities") {
+      const activities = await kv.getByPrefix("activity:");
+      rawData = activities;
+    }
+
+    // Apply filters
+    let filteredData = rawData;
+    if (filters && filters.length > 0) {
+      filteredData = rawData.filter(item => {
+        return filters.every((filter: any) => {
+          const { field, operator, value } = filter;
+          const fieldValue = item[field];
+
+          switch (operator) {
+            case "equals":
+              return fieldValue === value;
+            case "not_equals":
+              return fieldValue !== value;
+            case "contains":
+              return String(fieldValue || "").toLowerCase().includes(String(value).toLowerCase());
+            case "greater_than":
+              return Number(fieldValue) > Number(value);
+            case "less_than":
+              return Number(fieldValue) < Number(value);
+            case "in":
+              return Array.isArray(value) && value.includes(fieldValue);
+            case "between":
+              return Number(fieldValue) >= Number(value[0]) && Number(fieldValue) <= Number(value[1]);
+            case "date_after":
+              return new Date(fieldValue) > new Date(value);
+            case "date_before":
+              return new Date(fieldValue) < new Date(value);
+            case "date_between":
+              return new Date(fieldValue) >= new Date(value[0]) && new Date(fieldValue) <= new Date(value[1]);
+            default:
+              return true;
+          }
+        });
+      });
+    }
+
+    // Apply date range filter if provided
+    if (dateRange && dateRange.field && dateRange.start && dateRange.end) {
+      filteredData = filteredData.filter(item => {
+        const date = new Date(item[dateRange.field]);
+        return date >= new Date(dateRange.start) && date <= new Date(dateRange.end);
+      });
+    }
+
+    // Calculate metrics based on template
+    let metrics: any = {};
+    let chartData: any = {};
+
+    if (templateId === "quotation-performance") {
+      const total = filteredData.length;
+      const wonCount = filteredData.filter(q => q.status === "Won").length;
+      const lostCount = filteredData.filter(q => q.status === "Lost").length;
+      const sentCount = filteredData.filter(q => q.status === "Sent to Client").length;
+      const draftCount = filteredData.filter(q => q.status === "Draft").length;
+      
+      const totalValue = filteredData.reduce((sum, q) => sum + (q.total_amount || 0), 0);
+      const avgValue = total > 0 ? totalValue / total : 0;
+      const winRate = (wonCount + lostCount) > 0 ? (wonCount / (wonCount + lostCount)) * 100 : 0;
+
+      metrics = {
+        total_quotations: total,
+        won_count: wonCount,
+        lost_count: lostCount,
+        sent_count: sentCount,
+        draft_count: draftCount,
+        total_value: totalValue,
+        average_value: avgValue,
+        win_rate: winRate.toFixed(1)
+      };
+
+      // Chart data: Status distribution
+      chartData.statusDistribution = [
+        { name: "Won", value: wonCount },
+        { name: "Lost", value: lostCount },
+        { name: "Sent", value: sentCount },
+        { name: "Draft", value: draftCount }
+      ];
+
+      // Chart data: Monthly trend
+      const monthlyData: any = {};
+      filteredData.forEach(q => {
+        const month = new Date(q.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short' });
+        monthlyData[month] = (monthlyData[month] || 0) + 1;
+      });
+      chartData.monthlyTrend = Object.entries(monthlyData).map(([month, count]) => ({
+        month,
+        count
+      }));
+
+    } else if (templateId === "customer-activity") {
+      // Get all quotations and contacts for calculations
+      const allQuotations = await kv.getByPrefix("quotation:");
+      const allContacts = await kv.getByPrefix("contact:");
+      
+      metrics = {
+        total_customers: filteredData.length,
+        total_quotations: allQuotations.length,
+        active_customers: filteredData.filter((c: any) => {
+          const customerQuotations = allQuotations.filter((q: any) => q.customer_id === c.id);
+          return customerQuotations.length > 0;
+        }).length
+      };
+
+      // Top customers by quotation count
+      const customerQuotationCounts: any = {};
+      allQuotations.forEach((q: any) => {
+        customerQuotationCounts[q.customer_id] = (customerQuotationCounts[q.customer_id] || 0) + 1;
+      });
+      
+      chartData.topCustomers = Object.entries(customerQuotationCounts)
+        .sort(([, a]: any, [, b]: any) => b - a)
+        .slice(0, 10)
+        .map(([customerId, count]) => {
+          const customer = filteredData.find((c: any) => c.id === customerId);
+          return {
+            name: customer?.company_name || "Unknown",
+            count
+          };
+        });
+
+    } else if (templateId === "rep-performance") {
+      const allQuotations = await kv.getByPrefix("quotation:");
+      const allUsers = await kv.getByPrefix("user:");
+      const bdUsers = allUsers.filter((u: any) => u.department === "Business Development");
+
+      const repStats: any = {};
+      bdUsers.forEach((user: any) => {
+        const userQuotations = allQuotations.filter((q: any) => q.created_by === user.id);
+        const wonQuotations = userQuotations.filter((q: any) => q.status === "Won");
+        const lostQuotations = userQuotations.filter((q: any) => q.status === "Lost");
+        const totalDecided = wonQuotations.length + lostQuotations.length;
+        const winRate = totalDecided > 0 ? (wonQuotations.length / totalDecided) * 100 : 0;
+
+        repStats[user.id] = {
+          name: user.name,
+          total_quotations: userQuotations.length,
+          won_count: wonQuotations.length,
+          win_rate: winRate,
+          total_value: userQuotations.reduce((sum: number, q: any) => sum + (q.total_amount || 0), 0)
+        };
+      });
+
+      metrics = {
+        total_reps: bdUsers.length,
+        total_quotations: allQuotations.length,
+        avg_quotations_per_rep: bdUsers.length > 0 ? allQuotations.length / bdUsers.length : 0
+      };
+
+      chartData.repPerformance = Object.values(repStats);
+
+    } else if (templateId === "pipeline-health") {
+      const statusCounts: any = {
+        "Draft": 0,
+        "Inquiry Submitted": 0,
+        "Sent to Client": 0,
+        "Won": 0,
+        "Lost": 0
+      };
+
+      const statusValues: any = {
+        "Draft": 0,
+        "Inquiry Submitted": 0,
+        "Sent to Client": 0,
+        "Won": 0,
+        "Lost": 0
+      };
+
+      filteredData.forEach(q => {
+        if (statusCounts.hasOwnProperty(q.status)) {
+          statusCounts[q.status]++;
+          statusValues[q.status] += (q.total_amount || 0);
+        }
+      });
+
+      const totalValue = Object.values(statusValues).reduce((sum: number, val: any) => sum + val, 0);
+
+      metrics = {
+        total_pipeline_value: totalValue,
+        active_opportunities: statusCounts["Sent to Client"] + statusCounts["Inquiry Submitted"],
+        won_count: statusCounts["Won"],
+        lost_count: statusCounts["Lost"]
+      };
+
+      chartData.pipelineStages = Object.entries(statusCounts).map(([stage, count]) => ({
+        stage,
+        count,
+        value: statusValues[stage]
+      }));
+
+    } else if (templateId === "budget-requests") {
+      const approved = filteredData.filter(br => br.status === "Approved").length;
+      const pending = filteredData.filter(br => br.status === "Pending").length;
+      const rejected = filteredData.filter(br => br.status === "Rejected").length;
+      const totalAmount = filteredData.reduce((sum, br) => sum + (br.amount || 0), 0);
+
+      metrics = {
+        total_requests: filteredData.length,
+        approved_count: approved,
+        pending_count: pending,
+        rejected_count: rejected,
+        total_amount: totalAmount,
+        approval_rate: (approved + rejected) > 0 ? (approved / (approved + rejected)) * 100 : 0
+      };
+
+      chartData.statusDistribution = [
+        { name: "Approved", value: approved },
+        { name: "Pending", value: pending },
+        { name: "Rejected", value: rejected }
+      ];
+    }
+
+    // Select columns if specified
+    let tableData = filteredData;
+    if (columns && columns.length > 0) {
+      tableData = filteredData.map(item => {
+        const row: any = {};
+        columns.forEach((col: string) => {
+          row[col] = item[col];
+        });
+        return row;
+      });
+    }
+
+    // Apply sorting
+    if (sortBy && sortBy.length > 0) {
+      tableData.sort((a: any, b: any) => {
+        for (const sort of sortBy) {
+          const { field, direction } = sort;
+          const aVal = a[field];
+          const bVal = b[field];
+          
+          if (aVal < bVal) return direction === "asc" ? -1 : 1;
+          if (aVal > bVal) return direction === "asc" ? 1 : -1;
+        }
+        return 0;
+      });
+    }
+
+    return c.json({
+      success: true,
+      data: {
+        metrics,
+        chartData,
+        tableData: tableData.slice(0, 1000), // Limit to 1000 rows for performance
+        totalRows: filteredData.length
+      }
+    });
+  } catch (error) {
+    console.error("Error generating report:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Get user's saved reports
+app.get("/make-server-c142e950/reports/saved", async (c) => {
+  try {
+    const userId = c.req.query("user_id");
+    
+    if (!userId) {
+      return c.json({ success: false, error: "User ID required" }, 400);
+    }
+
+    const savedReports = await kv.getByPrefix(`saved_report:${userId}:`);
+    
+    return c.json({ success: true, data: savedReports });
+  } catch (error) {
+    console.error("Error fetching saved reports:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Save report configuration
+app.post("/make-server-c142e950/reports/save", async (c) => {
+  try {
+    const { userId, name, description, config } = await c.req.json();
+    
+    if (!userId || !name || !config) {
+      return c.json({ success: false, error: "Missing required fields" }, 400);
+    }
+
+    const reportId = `report_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const savedReport = {
+      id: reportId,
+      user_id: userId,
+      name,
+      description: description || "",
+      config,
+      created_at: new Date().toISOString(),
+      last_run: null
+    };
+
+    await kv.set(`saved_report:${userId}:${reportId}`, savedReport);
+    
+    return c.json({ success: true, data: savedReport });
+  } catch (error) {
+    console.error("Error saving report:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Delete saved report
+app.delete("/make-server-c142e950/reports/saved/:id", async (c) => {
+  try {
+    const reportId = c.req.param("id");
+    const userId = c.req.query("user_id");
+    
+    if (!userId) {
+      return c.json({ success: false, error: "User ID required" }, 400);
+    }
+
+    await kv.del(`saved_report:${userId}:${reportId}`);
+    
+    return c.json({ success: true, message: "Report deleted successfully" });
+  } catch (error) {
+    console.error("Error deleting saved report:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Export report to CSV/Excel/PDF
+app.post("/make-server-c142e950/reports/export", async (c) => {
+  try {
+    const { format, data, filename } = await c.req.json();
+    
+    if (format === "csv") {
+      // Generate CSV
+      if (!data || data.length === 0) {
+        return c.json({ success: false, error: "No data to export" }, 400);
+      }
+
+      const headers = Object.keys(data[0]);
+      const csvRows = [
+        headers.join(","),
+        ...data.map((row: any) => 
+          headers.map(header => {
+            const value = row[header];
+            // Escape quotes and wrap in quotes if contains comma
+            const stringValue = String(value || "");
+            if (stringValue.includes(",") || stringValue.includes('"')) {
+              return `"${stringValue.replace(/"/g, '""')}"`;
+            }
+            return stringValue;
+          }).join(",")
+        )
+      ];
+
+      const csvContent = csvRows.join("\n");
+      
+      return c.json({
+        success: true,
+        data: {
+          content: csvContent,
+          filename: filename || "report.csv",
+          mimeType: "text/csv"
+        }
+      });
+    } else if (format === "excel") {
+      // For Excel, we'll return CSV with .xlsx extension
+      // In a production app, you'd use a library like xlsx
+      if (!data || data.length === 0) {
+        return c.json({ success: false, error: "No data to export" }, 400);
+      }
+
+      const headers = Object.keys(data[0]);
+      const csvRows = [
+        headers.join("\t"), // Tab-separated for Excel
+        ...data.map((row: any) => 
+          headers.map(header => String(row[header] || "")).join("\t")
+        )
+      ];
+
+      const content = csvRows.join("\n");
+      
+      return c.json({
+        success: true,
+        data: {
+          content,
+          filename: filename || "report.xlsx",
+          mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        }
+      });
+    } else if (format === "pdf") {
+      // For PDF, return a simple text representation
+      // In production, use a PDF generation library
+      return c.json({
+        success: true,
+        data: {
+          content: JSON.stringify(data, null, 2),
+          filename: filename || "report.pdf",
+          mimeType: "application/pdf",
+          note: "PDF generation requires additional library - returning JSON for now"
+        }
+      });
+    } else {
+      return c.json({ success: false, error: "Invalid export format" }, 400);
+    }
+  } catch (error) {
+    console.error("Error exporting report:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// ==================== CONTROL CENTER REPORTS API ====================
+
+// Helper function to apply filter operators
+function applyFilterOperator(fieldValue: any, operator: string, filterValue: any): boolean {
+  switch (operator) {
+    case 'equals':
+      return fieldValue === filterValue;
+    case 'not_equals':
+      return fieldValue !== filterValue;
+    case 'contains':
+      return String(fieldValue || '').toLowerCase().includes(String(filterValue).toLowerCase());
+    case 'starts_with':
+      return String(fieldValue || '').toLowerCase().startsWith(String(filterValue).toLowerCase());
+    case 'greater_than':
+      return Number(fieldValue) > Number(filterValue);
+    case 'less_than':
+      return Number(fieldValue) < Number(filterValue);
+    case 'greater_than_or_equal':
+      return Number(fieldValue) >= Number(filterValue);
+    case 'less_than_or_equal':
+      return Number(fieldValue) <= Number(filterValue);
+    case 'date_after':
+      return new Date(fieldValue) > new Date(filterValue);
+    case 'date_before':
+      return new Date(fieldValue) < new Date(filterValue);
+    default:
+      return true;
+  }
+}
+
+// Generate report from Control Center (cross-entity queries)
+app.post("/make-server-c142e950/reports/control-center", async (c) => {
+  try {
+    const { selectedFields, filters, groupBy, aggregations } = await c.req.json();
+    
+    console.log('[Control Center] Received config:', {
+      selectedFields: selectedFields?.length || 0,
+      filters: filters?.length || 0,
+      groupBy: groupBy?.length || 0,
+      aggregations: aggregations?.length || 0
+    });
+
+    // If no fields selected, return empty result
+    if (!selectedFields || selectedFields.length === 0) {
+      return c.json({
+        success: true,
+        data: [],
+        columns: []
+      });
+    }
+
+    // Determine which entities are involved
+    const entitiesInvolved = new Set<string>();
+    selectedFields.forEach((f: any) => entitiesInvolved.add(f.entity));
+    if (filters) {
+      filters.forEach((f: any) => entitiesInvolved.add(f.entity));
+    }
+
+    console.log('[Control Center] Entities involved:', Array.from(entitiesInvolved));
+
+    // Fetch all required entities from KV store
+    const entityData: Record<string, any[]> = {};
+    for (const entity of entitiesInvolved) {
+      const prefix = entity === 'quotations' ? 'quotation:' :
+                     entity === 'customers' ? 'customer:' :
+                     entity === 'contacts' ? 'contact:' :
+                     entity === 'activities' ? 'activity:' :
+                     entity === 'budget_requests' ? 'budget_request:' : '';
+      
+      if (prefix) {
+        entityData[entity] = await kv.getByPrefix(prefix);
+        console.log(`[Control Center] Loaded ${entityData[entity].length} records from ${entity}`);
+      }
+    }
+
+    // Determine primary entity (the one with most selected fields)
+    const fieldCounts: Record<string, number> = {};
+    selectedFields.forEach((f: any) => {
+      fieldCounts[f.entity] = (fieldCounts[f.entity] || 0) + 1;
+    });
+    const primaryEntity = Object.entries(fieldCounts).sort(([, a], [, b]) => b - a)[0][0];
+    console.log('[Control Center] Primary entity:', primaryEntity, 'Field counts:', fieldCounts);
+
+    // Start with primary entity data
+    let results = entityData[primaryEntity] || [];
+    console.log('[Control Center] Starting with', results.length, 'records from primary entity');
+
+    // Apply filters
+    if (filters && filters.length > 0) {
+      results = results.filter((item: any) => {
+        return filters.every((filter: any) => {
+          // For filters on the primary entity, apply directly
+          if (filter.entity === primaryEntity) {
+            const fieldValue = item[filter.field];
+            return applyFilterOperator(fieldValue, filter.operator, filter.value);
+          }
+          
+          // For filters on related entities, we need to do a lookup
+          // This is a simplified version - in production you'd handle complex joins
+          if (filter.entity === 'customers' && primaryEntity === 'quotations') {
+            const customer = entityData.customers?.find((c: any) => c.id === item.customer_id);
+            if (!customer) return false;
+            return applyFilterOperator(customer[filter.field], filter.operator, filter.value);
+          }
+          
+          if (filter.entity === 'contacts' && primaryEntity === 'quotations') {
+            const contact = entityData.contacts?.find((c: any) => c.id === item.contact_person_id);
+            if (!contact) return false;
+            return applyFilterOperator(contact[filter.field], filter.operator, filter.value);
+          }
+          
+          // Default: don't filter if we can't match the relationship
+          return true;
+        });
+      });
+      console.log('[Control Center] After filtering:', results.length, 'records');
+    }
+
+    // Build result rows with cross-entity field mapping
+    const resultRows = results.map((item: any) => {
+      const row: any = {};
+      
+      selectedFields.forEach((field: any) => {
+        const columnName = field.displayLabel;
+        
+        if (field.entity === primaryEntity) {
+          // Direct field from primary entity
+          row[columnName] = item[field.field];
+        } else if (field.entity === 'customers' && primaryEntity === 'quotations') {
+          // Join to customers
+          const customer = entityData.customers?.find((c: any) => c.id === item.customer_id);
+          row[columnName] = customer ? customer[field.field] : null;
+        } else if (field.entity === 'contacts' && primaryEntity === 'quotations') {
+          // Join to contacts
+          const contact = entityData.contacts?.find((c: any) => c.id === item.contact_person_id);
+          row[columnName] = contact ? contact[field.field] : null;
+        } else if (field.entity === 'quotations' && primaryEntity === 'customers') {
+          // Can't easily do one-to-many in this simple structure
+          // Would need aggregation logic here
+          row[columnName] = null;
+        } else {
+          row[columnName] = null;
+        }
+      });
+      
+      return row;
+    });
+
+    console.log('[Control Center] Built', resultRows.length, 'result rows');
+
+    // Handle grouping and aggregations
+    let finalResults = resultRows;
+    if (groupBy && groupBy.length > 0 && aggregations && aggregations.length > 0) {
+      // Group by specified fields
+      const grouped: Record<string, any[]> = {};
+      
+      resultRows.forEach((row: any) => {
+        const groupKey = groupBy.map((g: any) => row[g.label]).join('|');
+        if (!grouped[groupKey]) {
+          grouped[groupKey] = [];
+        }
+        grouped[groupKey].push(row);
+      });
+
+      // Calculate aggregations for each group
+      finalResults = Object.entries(grouped).map(([groupKey, rows]) => {
+        const result: any = {};
+        
+        // Add group by fields
+        groupBy.forEach((g: any, index: number) => {
+          result[g.label] = groupKey.split('|')[index];
+        });
+        
+        // Add aggregations
+        aggregations.forEach((agg: any) => {
+          const field = selectedFields.find((f: any) => f.entity === agg.entity && f.field === agg.field);
+          const columnName = field?.displayLabel;
+          
+          if (columnName) {
+            const values = rows.map((r: any) => Number(r[columnName]) || 0);
+            
+            if (agg.function === 'SUM') {
+              result[agg.name] = values.reduce((sum, val) => sum + val, 0);
+            } else if (agg.function === 'AVG') {
+              result[agg.name] = values.length > 0 ? values.reduce((sum, val) => sum + val, 0) / values.length : 0;
+            } else if (agg.function === 'COUNT') {
+              result[agg.name] = rows.length;
+            } else if (agg.function === 'MIN') {
+              result[agg.name] = Math.min(...values);
+            } else if (agg.function === 'MAX') {
+              result[agg.name] = Math.max(...values);
+            }
+          }
+        });
+        
+        return result;
+      });
+
+      console.log('[Control Center] After grouping/aggregation:', finalResults.length, 'rows');
+    }
+
+    // Extract column names from first row
+    const columns = finalResults.length > 0 ? Object.keys(finalResults[0]) : [];
+
+    return c.json({
+      success: true,
+      data: finalResults.slice(0, 1000), // Limit to 1000 rows
+      columns: columns
+    });
+
+  } catch (error) {
+    console.error("[Control Center] Error generating report:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// ============================================================================
+// ADMIN ENDPOINTS - MIGRATION
+// ============================================================================
+
+/**
+ * Test migration - verify team members exist for all service types
+ * GET /admin/test-migration
+ */
+app.get("/make-server-c142e950/admin/test-migration", async (c) => {
+  try {
+    console.log("🧪 Testing migration prerequisites...");
+
+    const serviceTypes = ["Forwarding", "Brokerage", "Trucking", "Marine Insurance", "Others"];
+    const results = [];
+
+    for (const serviceType of serviceTypes) {
+      // Fetch all users
+      const allUsers = await kv.getByPrefix("user:");
+      
+      const manager = allUsers.find(
+        (u: any) => u.department === "Operations" && 
+                   u.service_type === serviceType && 
+                   u.operations_role === "Manager"
+      );
+
+      const supervisors = allUsers.filter(
+        (u: any) => u.department === "Operations" && 
+                   u.service_type === serviceType && 
+                   u.operations_role === "Supervisor"
+      );
+
+      const handlers = allUsers.filter(
+        (u: any) => u.department === "Operations" && 
+                   u.service_type === serviceType && 
+                   u.operations_role === "Handler"
+      );
+
+      results.push({
+        serviceType,
+        manager: manager ? manager.name : null,
+        supervisorCount: supervisors.length,
+        handlerCount: handlers.length,
+        ready: !!manager && supervisors.length > 0 && handlers.length > 0,
+      });
+    }
+
+    const allReady = results.every(r => r.ready);
+
+    return c.json({
+      success: true,
+      ready: allReady,
+      results,
+      message: allReady 
+        ? "✅ All service types have complete teams. Ready to migrate!" 
+        : "⚠️ Some service types are missing team members. Please create users first.",
+    });
+  } catch (error) {
+    console.error("Error testing migration:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+/**
+ * Migrate booking assignments - assign default teams to existing bookings
+ * POST /admin/migrate-booking-assignments
+ */
+app.post("/make-server-c142e950/admin/migrate-booking-assignments", async (c) => {
+  try {
+    console.log("🚀 Starting booking assignments migration...\n");
+
+    const serviceConfigs = [
+      { name: "Forwarding", prefix: "forwarding-booking:" },
+      { name: "Brokerage", prefix: "brokerage-booking:" },
+      { name: "Trucking", prefix: "trucking-booking:" },
+      { name: "Marine Insurance", prefix: "marine-insurance-booking:" },
+      { name: "Others", prefix: "others-booking:" },
+    ];
+
+    const migrationResults = [];
+    let totalMigrated = 0;
+    let totalSkipped = 0;
+    let totalErrors = 0;
+
+    for (const config of serviceConfigs) {
+      console.log(`\n🔄 Migrating ${config.name} bookings...`);
+
+      // Get default team for this service type
+      const allUsers = await kv.getByPrefix("user:");
+      
+      const manager = allUsers.find(
+        (u: any) => u.department === "Operations" && 
+                   u.service_type === config.name && 
+                   u.operations_role === "Manager"
+      );
+
+      const supervisor = allUsers.find(
+        (u: any) => u.department === "Operations" && 
+                   u.service_type === config.name && 
+                   u.operations_role === "Supervisor"
+      );
+
+      const handler = allUsers.find(
+        (u: any) => u.department === "Operations" && 
+                   u.service_type === config.name && 
+                   u.operations_role === "Handler"
+      );
+
+      if (!manager || !supervisor || !handler) {
+        const missingRoles = [];
+        if (!manager) missingRoles.push("Manager");
+        if (!supervisor) missingRoles.push("Supervisor");
+        if (!handler) missingRoles.push("Handler");
+        
+        const error = `Missing team members for ${config.name}: ${missingRoles.join(", ")}`;
+        console.error(`❌ ${error}`);
+        
+        migrationResults.push({
+          serviceType: config.name,
+          success: false,
+          error,
+          migrated: 0,
+          skipped: 0,
+        });
+        
+        totalErrors++;
+        continue;
+      }
+
+      // Get all bookings for this service type
+      const bookings = await kv.getByPrefix(config.prefix);
+      let migrated = 0;
+      let skipped = 0;
+
+      console.log(`📊 Found ${bookings.length} ${config.name} bookings`);
+
+      for (const booking of bookings) {
+        try {
+          // Skip if already has assignments
+          if (booking.assigned_manager_id && booking.assigned_supervisor_id && booking.assigned_handler_id) {
+            skipped++;
+            continue;
+          }
+
+          // Update booking with team assignments
+          const updatedBooking = {
+            ...booking,
+            assigned_manager_id: manager.id,
+            assigned_manager_name: manager.name,
+            assigned_supervisor_id: supervisor.id,
+            assigned_supervisor_name: supervisor.name,
+            assigned_handler_id: handler.id,
+            assigned_handler_name: handler.name,
+            updatedAt: new Date().toISOString(),
+          };
+
+          await kv.set(`${config.prefix}${booking.bookingId}`, updatedBooking);
+          migrated++;
+          console.log(`  ✅ Migrated ${booking.bookingId}`);
+        } catch (error) {
+          console.error(`  ❌ Error migrating ${booking.bookingId}:`, error);
+          totalErrors++;
+        }
+      }
+
+      console.log(`✅ ${config.name}: Migrated ${migrated}/${bookings.length} bookings (${skipped} already had assignments)`);
+
+      migrationResults.push({
+        serviceType: config.name,
+        success: true,
+        total: bookings.length,
+        migrated,
+        skipped,
+      });
+
+      totalMigrated += migrated;
+      totalSkipped += skipped;
+    }
+
+    console.log("\n" + "=".repeat(60));
+    console.log("📊 MIGRATION SUMMARY");
+    console.log("=".repeat(60));
+    console.log(`Successfully migrated:      ${totalMigrated}`);
+    console.log(`Already had assignments:    ${totalSkipped}`);
+    console.log(`Errors:                     ${totalErrors}`);
+    console.log("=".repeat(60));
+
+    const overallSuccess = totalErrors === 0;
+
+    if (overallSuccess) {
+      console.log("\n✅ Migration completed successfully!");
+    } else {
+      console.log("\n⚠️  Migration completed with errors. Please review the logs.");
+    }
+
+    return c.json({
+      success: overallSuccess,
+      summary: {
+        totalMigrated,
+        totalSkipped,
+        totalErrors,
+      },
+      details: migrationResults,
+    });
+  } catch (error) {
+    console.error("Error in migration:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// ==================== INQUIRY/QUOTATION/PROJECT COMMENTS API ====================
+
+// Get comments for an inquiry (also works for quotations and projects via shared inquiry_id)
+app.get("/make-server-c142e950/comments", async (c) => {
+  try {
+    const inquiry_id = c.req.query("inquiry_id");
+    
+    if (!inquiry_id) {
+      return c.json({ success: false, error: "inquiry_id parameter required" }, 400);
+    }
+    
+    // Get all comments for this inquiry
+    const comments = await kv.getByPrefix(`inquiry_comment:${inquiry_id}:`);
+    
+    // Sort by created_at ascending (oldest first)
+    comments.sort((a: any, b: any) => 
+      new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+    );
+    
+    console.log(`Fetched ${comments.length} comments for inquiry ${inquiry_id}`);
+    
+    return c.json({ success: true, data: comments });
+  } catch (error) {
+    console.error("Error fetching comments:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Upload file attachment for comment
+app.post("/make-server-c142e950/comments/upload", async (c) => {
+  try {
+    // Check if Supabase storage is available
+    if (!supabase) {
+      return c.json({ success: false, error: "File storage is not configured" }, 503);
+    }
+    
+    const formData = await c.req.formData();
+    const file = formData.get("file") as File;
+    const inquiry_id = formData.get("inquiry_id") as string;
+    
+    if (!file) {
+      return c.json({ success: false, error: "No file provided" }, 400);
+    }
+    
+    if (!inquiry_id) {
+      return c.json({ success: false, error: "inquiry_id required" }, 400);
+    }
+    
+    // Check file size (50MB limit)
+    if (file.size > 52428800) {
+      return c.json({ success: false, error: "File size exceeds 50MB limit" }, 400);
+    }
+    
+    // Generate unique file path
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${inquiry_id}/${Date.now()}-${Math.random().toString(36).substr(2, 9)}.${fileExt}`;
+    
+    // Convert File to ArrayBuffer
+    const arrayBuffer = await file.arrayBuffer();
+    const uint8Array = new Uint8Array(arrayBuffer);
+    
+    // Upload to Supabase Storage
+    const { data, error } = await supabase.storage
+      .from(COMMENT_ATTACHMENTS_BUCKET)
+      .upload(fileName, uint8Array, {
+        contentType: file.type,
+        upsert: false,
+      });
+    
+    if (error) {
+      console.error("Error uploading file:", error);
+      return c.json({ success: false, error: `Upload failed: ${error.message}` }, 500);
+    }
+    
+    // Generate signed URL (valid for 1 year)
+    const { data: signedUrlData, error: urlError } = await supabase.storage
+      .from(COMMENT_ATTACHMENTS_BUCKET)
+      .createSignedUrl(fileName, 31536000); // 1 year in seconds
+    
+    if (urlError) {
+      console.error("Error creating signed URL:", urlError);
+      return c.json({ success: false, error: "Failed to create download URL" }, 500);
+    }
+    
+    console.log(`Uploaded file ${file.name} (${file.size} bytes) for inquiry ${inquiry_id}`);
+    
+    return c.json({ 
+      success: true, 
+      data: {
+        file_name: file.name,
+        file_size: file.size,
+        file_type: file.type,
+        file_path: fileName,
+        file_url: signedUrlData.signedUrl,
+      }
+    });
+  } catch (error) {
+    console.error("Error in file upload:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Add comment to inquiry/quotation/project (with optional file attachments)
+app.post("/make-server-c142e950/comments", async (c) => {
+  try {
+    const { inquiry_id, user_id, user_name, department, message, attachments } = await c.req.json();
+    
+    // Validate required fields
+    if (!inquiry_id || !user_id || !user_name || !department) {
+      return c.json({ 
+        success: false, 
+        error: "Missing required fields: inquiry_id, user_id, user_name, department" 
+      }, 400);
+    }
+    
+    // Validate that either message or attachments exist
+    if (!message?.trim() && (!attachments || attachments.length === 0)) {
+      return c.json({ success: false, error: "Either message or attachments must be provided" }, 400);
+    }
+    
+    const now = new Date().toISOString();
+    const commentId = `comment-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
+    const comment = {
+      id: commentId,
+      inquiry_id,
+      user_id,
+      user_name,
+      department,
+      message: message?.trim() || "",
+      attachments: attachments || [], // Array of { file_name, file_size, file_type, file_url }
+      created_at: now,
+    };
+    
+    // Store comment using dual-key pattern: inquiry_comment:{inquiry_id}:{comment_id}
+    await kv.set(`inquiry_comment:${inquiry_id}:${commentId}`, comment);
+    
+    const attachmentInfo = attachments && attachments.length > 0 
+      ? ` with ${attachments.length} attachment(s)` 
+      : "";
+    console.log(`Added comment ${commentId} to inquiry ${inquiry_id} by ${user_name} (${department})${attachmentInfo}`);
+    
+    return c.json({ success: true, data: comment });
+  } catch (error) {
+    console.error("Error adding comment:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// ==================== BOOKING COMMENTS API ====================
+
+// Get comments for a booking
+app.get("/make-server-c142e950/bookings/:booking_id/comments", async (c) => {
+  try {
+    const booking_id = c.req.param("booking_id");
+    
+    if (!booking_id) {
+      return c.json({ success: false, error: "booking_id parameter required" }, 400);
+    }
+    
+    // Get all comments for this booking
+    const comments = await kv.getByPrefix(`booking_comment:${booking_id}:`);
+    
+    // Sort comments by created_at (most recent first)
+    const sortedComments = comments.sort((a: any, b: any) => {
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
+    
+    console.log(`Fetched ${comments.length} comments for booking ${booking_id}`);
+    
+    return c.json({ success: true, data: sortedComments });
+  } catch (error) {
+    console.error("Error fetching booking comments:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Upload file attachment for booking comment
+app.post("/make-server-c142e950/bookings/comments/upload", async (c) => {
+  try {
+    // Check if Supabase storage is available
+    if (!supabase) {
+      return c.json({ success: false, error: "File storage is not configured" }, 503);
+    }
+    
+    const formData = await c.req.formData();
+    const file = formData.get("file") as File;
+    const booking_id = formData.get("booking_id") as string;
+    
+    if (!file || !booking_id) {
+      return c.json({ success: false, error: "Missing file or booking_id" }, 400);
+    }
+    
+    // Generate unique file name
+    const timestamp = Date.now();
+    const randomId = Math.random().toString(36).substr(2, 9);
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${timestamp}-${randomId}.${fileExt}`;
+    const filePath = `bookings/${booking_id}/${fileName}`;
+    
+    // Convert file to ArrayBuffer
+    const arrayBuffer = await file.arrayBuffer();
+    const buffer = new Uint8Array(arrayBuffer);
+    
+    // Upload to Supabase Storage
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from(COMMENT_ATTACHMENTS_BUCKET)
+      .upload(filePath, buffer, {
+        contentType: file.type,
+        upsert: false,
+      });
+    
+    if (uploadError) {
+      console.error("Error uploading file to storage:", uploadError);
+      return c.json({ success: false, error: `Storage upload failed: ${uploadError.message}` }, 500);
+    }
+    
+    // Get signed URL (valid for 1 year)
+    const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+      .from(COMMENT_ATTACHMENTS_BUCKET)
+      .createSignedUrl(filePath, 31536000); // 1 year in seconds
+    
+    if (signedUrlError) {
+      console.error("Error creating signed URL:", signedUrlError);
+      return c.json({ success: false, error: `Failed to create signed URL: ${signedUrlError.message}` }, 500);
+    }
+    
+    console.log(`Uploaded file ${file.name} for booking ${booking_id}`);
+    
+    return c.json({
+      success: true,
+      data: {
+        file_name: file.name,
+        file_size: file.size,
+        file_type: file.type,
+        file_url: signedUrlData.signedUrl,
+      }
+    });
+  } catch (error) {
+    console.error("Error in booking comment file upload:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Add comment to booking (with optional file attachments)
+app.post("/make-server-c142e950/bookings/:booking_id/comments", async (c) => {
+  try {
+    const booking_id = c.req.param("booking_id");
+    const { user_id, user_name, department, message, attachments } = await c.req.json();
+    
+    // Validate required fields
+    if (!booking_id || !user_id || !user_name || !department) {
+      return c.json({ 
+        success: false, 
+        error: "Missing required fields: booking_id, user_id, user_name, department" 
+      }, 400);
+    }
+    
+    // Validate that either message or attachments exist
+    if (!message?.trim() && (!attachments || attachments.length === 0)) {
+      return c.json({ success: false, error: "Either message or attachments must be provided" }, 400);
+    }
+    
+    const now = new Date().toISOString();
+    const commentId = `comment-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
+    const comment = {
+      id: commentId,
+      booking_id,
+      user_id,
+      user_name,
+      department,
+      message: message?.trim() || "",
+      attachments: attachments || [], // Array of { file_name, file_size, file_type, file_url }
+      created_at: now,
+    };
+    
+    // Store comment using dual-key pattern: booking_comment:{booking_id}:{comment_id}
+    await kv.set(`booking_comment:${booking_id}:${commentId}`, comment);
+    
+    const attachmentInfo = attachments && attachments.length > 0 
+      ? ` with ${attachments.length} attachment(s)` 
+      : "";
+    console.log(`Added comment ${commentId} to booking ${booking_id} by ${user_name} (${department})${attachmentInfo}`);
+    
+    return c.json({ success: true, data: comment });
+  } catch (error) {
+    console.error("Error adding booking comment:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// ==================== PROJECT ATTACHMENTS API ====================
+
+const PROJECT_ATTACHMENTS_BUCKET = "make-c142e950-project-attachments";
+
+// Initialize project attachments bucket
+if (supabase) {
+  (async () => {
+    try {
+      const { data: buckets } = await supabase.storage.listBuckets();
+      const bucketExists = buckets?.some((bucket: any) => bucket.name === PROJECT_ATTACHMENTS_BUCKET);
+      
+      if (!bucketExists) {
+        const { error } = await supabase.storage.createBucket(PROJECT_ATTACHMENTS_BUCKET, {
+          public: false,
+          fileSizeLimit: 52428800, // 50MB limit
+        });
+        
+        if (error) {
+          console.error("Error creating project attachments bucket:", error);
+        } else {
+          console.log("✅ Created project attachments bucket:", PROJECT_ATTACHMENTS_BUCKET);
+        }
+      } else {
+        console.log("✅ Project attachments bucket already exists:", PROJECT_ATTACHMENTS_BUCKET);
+      }
+    } catch (error) {
+      console.error("Error initializing project attachments bucket:", error);
+    }
+  })();
+}
+
+// Get all attachments for a project
+app.get("/make-server-c142e950/projects/:id/attachments", async (c) => {
+  try {
+    const projectId = c.req.param("id");
+    
+    // Get all attachments for this project
+    const allAttachments = await kv.getByPrefix(`project_attachment:${projectId}:`);
+    
+    // Sort by upload date (newest first)
+    const sortedAttachments = allAttachments.sort((a: any, b: any) => 
+      new Date(b.uploaded_at).getTime() - new Date(a.uploaded_at).getTime()
+    );
+    
+    return c.json({ success: true, data: sortedAttachments });
+  } catch (error) {
+    console.error("Error fetching project attachments:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Upload attachment to project
+app.post("/make-server-c142e950/projects/:id/attachments", async (c) => {
+  try {
+    const projectId = c.req.param("id");
+    const formData = await c.req.formData();
+    const file = formData.get("file") as File;
+    const uploadedBy = formData.get("uploaded_by") as string;
+    
+    if (!file) {
+      return c.json({ success: false, error: "No file provided" }, 400);
+    }
+    
+    if (!supabase) {
+      return c.json({ success: false, error: "Storage not configured" }, 500);
+    }
+    
+    // Generate unique file name
+    const timestamp = Date.now();
+    const randomId = Math.random().toString(36).substring(2, 10);
+    const fileExtension = file.name.split(".").pop();
+    const storagePath = `${projectId}/${timestamp}-${randomId}.${fileExtension}`;
+    
+    // Convert File to ArrayBuffer
+    const arrayBuffer = await file.arrayBuffer();
+    const uint8Array = new Uint8Array(arrayBuffer);
+    
+    // Upload to Supabase Storage
+    const { error: uploadError } = await supabase.storage
+      .from(PROJECT_ATTACHMENTS_BUCKET)
+      .upload(storagePath, uint8Array, {
+        contentType: file.type,
+        upsert: false,
+      });
+    
+    if (uploadError) {
+      console.error("Error uploading file to storage:", uploadError);
+      return c.json({ success: false, error: uploadError.message }, 500);
+    }
+    
+    // Generate signed URL (valid for 1 year)
+    const { data: urlData, error: urlError } = await supabase.storage
+      .from(PROJECT_ATTACHMENTS_BUCKET)
+      .createSignedUrl(storagePath, 31536000); // 1 year in seconds
+    
+    if (urlError || !urlData) {
+      console.error("Error generating signed URL:", urlError);
+      return c.json({ success: false, error: "Failed to generate file URL" }, 500);
+    }
+    
+    // Save attachment metadata to KV store
+    const attachmentId = `${timestamp}-${randomId}`;
+    const attachment = {
+      id: attachmentId,
+      project_id: projectId,
+      file_name: file.name,
+      file_size: file.size,
+      file_type: file.type,
+      file_url: urlData.signedUrl,
+      storage_path: storagePath,
+      uploaded_by: uploadedBy || "Unknown",
+      uploaded_at: new Date().toISOString(),
+    };
+    
+    await kv.set(`project_attachment:${projectId}:${attachmentId}`, attachment);
+    
+    console.log(`✅ Uploaded attachment ${file.name} to project ${projectId}`);
+    
+    return c.json({ success: true, data: attachment });
+  } catch (error) {
+    console.error("Error uploading project attachment:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Delete attachment from project
+app.delete("/make-server-c142e950/projects/:id/attachments/:attachmentId", async (c) => {
+  try {
+    const projectId = c.req.param("id");
+    const attachmentId = c.req.param("attachmentId");
+    
+    // Get attachment metadata
+    const attachment = await kv.get(`project_attachment:${projectId}:${attachmentId}`);
+    
+    if (!attachment) {
+      return c.json({ success: false, error: "Attachment not found" }, 404);
+    }
+    
+    if (!supabase) {
+      return c.json({ success: false, error: "Storage not configured" }, 500);
+    }
+    
+    // Delete from Supabase Storage
+    const { error: deleteError } = await supabase.storage
+      .from(PROJECT_ATTACHMENTS_BUCKET)
+      .remove([attachment.storage_path]);
+    
+    if (deleteError) {
+      console.error("Error deleting file from storage:", deleteError);
+      // Continue with metadata deletion even if storage delete fails
+    }
+    
+    // Delete metadata from KV store
+    await kv.del(`project_attachment:${projectId}:${attachmentId}`);
+    
+    console.log(`✅ Deleted attachment ${attachment.file_name} from project ${projectId}`);
+    
+    return c.json({ success: true, message: "Attachment deleted successfully" });
+  } catch (error) {
+    console.error("Error deleting project attachment:", error);
     return c.json({ success: false, error: String(error) }, 500);
   }
 });

@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Project } from "../../types/pricing";
 import { NeuronStatusPill } from "../NeuronStatusPill";
-import { Search, Briefcase, CheckCircle, Package, UserCheck } from "lucide-react";
+import { Search, Briefcase, CheckCircle, Package, Calendar, CircleDot, Ship, Truck, Shield, User } from "lucide-react";
+import { CustomDropdown } from "../bd/CustomDropdown";
 
 interface ProjectsListProps {
   projects: Project[];
@@ -24,17 +25,15 @@ export function ProjectsList({
   department 
 }: ProjectsListProps) {
   const [searchQuery, setSearchQuery] = useState("");
-  const [activeTab, setActiveTab] = useState<"all" | "my" | "active" | "completed">("all");
+  const [activeTab, setActiveTab] = useState<"all" | "my" | "active" | "completed">(department === "BD" ? "all" : "all");
   const [timePeriodFilter, setTimePeriodFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [bookingStatusFilter, setBookingStatusFilter] = useState<string>("all");
   const [serviceFilter, setServiceFilter] = useState<string>("all");
   const [ownerFilter, setOwnerFilter] = useState<string>("all");
 
-  // Grid template constant for alignment
-  const GRID_COLS = department === "BD" 
-    ? "200px 180px 140px 120px 120px 120px"  // BD view: Project, Customer, Route, Status, Booking Status, Ops Assigned
-    : "200px 180px 140px 120px 140px";        // Operations view: Project, Customer, Route, Status, BD Owner
+  // Grid template constant - BD sees different columns
+  const GRID_COLS = "200px 180px 140px 120px 120px 120px";
 
   // Get unique values for filters
   const uniqueOwners = Array.from(new Set(projects.map(p => p.bd_owner_user_name).filter(Boolean)));
@@ -44,26 +43,12 @@ export function ProjectsList({
   const getFilteredByTab = () => {
     let filtered = projects;
 
-    // Department-specific default filtering
-    if (department === "Operations") {
-      // Operations sees projects assigned to them or unassigned
-      if (activeTab === "my") {
-        filtered = projects.filter(p => 
-          p.ops_assigned_user_name === currentUser?.name || 
-          p.ops_assigned_user_id === currentUser?.id
-        );
-      } else if (activeTab === "all") {
-        // Show all projects that need operations attention
-        filtered = projects;
-      }
-    } else {
-      // BD sees their own projects by default in "my" tab
-      if (activeTab === "my") {
-        filtered = projects.filter(p => 
-          p.bd_owner_user_name === currentUser?.name ||
-          p.bd_owner_email === currentUser?.email
-        );
-      }
+    // "My Projects" tab logic
+    if (activeTab === "my") {
+      filtered = projects.filter(p => 
+        p.bd_owner_user_name === currentUser?.name ||
+        p.bd_owner_email === currentUser?.email
+      );
     }
 
     if (activeTab === "active") {
@@ -121,16 +106,12 @@ export function ProjectsList({
 
   // Calculate counts
   const allCount = projects.length;
-  const myCount = department === "Operations"
-    ? projects.filter(p => p.ops_assigned_user_name === currentUser?.name).length
-    : projects.filter(p => p.bd_owner_user_name === currentUser?.name).length;
+  const myCount = projects.filter(p => 
+    p.bd_owner_user_name === currentUser?.name ||
+    p.bd_owner_email === currentUser?.email
+  ).length;
   const activeCount = projects.filter(p => p.status === "Active").length;
   const completedCount = projects.filter(p => p.status === "Completed").length;
-
-  // Department-specific subtitle
-  const subtitle = department === "Operations"
-    ? "Service bookings and execution for approved quotations"
-    : "Manage approved quotations ready for handover to Operations";
 
   return (
     <div style={{ height: "100vh", display: "flex", flexDirection: "column", background: "white" }}>
@@ -151,13 +132,15 @@ export function ProjectsList({
               fontSize: "14px", 
               color: "#667085"
             }}>
-              {subtitle}
+              {department === "BD" 
+                ? "Manage approved quotations and project execution"
+                : "View assigned projects and bookings"}
             </p>
           </div>
         </div>
 
         {/* Search Bar */}
-        <div style={{ position: "relative", marginBottom: "24px" }}>
+        <div style={{ position: "relative", marginBottom: "12px" }}>
           <Search
             size={18}
             style={{
@@ -186,122 +169,97 @@ export function ProjectsList({
           />
         </div>
 
-        {/* Filter Row */}
+        {/* Filters Row */}
         <div style={{ 
-          display: "grid", 
-          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", 
-          gap: "12px",
-          marginBottom: "24px"
+          display: "flex",
+          gap: "4px",
+          marginBottom: "16px",
+          alignItems: "center"
         }}>
           {/* Time Period Filter */}
-          <select
-            value={timePeriodFilter}
-            onChange={(e) => setTimePeriodFilter(e.target.value)}
-            style={{
-              padding: "10px 12px",
-              border: "1px solid #E5E7EB",
-              borderRadius: "8px",
-              fontSize: "14px",
-              color: "#12332B",
-              backgroundColor: "#FFFFFF",
-              outline: "none",
-              cursor: "pointer",
-            }}
-          >
-            <option value="all">All Time</option>
-            <option value="7days">Last 7 days</option>
-            <option value="30days">Last 30 days</option>
-            <option value="90days">Last 90 days</option>
-          </select>
+          <div style={{ minWidth: "120px" }}>
+            <CustomDropdown
+              value={timePeriodFilter}
+              onChange={setTimePeriodFilter}
+              options={[
+                { value: "all", label: "All Time", icon: <Calendar size={16} /> },
+                { value: "7days", label: "Last 7 days", icon: <Calendar size={16} /> },
+                { value: "30days", label: "Last 30 days", icon: <Calendar size={16} /> },
+                { value: "90days", label: "Last 90 days", icon: <Calendar size={16} /> }
+              ]}
+              placeholder="Select time period"
+            />
+          </div>
 
           {/* Status Filter */}
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            style={{
-              padding: "10px 12px",
-              border: "1px solid #E5E7EB",
-              borderRadius: "8px",
-              fontSize: "14px",
-              color: "#12332B",
-              backgroundColor: "#FFFFFF",
-              outline: "none",
-              cursor: "pointer",
-            }}
-          >
-            <option value="all">All Statuses</option>
-            <option value="Active">Active</option>
-            <option value="Completed">Completed</option>
-            <option value="On Hold">On Hold</option>
-            <option value="Cancelled">Cancelled</option>
-          </select>
+          <div style={{ minWidth: "120px" }}>
+            <CustomDropdown
+              value={statusFilter}
+              onChange={setStatusFilter}
+              options={[
+                { value: "all", label: "All Statuses", icon: <CircleDot size={16} /> },
+                { value: "Active", label: "Active", icon: <CircleDot size={16} style={{ color: "#F59E0B" }} /> },
+                { value: "Completed", label: "Completed", icon: <CheckCircle size={16} style={{ color: "#10B981" }} /> },
+                { value: "On Hold", label: "On Hold", icon: <CircleDot size={16} style={{ color: "#6B7280" }} /> },
+                { value: "Cancelled", label: "Cancelled", icon: <CircleDot size={16} style={{ color: "#EF4444" }} /> }
+              ]}
+              placeholder="Select status"
+            />
+          </div>
 
-          {/* Booking Status Filter - more relevant for Operations */}
-          {department === "Operations" && (
-            <select
+          {/* Booking Status Filter */}
+          <div style={{ minWidth: "150px" }}>
+            <CustomDropdown
               value={bookingStatusFilter}
-              onChange={(e) => setBookingStatusFilter(e.target.value)}
-              style={{
-                padding: "10px 12px",
-                border: "1px solid #E5E7EB",
-                borderRadius: "8px",
-                fontSize: "14px",
-                color: "#12332B",
-                backgroundColor: "#FFFFFF",
-                outline: "none",
-                cursor: "pointer",
-              }}
-            >
-              <option value="all">All Booking Statuses</option>
-              <option value="No Bookings Yet">No Bookings Yet</option>
-              <option value="Partially Booked">Partially Booked</option>
-              <option value="Fully Booked">Fully Booked</option>
-            </select>
-          )}
+              onChange={setBookingStatusFilter}
+              options={[
+                { value: "all", label: "All Booking Statuses", icon: <Package size={16} /> },
+                { value: "No Bookings Yet", label: "No Bookings Yet", icon: <Package size={16} style={{ color: "#6B7280" }} /> },
+                { value: "Partially Booked", label: "Partially Booked", icon: <Package size={16} style={{ color: "#F59E0B" }} /> },
+                { value: "Fully Booked", label: "Fully Booked", icon: <CheckCircle size={16} style={{ color: "#10B981" }} /> }
+              ]}
+              placeholder="Select booking status"
+            />
+          </div>
 
           {/* Service Filter */}
-          <select
-            value={serviceFilter}
-            onChange={(e) => setServiceFilter(e.target.value)}
-            style={{
-              padding: "10px 12px",
-              border: "1px solid #E5E7EB",
-              borderRadius: "8px",
-              fontSize: "14px",
-              color: "#12332B",
-              backgroundColor: "#FFFFFF",
-              outline: "none",
-              cursor: "pointer",
-            }}
-          >
-            <option value="all">All Services</option>
-            {uniqueServices.map(service => (
-              <option key={service} value={service}>{service}</option>
-            ))}
-          </select>
+          <div style={{ minWidth: "120px" }}>
+            <CustomDropdown
+              value={serviceFilter}
+              onChange={setServiceFilter}
+              options={[
+                { value: "all", label: "All Services", icon: <Briefcase size={16} /> },
+                ...uniqueServices.map(service => {
+                  const getServiceIcon = () => {
+                    if (service === "Brokerage") return <Briefcase size={16} style={{ color: "#0F766E" }} />;
+                    if (service === "Forwarding") return <Ship size={16} style={{ color: "#0F766E" }} />;
+                    if (service === "Trucking") return <Truck size={16} style={{ color: "#0F766E" }} />;
+                    if (service === "Marine Insurance") return <Shield size={16} style={{ color: "#0F766E" }} />;
+                    return <Package size={16} style={{ color: "#0F766E" }} />;
+                  };
+                  return { value: service, label: service, icon: getServiceIcon() };
+                })
+              ]}
+              placeholder="Select service"
+            />
+          </div>
 
-          {/* Owner Filter - BD only */}
-          {department === "BD" && (
-            <select
+          {/* Owner Filter */}
+          <div style={{ minWidth: "120px" }}>
+            <CustomDropdown
               value={ownerFilter}
-              onChange={(e) => setOwnerFilter(e.target.value)}
-              style={{
-                padding: "10px 12px",
-                border: "1px solid #E5E7EB",
-                borderRadius: "8px",
-                fontSize: "14px",
-                color: "#12332B",
-                backgroundColor: "#FFFFFF",
-                outline: "none",
-                cursor: "pointer",
-              }}
-            >
-              <option value="all">All Owners</option>
-              {uniqueOwners.map(owner => (
-                <option key={owner} value={owner}>{owner}</option>
-              ))}
-            </select>
-          )}
+              onChange={setOwnerFilter}
+              options={[
+                { value: "all", label: "All Owners", icon: <User size={16} /> },
+                ...uniqueOwners.map(owner => ({ 
+                  value: owner, 
+                  label: owner, 
+                  icon: <User size={16} style={{ color: "#0F766E" }} /> 
+                }))
+              ]}
+              placeholder="Select owner"
+            />
+          </div>
         </div>
 
         {/* Tabs */}
@@ -356,7 +314,7 @@ export function ProjectsList({
               {allCount}
             </span>
           </button>
-          
+
           <button
             onClick={() => setActiveTab("my")}
             style={{
@@ -366,8 +324,8 @@ export function ProjectsList({
               padding: "12px 20px",
               background: "transparent",
               border: "none",
-              borderBottom: activeTab === "my" ? "2px solid #8B5CF6" : "2px solid transparent",
-              color: activeTab === "my" ? "#8B5CF6" : "#667085",
+              borderBottom: activeTab === "my" ? "2px solid #0F766E" : "2px solid transparent",
+              color: activeTab === "my" ? "#0F766E" : "#667085",
               fontSize: "14px",
               fontWeight: 600,
               cursor: "pointer",
@@ -385,16 +343,16 @@ export function ProjectsList({
               }
             }}
           >
-            <UserCheck size={18} />
-            {department === "Operations" ? "Assigned to Me" : "My Projects"}
+            <User size={18} />
+            My Projects
             <span
               style={{
                 padding: "2px 8px",
                 borderRadius: "12px",
                 fontSize: "11px",
                 fontWeight: 700,
-                background: activeTab === "my" ? "#8B5CF6" : "#8B5CF615",
-                color: activeTab === "my" ? "#FFFFFF" : "#8B5CF6",
+                background: activeTab === "my" ? "#0F766E" : "#0F766E15",
+                color: activeTab === "my" ? "#FFFFFF" : "#0F766E",
                 minWidth: "20px",
                 textAlign: "center"
               }}
@@ -513,32 +471,46 @@ export function ProjectsList({
             maxWidth: "600px",
             margin: "0 auto"
           }}>
-            <div style={{ 
-              fontSize: "48px",
-              marginBottom: "16px" 
-            }}>
-              📦
-            </div>
-            <div style={{ 
-              fontSize: "18px", 
-              fontWeight: 600,
-              color: "#12332B",
-              marginBottom: "12px" 
-            }}>
-              No Projects Found
-            </div>
-            <div style={{ 
-              fontSize: "14px",
-              color: "#667085",
-              marginBottom: "24px",
-              lineHeight: "1.6"
-            }}>
-              {activeTab === "my" 
-                ? (department === "Operations" 
-                  ? "No projects have been assigned to you yet."
-                  : "You haven't created any projects yet.")
-                : "Try adjusting your search criteria or filters"}
-            </div>
+            {searchQuery || timePeriodFilter !== "all" || statusFilter !== "all" || bookingStatusFilter !== "all" || serviceFilter !== "all" || ownerFilter !== "all" ? (
+              <>
+                <div style={{ 
+                  fontSize: "16px", 
+                  fontWeight: 600,
+                  color: "#12332B",
+                  marginBottom: "8px" 
+                }}>
+                  No projects match your filters
+                </div>
+                <div style={{ 
+                  fontSize: "14px",
+                  color: "#667085" 
+                }}>
+                  Try adjusting your search criteria or filters
+                </div>
+              </>
+            ) : projects.length === 0 ? (
+              <div className="text-center py-12">
+                <Package size={48} style={{ color: "#D1D5DB", margin: "0 auto 16px" }} />
+                <p className="text-[14px]" style={{ color: "#667085" }}>No Projects Yet</p>
+              </div>
+            ) : (
+              <>
+                <div style={{ 
+                  fontSize: "16px", 
+                  fontWeight: 600,
+                  color: "#12332B",
+                  marginBottom: "8px" 
+                }}>
+                  No {activeTab === "my" ? "projects owned by you" : activeTab === "active" ? "active" : "completed"} projects
+                </div>
+                <div style={{ 
+                  fontSize: "14px",
+                  color: "#667085" 
+                }}>
+                  Try viewing a different tab
+                </div>
+              </>
+            )}
           </div>
         ) : (
           <div style={{ 
@@ -592,38 +564,24 @@ export function ProjectsList({
               }}>
                 Status
               </div>
-              {department === "BD" ? (
-                <>
-                  <div style={{ 
-                    fontSize: "11px",
-                    fontWeight: 600,
-                    color: "#6B7280",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.5px"
-                  }}>
-                    Booking Status
-                  </div>
-                  <div style={{ 
-                    fontSize: "11px",
-                    fontWeight: 600,
-                    color: "#6B7280",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.5px"
-                  }}>
-                    Ops Assigned
-                  </div>
-                </>
-              ) : (
-                <div style={{ 
-                  fontSize: "11px",
-                  fontWeight: 600,
-                  color: "#6B7280",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.5px"
-                }}>
-                  BD Owner
-                </div>
-              )}
+              <div style={{ 
+                fontSize: "11px",
+                fontWeight: 600,
+                color: "#6B7280",
+                textTransform: "uppercase",
+                letterSpacing: "0.5px"
+              }}>
+                Booking Status
+              </div>
+              <div style={{ 
+                fontSize: "11px",
+                fontWeight: 600,
+                color: "#6B7280",
+                textTransform: "uppercase",
+                letterSpacing: "0.5px"
+              }}>
+                Ops Assigned
+              </div>
             </div>
 
             {/* Table Body */}
@@ -706,48 +664,31 @@ export function ProjectsList({
                     <NeuronStatusPill status={project.status} size="sm" />
                   </div>
                   
-                  {department === "BD" ? (
-                    <>
-                      <div style={{ display: "flex", alignItems: "center", overflow: "hidden" }}>
-                        <div style={{ 
-                          fontSize: "13px", 
-                          color: "#6B7280",
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                          width: "100%"
-                        }}>
-                          {project.booking_status || "No Bookings Yet"}
-                        </div>
-                      </div>
-                      
-                      <div style={{ display: "flex", alignItems: "center", overflow: "hidden" }}>
-                        <div style={{ 
-                          fontSize: "13px", 
-                          color: "#6B7280",
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                          width: "100%"
-                        }}>
-                          {project.ops_assigned_user_name || "Unassigned"}
-                        </div>
-                      </div>
-                    </>
-                  ) : (
-                    <div style={{ display: "flex", alignItems: "center", overflow: "hidden" }}>
-                      <div style={{ 
-                        fontSize: "13px", 
-                        color: "#6B7280",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                        width: "100%"
-                      }}>
-                        {project.bd_owner_user_name || "—"}
-                      </div>
+                  <div style={{ display: "flex", alignItems: "center", overflow: "hidden" }}>
+                    <div style={{ 
+                      fontSize: "13px", 
+                      color: "#6B7280",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                      width: "100%"
+                    }}>
+                      {project.booking_status || "No Bookings Yet"}
                     </div>
-                  )}
+                  </div>
+                  
+                  <div style={{ display: "flex", alignItems: "center", overflow: "hidden" }}>
+                    <div style={{ 
+                      fontSize: "13px", 
+                      color: "#6B7280",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                      width: "100%"
+                    }}>
+                      {project.ops_assigned_user_name || "Unassigned"}
+                    </div>
+                  </div>
                 </div>
               );
             })}

@@ -1,10 +1,11 @@
+import { X, FileText, AlertCircle, Building2, User, Calendar, Plus, Link2, Package, Ship, Plane, Truck, FileCheck, FileQuestion, Ticket } from "lucide-react";
 import { useState, useEffect } from "react";
-import { X, Ticket, Building2, AlertCircle, Link2, Plus, FileText } from "lucide-react";
-import { useUser } from "../../hooks/useUser";
+import type { TicketType } from "../../types/ticketing";
 import { projectId, publicAnonKey } from "../../utils/supabase/info";
 import { EntityPickerModal } from "./EntityPickerModal";
-import { SimpleDropdown } from "../bd/SimpleDropdown";
+import { CustomDropdown } from "../bd/CustomDropdown";
 import { toast } from "sonner@2.0.3";
+import { useUser } from "../../hooks/useUser";
 
 interface NewTicketPanelProps {
   isOpen: boolean;
@@ -19,7 +20,7 @@ interface NewTicketPanelProps {
 
 export function NewTicketPanel({ isOpen, onClose, onSuccess, prefilledEntity }: NewTicketPanelProps) {
   const { user } = useUser();
-  const [ticketTypes, setTicketTypes] = useState<any[]>([]);
+  const [ticketTypes, setTicketTypes] = useState<TicketType[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   
@@ -239,7 +240,7 @@ export function NewTicketPanel({ isOpen, onClose, onSuccess, prefilledEntity }: 
                   >
                     Ticket Type <span style={{ color: "#C94F3D" }}>*</span>
                   </label>
-                  <SimpleDropdown
+                  <CustomDropdown
                     value={ticketType}
                     onChange={handleTicketTypeChange}
                     options={ticketTypes.map(type => ({ value: type.id, label: type.name }))}
@@ -261,7 +262,7 @@ export function NewTicketPanel({ isOpen, onClose, onSuccess, prefilledEntity }: 
                   >
                     To Department <span style={{ color: "#C94F3D" }}>*</span>
                   </label>
-                  <SimpleDropdown
+                  <CustomDropdown
                     value={toDepartment}
                     onChange={setToDepartment}
                     options={[
@@ -463,7 +464,7 @@ export function NewTicketPanel({ isOpen, onClose, onSuccess, prefilledEntity }: 
                   ) : (
                     <div className="flex gap-2">
                       <div className="flex-1">
-                        <SimpleDropdown
+                        <CustomDropdown
                           value={selectedEntityType}
                           onChange={(value) => setSelectedEntityType(value)}
                           options={[

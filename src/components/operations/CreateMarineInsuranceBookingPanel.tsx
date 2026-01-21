@@ -2,11 +2,12 @@ import { X, Shield, Package, FileText } from "lucide-react";
 import { useState } from "react";
 import { projectId, publicAnonKey } from "../../utils/supabase/info";
 import { toast } from "../ui/toast-utils";
+import { CustomDropdown } from "../bd/CustomDropdown";
 
 interface CreateMarineInsuranceBookingPanelProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess: () => void;
+  onSuccess: (bookingData?: any) => void; // Updated to accept optional booking data
 }
 
 export function CreateMarineInsuranceBookingPanel({
@@ -78,7 +79,7 @@ export function CreateMarineInsuranceBookingPanel({
       const result = await response.json();
       if (result.success) {
         toast.success("Marine insurance booking created successfully");
-        onSuccess();
+        onSuccess(result.data); // Pass the booking data
         onClose();
       } else {
         toast.error("Failed to create booking: " + result.error);
@@ -252,30 +253,22 @@ export function CreateMarineInsuranceBookingPanel({
                     />
                   </div>
 
-                  <div>
-                    <label className="block mb-1.5" style={{ fontSize: "13px", fontWeight: 500, color: "#12332B" }}>
-                      Status
-                    </label>
-                    <select
-                      name="status"
-                      value={formData.status}
-                      onChange={handleChange}
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
-                      style={{
-                        border: "1px solid var(--neuron-ui-border)",
-                        backgroundColor: "#FFFFFF",
-                        color: "var(--neuron-ink-primary)",
-                      }}
-                    >
-                      <option value="Draft">Draft</option>
-                      <option value="Confirmed">Confirmed</option>
-                      <option value="In Progress">In Progress</option>
-                      <option value="Pending">Pending</option>
-                      <option value="On Hold">On Hold</option>
-                      <option value="Completed">Completed</option>
-                      <option value="Cancelled">Cancelled</option>
-                    </select>
-                  </div>
+                  <CustomDropdown
+                    label="Status"
+                    value={formData.status}
+                    onChange={(value) => handleChange({ target: { name: "status", value } } as any)}
+                    options={[
+                      { value: "Draft", label: "Draft" },
+                      { value: "Confirmed", label: "Confirmed" },
+                      { value: "In Progress", label: "In Progress" },
+                      { value: "Pending", label: "Pending" },
+                      { value: "On Hold", label: "On Hold" },
+                      { value: "Completed", label: "Completed" },
+                      { value: "Cancelled", label: "Cancelled" },
+                    ]}
+                    placeholder="Select Status..."
+                    fullWidth
+                  />
                 </div>
               </div>
             </div>

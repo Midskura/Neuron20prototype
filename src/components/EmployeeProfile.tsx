@@ -1,5 +1,5 @@
-import { Mail, Phone, MapPin, Briefcase, Calendar, Edit2, Shuffle, Wrench, RotateCcw } from "lucide-react";
-import { SimpleDropdown } from "./bd/SimpleDropdown";
+import { Mail, Phone, MapPin, Briefcase, Calendar, Edit2, Shuffle, Wrench, RotateCcw, LogOut, Building2 } from "lucide-react";
+import { CustomDropdown } from "./bd/CustomDropdown";
 import { useState } from "react";
 import { useUser } from "../hooks/useUser";
 
@@ -9,7 +9,7 @@ interface EmployeeProfileProps {
 }
 
 export function EmployeeProfile({ currentUser, onDepartmentChange }: EmployeeProfileProps) {
-  const { user, devOverride, setDevOverride, effectiveDepartment, effectiveRole } = useUser();
+  const { user, devOverride, setDevOverride, effectiveDepartment, effectiveRole, logout } = useUser();
   
   const [selectedDepartment, setSelectedDepartment] = useState(currentUser?.department || "Operations");
   
@@ -281,7 +281,7 @@ export function EmployeeProfile({ currentUser, onDepartmentChange }: EmployeePro
             border: "1px solid var(--neuron-ui-border)",
             borderRadius: "12px",
             padding: "32px",
-            marginBottom: isDevMode ? "24px" : "0"
+            marginBottom: "24px"
           }}>
             <h3 style={{ 
               fontSize: "16px", 
@@ -309,7 +309,7 @@ export function EmployeeProfile({ currentUser, onDepartmentChange }: EmployeePro
                     Department
                   </label>
                 </div>
-                <SimpleDropdown
+                <CustomDropdown
                   value={selectedDepartment}
                   onChange={handleDepartmentChange}
                   options={departments}
@@ -337,6 +337,52 @@ export function EmployeeProfile({ currentUser, onDepartmentChange }: EmployeePro
                 </p>
               </div>
             </div>
+          </div>
+
+          {/* Account Actions */}
+          <div style={{
+            backgroundColor: "#FFFFFF",
+            border: "1px solid var(--neuron-ui-border)",
+            borderRadius: "12px",
+            padding: "32px",
+            marginBottom: isDevMode ? "24px" : "0"
+          }}>
+            <h3 style={{ 
+              fontSize: "16px", 
+              fontWeight: 600, 
+              color: "#12332B",
+              marginBottom: "8px"
+            }}>
+              Account Actions
+            </h3>
+            <p style={{ 
+              fontSize: "13px", 
+              color: "#667085",
+              marginBottom: "20px"
+            }}>
+              Log out of your account
+            </p>
+            <button
+              onClick={logout}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-lg transition-colors"
+              style={{
+                border: "1px solid #DC2626",
+                backgroundColor: "#FFFFFF",
+                color: "#DC2626",
+                fontSize: "13px",
+                fontWeight: 500,
+                cursor: "pointer"
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = "#FEF2F2";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = "#FFFFFF";
+              }}
+            >
+              <LogOut size={16} />
+              Log Out
+            </button>
           </div>
           
           {/* Dev Tools Section - Only visible in development */}

@@ -11,9 +11,10 @@ interface GroupedDropdownProps {
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
+  disabled?: boolean;
 }
 
-export function GroupedDropdown({ options, value, onChange, placeholder = "Select option" }: GroupedDropdownProps) {
+export function GroupedDropdown({ options, value, onChange, placeholder = "Select option", disabled = false }: GroupedDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -43,25 +44,29 @@ export function GroupedDropdown({ options, value, onChange, placeholder = "Selec
       {/* Trigger Button */}
       <button
         type="button"
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={() => !disabled && setIsOpen(!isOpen)}
+        disabled={disabled}
         style={{
           width: "100%",
           padding: "10px 14px",
           fontSize: "14px",
           border: "1.5px solid #E5E7EB",
           borderRadius: "6px",
-          backgroundColor: "#FFFFFF",
+          backgroundColor: disabled ? "#F9FAFB" : "#FFFFFF",
           color: value ? "#12332B" : "#9CA3AF",
-          cursor: "pointer",
+          cursor: disabled ? "default" : "pointer",
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
           outline: "none",
           transition: "all 0.2s",
+          opacity: disabled ? 0.6 : 1
         }}
         onFocus={(e) => {
-          e.currentTarget.style.borderColor = "#0F766E";
-          e.currentTarget.style.boxShadow = "0 0 0 3px rgba(15, 118, 110, 0.1)";
+          if (!disabled) {
+            e.currentTarget.style.borderColor = "#0F766E";
+            e.currentTarget.style.boxShadow = "0 0 0 3px rgba(15, 118, 110, 0.1)";
+          }
         }}
         onBlur={(e) => {
           if (!isOpen) {

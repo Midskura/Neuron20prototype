@@ -1,8 +1,15 @@
-import { X, Plus, Printer, Download, Calendar as CalendarIcon } from "lucide-react";
-import { useState } from "react";
+import { X, Plus, Printer, Download, Calendar as CalendarIcon, CreditCard, Clock, Tag, ChevronDown } from "lucide-react";
+import { useState, useEffect } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import logoImage from "figma:asset/28c84ed117b026fbf800de0882eb478561f37f4f.png";
-import { SimpleDropdown } from "../bd/SimpleDropdown";
+import { CustomDropdown } from "../bd/CustomDropdown";
 import { GroupedDropdown } from "../bd/GroupedDropdown";
+import type { EVoucher } from "../../types/evoucher";
+import { useEVoucherSubmit } from "../../hooks/useEVoucherSubmit";
+import { useUser } from "../../hooks/useUser";
+import { projectId } from "../../utils/supabase/info";
+
+const API_URL = `https://${projectId}.supabase.co/functions/v1/make-server-c142e950`;
 
 interface LineItem {
   id: string;
@@ -14,8 +21,16 @@ interface LineItem {
 interface AddRequestForPaymentPanelProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (data: any) => void;
-  onSaveDraft?: (data: any) => void;
+  onSave?: (data: any) => void; // DEPRECATED - Use onSuccess instead
+  onSaveDraft?: (data: any) => void; // DEPRECATED - Use onSuccess instead
+  onSuccess?: () => void; // NEW: Called after successful save to backend
+  context?: "bd" | "accounting" | "operations" | "collection" | "billing"; // Extended to support all E-Voucher types
+  defaultRequestor?: string; // For pre-filling requestor name
+  mode?: "create" | "view"; // View mode for displaying existing expense
+  existingData?: EVoucher; // Pre-fill data when in view mode
+  bookingId?: string; // For auto-linking to specific booking (from Operations modules)
+  bookingType?: "forwarding" | "brokerage" | "trucking" | "marine-insurance" | "others";
+  onExpenseCreated?: () => void; // Callback after expense is created (used by Operations)
 }
 
 type ExpenseCategory = 
@@ -276,8 +291,22 @@ export function AddRequestForPaymentPanel({
   isOpen, 
   onClose, 
   onSave,
-  onSaveDraft 
+  onSaveDraft,
+  onSuccess,
+  context = "bd",
+  defaultRequestor,
+  mode,
+  existingData,
+  bookingId,
+  bookingType,
+  onExpenseCreated
 }: AddRequestForPaymentPanelProps) {
+  // Get current user for requestor name
+  const { user } = useUser();
+  
+  // Use the custom hook for E-Voucher submission
+  const { createDraft, submitForApproval, isSaving } = useEVoucherSubmit(context);
+  
   // Form state
   const [requestName, setRequestName] = useState("");
   const [expenseCategory, setExpenseCategory] = useState<ExpenseCategory>("Brokerage - FCL");
@@ -291,6 +320,39 @@ export function AddRequestForPaymentPanel({
   const [creditTerms, setCreditTerms] = useState<CreditTerm>("None");
   const [paymentSchedule, setPaymentSchedule] = useState("");
   const [notes, setNotes] = useState("");
+  const [showWorkflowHistory, setShowWorkflowHistory] = useState(true);
+  
+  // Pre-fill data if in view mode - MUST be before early return
+  useEffect(() => {
+    if (mode === "view" && existingData) {
+      setRequestName(existingData.purpose || existingData.description || "");
+      setExpenseCategory((existingData.expense_category as ExpenseCategory) || "Brokerage - FCL");
+      setSubCategory(existingData.sub_category || "");
+      setProjectNumber(existingData.project_number || "");
+      setLineItems(existingData.line_items || [{ id: "1", particular: "", description: "", amount: 0 }]);
+      setPreferredPayment((existingData.payment_method as PaymentMethod) || "Bank Transfer");
+      setVendor(existingData.vendor_name || "");
+      setCreditTerms((existingData.credit_terms as CreditTerm) || "None");
+      setPaymentSchedule(existingData.due_date || "");
+      setNotes(existingData.notes || "");
+    }
+  }, [mode, existingData]);
+
+  // Pre-fill bookingId when in Operations context
+  useEffect(() => {
+    if (bookingId) {
+      setProjectNumber(bookingId);
+      
+      // Auto-select expense category based on bookingType
+      if (bookingType === "forwarding") {
+        setExpenseCategory("Forwarding");
+      } else if (bookingType === "brokerage") {
+        setExpenseCategory("Brokerage - FCL");
+      } else if (bookingType === "trucking") {
+        setExpenseCategory("Trucking");
+      }
+    }
+  }, [bookingId, bookingType]);
 
   // Generate today's date and EVRN number
   const today = new Date();
@@ -328,33 +390,18 @@ export function AddRequestForPaymentPanel({
 
   const totalAmount = lineItems.reduce((sum, item) => sum + (item.amount || 0), 0);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    onSave({
-      requestName,
-      evrnNumber,
-      expenseCategory,
-      subCategory,
-      projectNumber,
-      lineItems,
-      totalAmount,
-      preferredPayment,
-      vendor,
-      creditTerms,
-      paymentSchedule,
-      notes,
-      date: todayFormatted,
-      requestor: "Current User", // In real app, get from auth context
-      status: "Submitted"
-    });
-    handleClose();
-  };
-
-  const handleSaveDraft = () => {
-    if (onSaveDraft) {
-      onSaveDraft({
+    
+    // Don't submit if in view mode
+    if (isViewMode) {
+      return;
+    }
+    
+    try {
+      // Prepare form data
+      const formData = {
         requestName,
-        evrnNumber,
         expenseCategory,
         subCategory,
         projectNumber,
@@ -365,11 +412,81 @@ export function AddRequestForPaymentPanel({
         creditTerms,
         paymentSchedule,
         notes,
-        date: todayFormatted,
-        requestor: "Current User",
-        status: "Draft"
-      });
+        requestor: defaultRequestor || user?.name || "Current User",
+        bookingId,
+      };
+
+      // Use the hook's submitForApproval function (creates + submits in one go)
+      await submitForApproval(formData);
+      
+      // Call legacy callback if provided (backwards compatibility)
+      if (onSave) {
+        onSave({
+          ...formData,
+          evrnNumber,
+          date: todayFormatted,
+          status: "Submitted"
+        });
+      }
+      
+      // Call new success callback
+      onSuccess?.();
+      
+      // Call Operations callback if provided
+      onExpenseCreated?.();
+      
+      // Close and reset form
       handleClose();
+    } catch (error) {
+      // Error already handled by the hook (toast shown)
+      console.error('Form submission error:', error);
+    }
+  };
+
+  const handleSaveDraft = async () => {
+    if (isViewMode) {
+      return;
+    }
+    
+    try {
+      // Prepare form data
+      const formData = {
+        requestName,
+        expenseCategory,
+        subCategory,
+        projectNumber,
+        lineItems,
+        totalAmount,
+        preferredPayment,
+        vendor,
+        creditTerms,
+        paymentSchedule,
+        notes,
+        requestor: defaultRequestor || user?.name || "Current User",
+        bookingId,
+      };
+
+      // Use the hook's createDraft function
+      await createDraft(formData);
+      
+      // Call legacy callback if provided (backwards compatibility)
+      if (onSaveDraft) {
+        onSaveDraft({
+          ...formData,
+          evrnNumber,
+          date: todayFormatted,
+          status: "Draft"
+        });
+      }
+      
+      // Call new success callback
+      onSuccess?.();
+      
+      // Close and reset form
+      handleClose();
+    } catch (error) {
+      // Error already handled by the hook (toast shown)
+      console.error('Draft save error:', error);
     }
   };
 
@@ -400,10 +517,96 @@ export function AddRequestForPaymentPanel({
   // Update sub-category when expense category changes
   const availableSubCategories = SUB_CATEGORIES[expenseCategory] || [];
 
+  // Context-aware labels
+  const isAccounting = context === "accounting";
+  const isOperations = context === "operations";
+  const isBD = context === "bd";
+  const isCollection = context === "collection";
+  const isBilling = context === "billing";
+  
+  const panelTitle = 
+    isCollection ? "New Collection Voucher" :
+    isBilling ? "New Billing Voucher" :
+    isOperations ? "Add Expense" : 
+    isAccounting ? "Add New Expense" : 
+    "New Budget Request";
+    
+  const panelDescription =
+    isCollection ? "Record a payment collection from customers with complete transaction details" :
+    isBilling ? "Create a new invoice/billing voucher for customer charges" :
+    isOperations ? "Record an expense for this booking with complete categorization and payment details" :
+    isAccounting ? "Record a new expense entry with complete categorization and payment details" :
+    "Create a new expense request with complete categorization and payment details";
+    
+  const formTitle =
+    isCollection ? "COLLECTION VOUCHER" :
+    isBilling ? "BILLING VOUCHER" :
+    isOperations ? "EXPENSE VOUCHER" : 
+    isAccounting ? "EXPENSE VOUCHER" : 
+    "REQUEST FOR PAYMENT";
+    
+  const submitButtonText =
+    isCollection ? "Record Collection" :
+    isBilling ? "Create Invoice" :
+    isOperations ? "Add Expense" : 
+    isAccounting ? "Record Expense" : 
+    "Submit Request";
+
+  // View mode specific state
+  const isViewMode = mode === "view";
+
+  // Override labels for view mode
+  const viewPanelTitle = isAccounting ? "Expense Details" : "Budget Request Details";
+  const viewPanelDescription = "View complete details and workflow history";
+  
+  // Use view labels if in view mode
+  const finalPanelTitle = isViewMode ? viewPanelTitle : panelTitle;
+  const finalPanelDescription = isViewMode ? viewPanelDescription : panelDescription;
+
+  // Get status color for view mode
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case "Approved":
+      case "Recorded":
+        return { bg: "#E8F5F3", color: "#0F766E" };
+      case "Disbursed":
+      case "Audited":
+        return { bg: "#D1FAE5", color: "#059669" };
+      case "Disapproved":
+      case "Cancelled":
+        return { bg: "#FFE5E5", color: "#C94F3D" };
+      case "Under Review":
+      case "Processing":
+        return { bg: "#FEF3E7", color: "#C88A2B" };
+      case "Submitted":
+        return { bg: "#F3F4F6", color: "#6B7A76" };
+      default: // Draft
+        return { bg: "#F9FAFB", color: "#9CA3AF" };
+    }
+  };
+
+  const statusStyle = existingData ? getStatusColor(existingData.status) : null;
+
+  // Get formatted date for view mode
+  const formattedDate = existingData 
+    ? new Date(existingData.request_date || existingData.created_at).toLocaleDateString("en-US", {
+        month: "2-digit",
+        day: "2-digit",
+        year: "numeric"
+      })
+    : todayFormatted;
+
+  const displayEvrnNumber = existingData?.voucher_number || evrnNumber;
+  const displayRequestor = existingData?.requestor_name || defaultRequestor || user?.name || "Current User";
+
   return (
     <>
       {/* Backdrop */}
-      <div
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.2 }}
         className="fixed inset-0 bg-black z-40"
         onClick={handleClose}
         style={{ 
@@ -413,8 +616,17 @@ export function AddRequestForPaymentPanel({
       />
 
       {/* Slide-out Panel */}
-      <div
-        className="fixed right-0 top-0 h-full w-[920px] bg-white shadow-2xl z-50 flex flex-col animate-slide-in"
+      <motion.div
+        initial={{ x: "100%", opacity: 0 }}
+        animate={{ x: 0, opacity: 1 }}
+        exit={{ x: "100%", opacity: 0 }}
+        transition={{ 
+          type: "spring",
+          damping: 30,
+          stiffness: 300,
+          duration: 0.3
+        }}
+        className="fixed right-0 top-0 h-full w-[920px] bg-white shadow-2xl z-50 flex flex-col"
         style={{
           borderLeft: "1px solid var(--neuron-ui-border)",
         }}
@@ -428,12 +640,29 @@ export function AddRequestForPaymentPanel({
           }}
         >
           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
-            <div>
-              <h2 style={{ fontSize: "20px", fontWeight: 600, color: "#12332B", marginBottom: "4px" }}>
-                New Budget Request
-              </h2>
+            <div style={{ flex: 1 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "4px" }}>
+                <h2 style={{ fontSize: "20px", fontWeight: 600, color: "#12332B" }}>
+                  {finalPanelTitle}
+                </h2>
+                {/* Status Badge - Only in View Mode */}
+                {isViewMode && existingData && (
+                  <span style={{
+                    padding: "4px 12px",
+                    fontSize: "12px",
+                    fontWeight: 600,
+                    backgroundColor: statusStyle?.bg,
+                    color: statusStyle?.color,
+                    borderRadius: "12px",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.5px"
+                  }}>
+                    {existingData.status}
+                  </span>
+                )}
+              </div>
               <p style={{ fontSize: "13px", color: "#667085" }}>
-                Create a new expense request with complete categorization and payment details
+                {finalPanelDescription}
               </p>
             </div>
             <button
@@ -491,7 +720,7 @@ export function AddRequestForPaymentPanel({
                   letterSpacing: "0.5px",
                   marginBottom: "16px"
                 }}>
-                  REQUEST FOR PAYMENT
+                  {formTitle}
                 </h1>
                 <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                   <div>
@@ -507,7 +736,7 @@ export function AddRequestForPaymentPanel({
                       Date
                     </span>
                     <span style={{ fontSize: "14px", fontWeight: 500, color: "#12332B" }}>
-                      {todayFormatted}
+                      {formattedDate}
                     </span>
                   </div>
                   <div>
@@ -523,7 +752,7 @@ export function AddRequestForPaymentPanel({
                       E-Voucher Ref No.
                     </span>
                     <span style={{ fontSize: "14px", fontWeight: 500, color: "#0F766E" }}>
-                      {evrnNumber}
+                      {displayEvrnNumber}
                     </span>
                   </div>
                 </div>
@@ -553,13 +782,14 @@ export function AddRequestForPaymentPanel({
                     color: "#374151", 
                     marginBottom: "8px" 
                   }}>
-                    Request Name / Title <span style={{ color: "#EF4444" }}>*</span>
+                    Request Name / Title {!isViewMode && <span style={{ color: "#EF4444" }}>*</span>}
                   </label>
                   <input
                     type="text"
-                    required
+                    required={!isViewMode}
+                    readOnly={isViewMode}
                     value={requestName}
-                    onChange={(e) => setRequestName(e.target.value)}
+                    onChange={(e) => !isViewMode && setRequestName(e.target.value)}
                     placeholder="e.g., Q1 2025 Marketing Campaign, Office Supplies - January 2025"
                     style={{
                       width: "100%",
@@ -569,10 +799,15 @@ export function AddRequestForPaymentPanel({
                       borderRadius: "6px",
                       outline: "none",
                       transition: "all 0.2s",
+                      backgroundColor: isViewMode ? "#F9FAFB" : "#FFFFFF",
+                      color: isViewMode ? "#374151" : "inherit",
+                      cursor: isViewMode ? "default" : "text"
                     }}
                     onFocus={(e) => {
-                      e.currentTarget.style.borderColor = "#0F766E";
-                      e.currentTarget.style.boxShadow = "0 0 0 3px rgba(15, 118, 110, 0.1)";
+                      if (!isViewMode) {
+                        e.currentTarget.style.borderColor = "#0F766E";
+                        e.currentTarget.style.boxShadow = "0 0 0 3px rgba(15, 118, 110, 0.1)";
+                      }
                     }}
                     onBlur={(e) => {
                       e.currentTarget.style.borderColor = "#E5E7EB";
@@ -593,14 +828,15 @@ export function AddRequestForPaymentPanel({
                     }}>
                       Expense Category <span style={{ color: "#EF4444" }}>*</span>
                     </label>
-                    <SimpleDropdown
-                      options={EXPENSE_CATEGORIES.map(cat => ({ value: cat, label: cat }))}
+                    <CustomDropdown
+                      options={EXPENSE_CATEGORIES.map(cat => ({ value: cat, label: cat, icon: <Tag size={16} /> }))}
                       value={expenseCategory}
                       onChange={(value) => {
                         setExpenseCategory(value as ExpenseCategory);
                         setSubCategory(""); // Reset sub-category when category changes
                       }}
                       placeholder="Select category"
+                      disabled={isViewMode}
                     />
                   </div>
 
@@ -620,6 +856,7 @@ export function AddRequestForPaymentPanel({
                       value={subCategory}
                       onChange={setSubCategory}
                       placeholder="Select sub-category"
+                      disabled={isViewMode}
                     />
                   </div>
                 </div>
@@ -638,7 +875,8 @@ export function AddRequestForPaymentPanel({
                   <input
                     type="text"
                     value={projectNumber}
-                    onChange={(e) => setProjectNumber(e.target.value)}
+                    onChange={(e) => !isViewMode && setProjectNumber(e.target.value)}
+                    readOnly={isViewMode}
                     placeholder="e.g., LCL-IMPS-001-SEA or BRK-2024-045"
                     style={{
                       width: "100%",
@@ -648,10 +886,14 @@ export function AddRequestForPaymentPanel({
                       borderRadius: "6px",
                       outline: "none",
                       transition: "all 0.2s",
+                      backgroundColor: isViewMode ? "#F9FAFB" : "#FFFFFF",
+                      cursor: isViewMode ? "default" : "text"
                     }}
                     onFocus={(e) => {
-                      e.currentTarget.style.borderColor = "#0F766E";
-                      e.currentTarget.style.boxShadow = "0 0 0 3px rgba(15, 118, 110, 0.1)";
+                      if (!isViewMode) {
+                        e.currentTarget.style.borderColor = "#0F766E";
+                        e.currentTarget.style.boxShadow = "0 0 0 3px rgba(15, 118, 110, 0.1)";
+                      }
                     }}
                     onBlur={(e) => {
                       e.currentTarget.style.borderColor = "#E5E7EB";
@@ -730,7 +972,8 @@ export function AddRequestForPaymentPanel({
                   <input
                     type="text"
                     value={item.particular}
-                    onChange={(e) => handleLineItemChange(item.id, "particular", e.target.value)}
+                    onChange={(e) => !isViewMode && handleLineItemChange(item.id, "particular", e.target.value)}
+                    readOnly={isViewMode}
                     placeholder="Enter particular"
                     style={{
                       padding: "8px 12px",
@@ -739,10 +982,14 @@ export function AddRequestForPaymentPanel({
                       borderRadius: "6px",
                       outline: "none",
                       transition: "all 0.2s",
+                      backgroundColor: isViewMode ? "#F9FAFB" : "#FFFFFF",
+                      cursor: isViewMode ? "default" : "text"
                     }}
                     onFocus={(e) => {
-                      e.currentTarget.style.borderColor = "#0F766E";
-                      e.currentTarget.style.boxShadow = "0 0 0 3px rgba(15, 118, 110, 0.1)";
+                      if (!isViewMode) {
+                        e.currentTarget.style.borderColor = "#0F766E";
+                        e.currentTarget.style.boxShadow = "0 0 0 3px rgba(15, 118, 110, 0.1)";
+                      }
                     }}
                     onBlur={(e) => {
                       e.currentTarget.style.borderColor = "#E5E7EB";
@@ -752,7 +999,8 @@ export function AddRequestForPaymentPanel({
                   <input
                     type="text"
                     value={item.description}
-                    onChange={(e) => handleLineItemChange(item.id, "description", e.target.value)}
+                    onChange={(e) => !isViewMode && handleLineItemChange(item.id, "description", e.target.value)}
+                    readOnly={isViewMode}
                     placeholder="Optional details"
                     style={{
                       padding: "8px 12px",
@@ -761,10 +1009,14 @@ export function AddRequestForPaymentPanel({
                       borderRadius: "6px",
                       outline: "none",
                       transition: "all 0.2s",
+                      backgroundColor: isViewMode ? "#F9FAFB" : "#FFFFFF",
+                      cursor: isViewMode ? "default" : "text"
                     }}
                     onFocus={(e) => {
-                      e.currentTarget.style.borderColor = "#0F766E";
-                      e.currentTarget.style.boxShadow = "0 0 0 3px rgba(15, 118, 110, 0.1)";
+                      if (!isViewMode) {
+                        e.currentTarget.style.borderColor = "#0F766E";
+                        e.currentTarget.style.boxShadow = "0 0 0 3px rgba(15, 118, 110, 0.1)";
+                      }
                     }}
                     onBlur={(e) => {
                       e.currentTarget.style.borderColor = "#E5E7EB";
@@ -775,7 +1027,8 @@ export function AddRequestForPaymentPanel({
                     type="number"
                     step="0.01"
                     value={item.amount || ""}
-                    onChange={(e) => handleLineItemChange(item.id, "amount", parseFloat(e.target.value) || 0)}
+                    onChange={(e) => !isViewMode && handleLineItemChange(item.id, "amount", parseFloat(e.target.value) || 0)}
+                    readOnly={isViewMode}
                     placeholder="0.00"
                     style={{
                       padding: "8px 12px",
@@ -785,17 +1038,21 @@ export function AddRequestForPaymentPanel({
                       outline: "none",
                       textAlign: "right",
                       transition: "all 0.2s",
+                      backgroundColor: isViewMode ? "#F9FAFB" : "#FFFFFF",
+                      cursor: isViewMode ? "default" : "text"
                     }}
                     onFocus={(e) => {
-                      e.currentTarget.style.borderColor = "#0F766E";
-                      e.currentTarget.style.boxShadow = "0 0 0 3px rgba(15, 118, 110, 0.1)";
+                      if (!isViewMode) {
+                        e.currentTarget.style.borderColor = "#0F766E";
+                        e.currentTarget.style.boxShadow = "0 0 0 3px rgba(15, 118, 110, 0.1)";
+                      }
                     }}
                     onBlur={(e) => {
                       e.currentTarget.style.borderColor = "#E5E7EB";
                       e.currentTarget.style.boxShadow = "none";
                     }}
                   />
-                  {lineItems.length > 1 && (
+                  {!isViewMode && lineItems.length > 1 && (
                     <button
                       type="button"
                       onClick={() => handleRemoveLine(item.id)}
@@ -829,34 +1086,36 @@ export function AddRequestForPaymentPanel({
               ))}
 
               {/* Add Another Line Button */}
-              <button
-                type="button"
-                onClick={handleAddLine}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "8px",
-                  padding: "8px 16px",
-                  fontSize: "14px",
-                  fontWeight: 500,
-                  color: "#0F766E",
-                  backgroundColor: "transparent",
-                  border: "1px dashed #0F766E",
-                  borderRadius: "6px",
-                  cursor: "pointer",
-                  marginTop: "8px",
-                  transition: "all 0.2s",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = "rgba(15, 118, 110, 0.05)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = "transparent";
-                }}
-              >
-                <Plus size={16} />
-                Add Another Line
-              </button>
+              {!isViewMode && (
+                <button
+                  type="button"
+                  onClick={handleAddLine}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    padding: "8px 16px",
+                    fontSize: "14px",
+                    fontWeight: 500,
+                    color: "#0F766E",
+                    backgroundColor: "transparent",
+                    border: "1px dashed #0F766E",
+                    borderRadius: "6px",
+                    cursor: "pointer",
+                    marginTop: "8px",
+                    transition: "all 0.2s",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = "rgba(15, 118, 110, 0.05)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = "transparent";
+                  }}
+                >
+                  <Plus size={16} />
+                  Add Another Line
+                </button>
+              )}
 
               {/* Total Amount */}
               <div style={{ 
@@ -902,11 +1161,12 @@ export function AddRequestForPaymentPanel({
                   }}>
                     Preferred Payment Method <span style={{ color: "#EF4444" }}>*</span>
                   </label>
-                  <SimpleDropdown
-                    options={PAYMENT_METHODS.map(method => ({ value: method, label: method }))}
+                  <CustomDropdown
+                    options={PAYMENT_METHODS.map(method => ({ value: method, label: method, icon: <CreditCard size={16} /> }))}
                     value={preferredPayment}
                     onChange={(value) => setPreferredPayment(value as PaymentMethod)}
                     placeholder="Select payment method"
+                    disabled={isViewMode}
                   />
                 </div>
 
@@ -921,11 +1181,12 @@ export function AddRequestForPaymentPanel({
                   }}>
                     Credit Terms
                   </label>
-                  <SimpleDropdown
-                    options={CREDIT_TERMS.map(term => ({ value: term, label: term }))}
+                  <CustomDropdown
+                    options={CREDIT_TERMS.map(term => ({ value: term, label: term, icon: <Clock size={16} /> }))}
                     value={creditTerms}
                     onChange={(value) => setCreditTerms(value as CreditTerm)}
                     placeholder="Select credit terms"
+                    disabled={isViewMode}
                   />
                 </div>
 
@@ -944,7 +1205,9 @@ export function AddRequestForPaymentPanel({
                     <input
                       type="date"
                       value={paymentSchedule}
-                      onChange={(e) => setPaymentSchedule(e.target.value)}
+                      onChange={(e) => !isViewMode && setPaymentSchedule(e.target.value)}
+                      readOnly={isViewMode}
+                      disabled={isViewMode}
                       style={{
                         width: "100%",
                         padding: "10px 14px",
@@ -953,10 +1216,14 @@ export function AddRequestForPaymentPanel({
                         borderRadius: "6px",
                         outline: "none",
                         transition: "all 0.2s",
+                        backgroundColor: isViewMode ? "#F9FAFB" : "#FFFFFF",
+                        cursor: isViewMode ? "default" : "text"
                       }}
                       onFocus={(e) => {
-                        e.currentTarget.style.borderColor = "#0F766E";
-                        e.currentTarget.style.boxShadow = "0 0 0 3px rgba(15, 118, 110, 0.1)";
+                        if (!isViewMode) {
+                          e.currentTarget.style.borderColor = "#0F766E";
+                          e.currentTarget.style.boxShadow = "0 0 0 3px rgba(15, 118, 110, 0.1)";
+                        }
                       }}
                       onBlur={(e) => {
                         e.currentTarget.style.borderColor = "#E5E7EB";
@@ -991,9 +1258,10 @@ export function AddRequestForPaymentPanel({
               </label>
               <input
                 type="text"
-                required
+                required={!isViewMode}
+                readOnly={isViewMode}
                 value={vendor}
-                onChange={(e) => setVendor(e.target.value)}
+                onChange={(e) => !isViewMode && setVendor(e.target.value)}
                 placeholder="Enter vendor or payee name"
                 style={{
                   width: "100%",
@@ -1003,10 +1271,14 @@ export function AddRequestForPaymentPanel({
                   borderRadius: "6px",
                   outline: "none",
                   transition: "all 0.2s",
+                  backgroundColor: isViewMode ? "#F9FAFB" : "#FFFFFF",
+                  cursor: isViewMode ? "default" : "text"
                 }}
                 onFocus={(e) => {
-                  e.currentTarget.style.borderColor = "#0F766E";
-                  e.currentTarget.style.boxShadow = "0 0 0 3px rgba(15, 118, 110, 0.1)";
+                  if (!isViewMode) {
+                    e.currentTarget.style.borderColor = "#0F766E";
+                    e.currentTarget.style.boxShadow = "0 0 0 3px rgba(15, 118, 110, 0.1)";
+                  }
                 }}
                 onBlur={(e) => {
                   e.currentTarget.style.borderColor = "#E5E7EB";
@@ -1028,8 +1300,9 @@ export function AddRequestForPaymentPanel({
                 Additional Notes
               </h3>
               <textarea
+                readOnly={isViewMode}
                 value={notes}
-                onChange={(e) => setNotes(e.target.value)}
+                onChange={(e) => !isViewMode && setNotes(e.target.value)}
                 placeholder="Add any additional notes or remarks here..."
                 rows={4}
                 style={{
@@ -1041,11 +1314,15 @@ export function AddRequestForPaymentPanel({
                   outline: "none",
                   transition: "all 0.2s",
                   resize: "vertical",
-                  fontFamily: "inherit"
+                  fontFamily: "inherit",
+                  backgroundColor: isViewMode ? "#F9FAFB" : "#FFFFFF",
+                  cursor: isViewMode ? "default" : "text"
                 }}
                 onFocus={(e) => {
-                  e.currentTarget.style.borderColor = "#0F766E";
-                  e.currentTarget.style.boxShadow = "0 0 0 3px rgba(15, 118, 110, 0.1)";
+                  if (!isViewMode) {
+                    e.currentTarget.style.borderColor = "#0F766E";
+                    e.currentTarget.style.boxShadow = "0 0 0 3px rgba(15, 118, 110, 0.1)";
+                  }
                 }}
                 onBlur={(e) => {
                   e.currentTarget.style.borderColor = "#E5E7EB";
@@ -1062,7 +1339,7 @@ export function AddRequestForPaymentPanel({
               border: "1px solid #E5E7EB"
             }}>
               <span style={{ fontSize: "12px", color: "#6B7280" }}>
-                <strong>Requestor:</strong> Current User (Account Owner)
+                <strong>Requestor:</strong> {displayRequestor} (Account Owner)
               </span>
             </div>
           </form>
@@ -1075,144 +1352,184 @@ export function AddRequestForPaymentPanel({
             borderTop: "1px solid var(--neuron-ui-border)",
             backgroundColor: "#FFFFFF",
             display: "flex",
-            justifyContent: "space-between",
+            justifyContent: isViewMode ? "flex-end" : "space-between",
             alignItems: "center"
           }}
         >
-          <div style={{ display: "flex", gap: "12px" }}>
-            <button
-              type="button"
-              onClick={() => window.print()}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "8px",
-                padding: "8px 16px",
-                fontSize: "14px",
-                fontWeight: 500,
-                color: "#6B7280",
-                backgroundColor: "transparent",
-                border: "1px solid #E5E7EB",
-                borderRadius: "8px",
-                cursor: "pointer",
-                transition: "all 0.2s",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = "#F9FAFB";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = "transparent";
-              }}
-            >
-              <Printer size={16} />
-              Print
-            </button>
-            <button
-              type="button"
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "8px",
-                padding: "8px 16px",
-                fontSize: "14px",
-                fontWeight: 500,
-                color: "#6B7280",
-                backgroundColor: "transparent",
-                border: "1px solid #E5E7EB",
-                borderRadius: "8px",
-                cursor: "pointer",
-                transition: "all 0.2s",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = "#F9FAFB";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = "transparent";
-              }}
-            >
-              <Download size={16} />
-              Download Excel
-            </button>
-          </div>
+          {/* Conditional buttons based on mode */}
+          {isViewMode ? (
+            // View mode: Just Print and Download Excel on the right
+            <div style={{ display: "flex", gap: "12px" }}>
+              <button
+                type="button"
+                onClick={() => window.print()}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  padding: "8px 16px",
+                  fontSize: "14px",
+                  fontWeight: 500,
+                  color: "#6B7280",
+                  backgroundColor: "transparent",
+                  border: "1px solid #E5E7EB",
+                  borderRadius: "8px",
+                  cursor: "pointer",
+                  transition: "all 0.2s",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = "#F9FAFB";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = "transparent";
+                }}
+              >
+                <Printer size={16} />
+                Print
+              </button>
+              <button
+                type="button"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  padding: "8px 16px",
+                  fontSize: "14px",
+                  fontWeight: 500,
+                  color: "#6B7280",
+                  backgroundColor: "transparent",
+                  border: "1px solid #E5E7EB",
+                  borderRadius: "8px",
+                  cursor: "pointer",
+                  transition: "all 0.2s",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = "#F9FAFB";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = "transparent";
+                }}
+              >
+                <Download size={16} />
+                Download Excel
+              </button>
+            </div>
+          ) : (
+            // Create mode: Show all buttons
+            <>
+              <div style={{ display: "flex", gap: "12px" }}>
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    padding: "8px 16px",
+                    fontSize: "14px",
+                    fontWeight: 500,
+                    color: "#6B7280",
+                    backgroundColor: "transparent",
+                    border: "1px solid #E5E7EB",
+                    borderRadius: "8px",
+                    cursor: "pointer",
+                    transition: "all 0.2s",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = "#F9FAFB";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = "transparent";
+                  }}
+                >
+                  <Printer size={16} />
+                  Print
+                </button>
+                <button
+                  type="button"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    padding: "8px 16px",
+                    fontSize: "14px",
+                    fontWeight: 500,
+                    color: "#6B7280",
+                    backgroundColor: "transparent",
+                    border: "1px solid #E5E7EB",
+                    borderRadius: "8px",
+                    cursor: "pointer",
+                    transition: "all 0.2s",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = "#F9FAFB";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = "transparent";
+                  }}
+                >
+                  <Download size={16} />
+                  Download Excel
+                </button>
+              </div>
 
-          <div style={{ display: "flex", gap: "12px" }}>
-            <button
-              type="button"
-              onClick={handleClose}
-              style={{
-                padding: "10px 20px",
-                fontSize: "14px",
-                fontWeight: 500,
-                color: "#6B7280",
-                backgroundColor: "#FFFFFF",
-                border: "1px solid #E5E7EB",
-                borderRadius: "8px",
-                cursor: "pointer",
-                transition: "all 0.2s",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = "#F9FAFB";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = "#FFFFFF";
-              }}
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={handleSaveDraft}
-              style={{
-                padding: "10px 20px",
-                fontSize: "14px",
-                fontWeight: 500,
-                color: "#374151",
-                backgroundColor: "#FFFFFF",
-                border: "1px solid #E5E7EB",
-                borderRadius: "8px",
-                cursor: "pointer",
-                transition: "all 0.2s",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = "#F9FAFB";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = "#FFFFFF";
-              }}
-            >
-              Save as Draft
-            </button>
-            <button
-              type="submit"
-              form="rfp-form"
-              disabled={!isFormValid}
-              style={{
-                padding: "10px 24px",
-                fontSize: "14px",
-                fontWeight: 600,
-                color: "#FFFFFF",
-                backgroundColor: isFormValid ? "#0F766E" : "#D1D5DB",
-                border: "none",
-                borderRadius: "8px",
-                cursor: isFormValid ? "pointer" : "not-allowed",
-                transition: "all 0.2s",
-              }}
-              onMouseEnter={(e) => {
-                if (isFormValid) {
-                  e.currentTarget.style.backgroundColor = "#0D6559";
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (isFormValid) {
-                  e.currentTarget.style.backgroundColor = "#0F766E";
-                }
-              }}
-            >
-              Submit Request
-            </button>
-          </div>
+              <div style={{ display: "flex", gap: "12px" }}>
+                <button
+                  type="button"
+                  onClick={handleSaveDraft}
+                  style={{
+                    padding: "10px 20px",
+                    fontSize: "14px",
+                    fontWeight: 500,
+                    color: "#374151",
+                    backgroundColor: "#FFFFFF",
+                    border: "1px solid #E5E7EB",
+                    borderRadius: "8px",
+                    cursor: "pointer",
+                    transition: "all 0.2s",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = "#F9FAFB";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = "#FFFFFF";
+                  }}
+                >
+                  Save as Draft
+                </button>
+                <button
+                  type="submit"
+                  form="rfp-form"
+                  disabled={!isFormValid}
+                  style={{
+                    padding: "10px 24px",
+                    fontSize: "14px",
+                    fontWeight: 600,
+                    color: "#FFFFFF",
+                    backgroundColor: isFormValid ? "#0F766E" : "#D1D5DB",
+                    border: "none",
+                    borderRadius: "8px",
+                    cursor: isFormValid ? "pointer" : "not-allowed",
+                    transition: "all 0.2s",
+                  }}
+                  onMouseEnter={(e) => {
+                    if (isFormValid) {
+                      e.currentTarget.style.backgroundColor = "#0D6559";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (isFormValid) {
+                      e.currentTarget.style.backgroundColor = "#0F766E";
+                    }
+                  }}
+                >
+                  {submitButtonText}
+                </button>
+              </div>
+            </>
+          )}
         </div>
-      </div>
+      </motion.div>
     </>
   );
 }

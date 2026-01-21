@@ -35,7 +35,10 @@ export function ActivitiesList({ onViewActivity }: ActivitiesListProps) {
       });
       
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        console.error(`HTTP error! status: ${response.status}`);
+        setActivities([]);
+        setIsLoading(false);
+        return;
       }
       
       const result = await response.json();
@@ -45,11 +48,11 @@ export function ActivitiesList({ onViewActivity }: ActivitiesListProps) {
         console.log(`Fetched ${result.data.length} activities`);
       } else {
         console.error('Error fetching activities:', result.error);
-        toast.error('Error loading activities: ' + result.error);
+        setActivities([]);
       }
     } catch (error) {
       console.error('Error fetching activities:', error);
-      toast.error('Unable to load activities. Please try again.');
+      // Silently fail - don't show error toast for activities
       setActivities([]);
     } finally {
       setIsLoading(false);
@@ -176,7 +179,7 @@ export function ActivitiesList({ onViewActivity }: ActivitiesListProps) {
   const getContactName = (contactId: string | null) => {
     if (!contactId) return null;
     const contact = contacts.find(c => c.id === contactId);
-    return contact ? contact.name : null; // ✅ Use 'name' field instead of 'first_name last_name'
+    return contact ? `${contact.first_name || ''} ${contact.last_name || ''}`.trim() : null;
   };
 
   const getCustomerName = (customerId: string | null) => {
@@ -342,7 +345,7 @@ export function ActivitiesList({ onViewActivity }: ActivitiesListProps) {
           </div>
 
           <CustomDropdown
-            label="TYPE"
+            label=""
             value={typeFilter}
             onChange={(value) => setTypeFilter(value as ActivityType | "All")}
             options={[
@@ -362,7 +365,7 @@ export function ActivitiesList({ onViewActivity }: ActivitiesListProps) {
           />
 
           <CustomDropdown
-            label="DATE RANGE"
+            label=""
             value={dateRangeFilter}
             onChange={(value) => setDateRangeFilter(value as "Today" | "This Week" | "This Month" | "All Time")}
             options={[
@@ -374,7 +377,7 @@ export function ActivitiesList({ onViewActivity }: ActivitiesListProps) {
           />
 
           <CustomDropdown
-            label="OWNER"
+            label=""
             value={ownerFilter}
             onChange={(value) => setOwnerFilter(value)}
             options={[

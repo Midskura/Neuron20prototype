@@ -1,7 +1,7 @@
-import { Search, Plus, FileText, Eye, ChevronDown, ChevronUp, AlertCircle, Filter, X, ArrowRight, SlidersHorizontal, MessageSquare, DollarSign, Briefcase, Ship, Shield, Truck, Layers, Inbox } from "lucide-react";
+import { Search, Plus, FileText, Eye, ChevronDown, ChevronUp, AlertCircle, Filter, X, ArrowRight, SlidersHorizontal, MessageSquare, DollarSign, Briefcase, Ship, Shield, Truck, Layers, Inbox, Calendar } from "lucide-react";
 import { useState, useRef } from "react";
 import type { QuotationNew, QuotationStatus } from "../../types/pricing";
-import { SimpleDropdown } from "../bd/SimpleDropdown";
+import { CustomDropdown } from "../bd/CustomDropdown";
 import { MultiSelectDropdown } from "../bd/MultiSelectDropdown";
 
 interface QuotationsListProps {
@@ -575,15 +575,15 @@ export function QuotationsList({ onViewQuotation, onCreateQuotation, department,
 
           {/* Date Range Filter */}
           <div style={{ flex: "0 1 180px" }}>
-            <SimpleDropdown
+            <CustomDropdown
               value={dateRangeFilter}
               onChange={(value) => setDateRangeFilter(value)}
               options={[
-                { value: "all", label: "All Time" },
-                { value: "today", label: "Today" },
-                { value: "this-week", label: "This Week" },
-                { value: "this-month", label: "This Month" },
-                { value: "last-30-days", label: "Last 30 Days" },
+                { value: "all", label: "All Time", icon: <Calendar size={16} /> },
+                { value: "today", label: "Today", icon: <Calendar size={16} /> },
+                { value: "this-week", label: "This Week", icon: <Calendar size={16} /> },
+                { value: "this-month", label: "This Month", icon: <Calendar size={16} /> },
+                { value: "last-30-days", label: "Last 30 Days", icon: <Calendar size={16} /> },
               ]}
               placeholder="Date Range"
             />

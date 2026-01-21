@@ -61,6 +61,13 @@ export function ContactsListWithFilters({ userDepartment, onViewContact }: Conta
         headers: { Authorization: `Bearer ${publicAnonKey}` },
         cache: 'no-store',
       });
+      
+      if (!response.ok) {
+        console.error(`HTTP error fetching activities! status: ${response.status}`);
+        setActivities([]);
+        return;
+      }
+      
       const result = await response.json();
       if (result.success) {
         setActivities(result.data);
@@ -71,6 +78,7 @@ export function ContactsListWithFilters({ userDepartment, onViewContact }: Conta
       }
     } catch (error) {
       console.error("Error fetching activities:", error);
+      // Silently fail - set empty array
       setActivities([]);
     }
   };
@@ -312,7 +320,7 @@ export function ContactsListWithFilters({ userDepartment, onViewContact }: Conta
     if (progress >= 60) return "#FEF3E7"; // Light yellow
     return "#FFE5E5"; // Light red
   };
-
+  
   return (
     <div 
       className="h-full overflow-auto"
@@ -374,208 +382,172 @@ export function ContactsListWithFilters({ userDepartment, onViewContact }: Conta
           <div className="grid grid-cols-4 gap-4 mb-6">
             {/* New Contacts Added */}
             <div 
-              className="p-5 rounded-xl"
-              style={{
-                backgroundColor: "#FFFFFF",
-                border: `1.5px solid ${getProgressColor(newContactsProgress)}20`,
+              className="p-5 rounded-xl" 
+              style={{ 
+                border: "1.5px solid var(--neuron-ui-border)",
+                backgroundColor: "#FFFFFF" 
               }}
             >
-              <div className="flex items-center justify-between mb-3">
-                <div 
-                  className="w-10 h-10 rounded-lg flex items-center justify-center"
-                  style={{ backgroundColor: getProgressBgColor(newContactsProgress) }}
-                >
-                  <Users size={20} style={{ color: getProgressColor(newContactsProgress) }} />
+              <div className="flex items-start justify-between mb-3">
+                <div className="p-2 rounded-lg" style={{ backgroundColor: "#E8F5F3" }}>
+                  <Users size={18} style={{ color: "#0F766E" }} />
                 </div>
-                <div className="flex items-center gap-1" style={{ fontSize: "11px", color: newContactsTrend >= 0 ? "#0F766E" : "#C94F3D" }}>
-                  {newContactsTrend >= 0 ? <ArrowUp size={12} /> : <ArrowDown size={12} />}
-                  <span>{Math.abs(newContactsTrend)}%</span>
+                <div className="flex items-center gap-1">
+                  {newContactsTrend > 0 ? (
+                    <ArrowUp size={14} style={{ color: "#0F766E" }} />
+                  ) : (
+                    <ArrowDown size={14} style={{ color: "#C94F3D" }} />
+                  )}
+                  <span className="text-xs" style={{ color: newContactsTrend > 0 ? "#0F766E" : "#C94F3D" }}>
+                    {Math.abs(newContactsTrend)}%
+                  </span>
                 </div>
               </div>
-              <div className="flex items-baseline gap-2 mb-1">
-                <span style={{ fontSize: "28px", fontWeight: 600, color: "#12332B" }}>
-                  {newContactsAdded}
-                </span>
-                <span style={{ fontSize: "16px", color: "#667085" }}>
-                  / {newContactsQuota}
-                </span>
-              </div>
-              <div style={{ fontSize: "13px", color: "#667085", marginBottom: "8px" }}>
-                New Contacts Added
-              </div>
-              {/* Progress Bar */}
-              <div 
-                className="w-full rounded-full overflow-hidden" 
-                style={{ height: "6px", backgroundColor: "#F3F4F6" }}
-              >
-                <div 
-                  style={{ 
-                    height: "100%", 
-                    width: `${Math.min(newContactsProgress, 100)}%`,
-                    backgroundColor: getProgressColor(newContactsProgress),
-                    transition: "width 0.3s ease"
-                  }} 
-                />
-              </div>
-              <div style={{ fontSize: "11px", color: getProgressColor(newContactsProgress), marginTop: "4px" }}>
-                {Math.round(newContactsProgress)}% to quota
+              <div className="space-y-2">
+                <p className="text-xs" style={{ color: "var(--neuron-ink-muted)" }}>New Contacts Added</p>
+                <div className="flex items-end gap-1">
+                  <span className="text-2xl" style={{ color: "var(--neuron-ink-primary)" }}>{newContactsAdded}</span>
+                  <span className="text-xs mb-1" style={{ color: "var(--neuron-ink-muted)" }}>/ {newContactsQuota}</span>
+                </div>
+                <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: getProgressBgColor(newContactsProgress) }}>
+                  <div 
+                    className="h-full rounded-full transition-all"
+                    style={{ 
+                      width: `${Math.min(newContactsProgress, 100)}%`,
+                      backgroundColor: getProgressColor(newContactsProgress)
+                    }}
+                  />
+                </div>
               </div>
             </div>
 
             {/* Calls Made */}
             <div 
-              className="p-5 rounded-xl"
-              style={{
-                backgroundColor: "#FFFFFF",
-                border: `1.5px solid ${getProgressColor(callsProgress)}20`,
+              className="p-5 rounded-xl" 
+              style={{ 
+                border: "1.5px solid var(--neuron-ui-border)",
+                backgroundColor: "#FFFFFF" 
               }}
             >
-              <div className="flex items-center justify-between mb-3">
-                <div 
-                  className="w-10 h-10 rounded-lg flex items-center justify-center"
-                  style={{ backgroundColor: getProgressBgColor(callsProgress) }}
-                >
-                  <Phone size={20} style={{ color: getProgressColor(callsProgress) }} />
+              <div className="flex items-start justify-between mb-3">
+                <div className="p-2 rounded-lg" style={{ backgroundColor: "#E8F5F3" }}>
+                  <Phone size={18} style={{ color: "#0F766E" }} />
                 </div>
-                <div className="flex items-center gap-1" style={{ fontSize: "11px", color: callsTrend >= 0 ? "#0F766E" : "#C94F3D" }}>
-                  {callsTrend >= 0 ? <ArrowUp size={12} /> : <ArrowDown size={12} />}
-                  <span>{Math.abs(callsTrend)}%</span>
+                <div className="flex items-center gap-1">
+                  {callsTrend > 0 ? (
+                    <ArrowUp size={14} style={{ color: "#0F766E" }} />
+                  ) : (
+                    <ArrowDown size={14} style={{ color: "#C94F3D" }} />
+                  )}
+                  <span className="text-xs" style={{ color: callsTrend > 0 ? "#0F766E" : "#C94F3D" }}>
+                    {Math.abs(callsTrend)}%
+                  </span>
                 </div>
               </div>
-              <div className="flex items-baseline gap-2 mb-1">
-                <span style={{ fontSize: "28px", fontWeight: 600, color: "#12332B" }}>
-                  {callsMade}
-                </span>
-                <span style={{ fontSize: "16px", color: "#667085" }}>
-                  / {callsQuota}
-                </span>
-              </div>
-              <div style={{ fontSize: "13px", color: "#667085", marginBottom: "8px" }}>
-                Calls Made
-              </div>
-              {/* Progress Bar */}
-              <div 
-                className="w-full rounded-full overflow-hidden" 
-                style={{ height: "6px", backgroundColor: "#F3F4F6" }}
-              >
-                <div 
-                  style={{ 
-                    height: "100%", 
-                    width: `${Math.min(callsProgress, 100)}%`,
-                    backgroundColor: getProgressColor(callsProgress),
-                    transition: "width 0.3s ease"
-                  }} 
-                />
-              </div>
-              <div style={{ fontSize: "11px", color: getProgressColor(callsProgress), marginTop: "4px" }}>
-                {Math.round(callsProgress)}% to quota
+              <div className="space-y-2">
+                <p className="text-xs" style={{ color: "var(--neuron-ink-muted)" }}>Calls Made</p>
+                <div className="flex items-end gap-1">
+                  <span className="text-2xl" style={{ color: "var(--neuron-ink-primary)" }}>{callsMade}</span>
+                  <span className="text-xs mb-1" style={{ color: "var(--neuron-ink-muted)" }}>/ {callsQuota}</span>
+                </div>
+                <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: getProgressBgColor(callsProgress) }}>
+                  <div 
+                    className="h-full rounded-full transition-all"
+                    style={{ 
+                      width: `${Math.min(callsProgress, 100)}%`,
+                      backgroundColor: getProgressColor(callsProgress)
+                    }}
+                  />
+                </div>
               </div>
             </div>
 
             {/* Emails Sent */}
             <div 
-              className="p-5 rounded-xl"
-              style={{
-                backgroundColor: "#FFFFFF",
-                border: `1.5px solid ${getProgressColor(emailsProgress)}20`,
+              className="p-5 rounded-xl" 
+              style={{ 
+                border: "1.5px solid var(--neuron-ui-border)",
+                backgroundColor: "#FFFFFF" 
               }}
             >
-              <div className="flex items-center justify-between mb-3">
-                <div 
-                  className="w-10 h-10 rounded-lg flex items-center justify-center"
-                  style={{ backgroundColor: getProgressBgColor(emailsProgress) }}
-                >
-                  <Mail size={20} style={{ color: getProgressColor(emailsProgress) }} />
+              <div className="flex items-start justify-between mb-3">
+                <div className="p-2 rounded-lg" style={{ backgroundColor: "#E8F5F3" }}>
+                  <Mail size={18} style={{ color: "#0F766E" }} />
                 </div>
-                <div className="flex items-center gap-1" style={{ fontSize: "11px", color: emailsTrend >= 0 ? "#0F766E" : "#C94F3D" }}>
-                  {emailsTrend >= 0 ? <ArrowUp size={12} /> : <ArrowDown size={12} />}
-                  <span>{Math.abs(emailsTrend)}%</span>
+                <div className="flex items-center gap-1">
+                  {emailsTrend > 0 ? (
+                    <ArrowUp size={14} style={{ color: "#0F766E" }} />
+                  ) : (
+                    <ArrowDown size={14} style={{ color: "#C94F3D" }} />
+                  )}
+                  <span className="text-xs" style={{ color: emailsTrend > 0 ? "#0F766E" : "#C94F3D" }}>
+                    {Math.abs(emailsTrend)}%
+                  </span>
                 </div>
               </div>
-              <div className="flex items-baseline gap-2 mb-1">
-                <span style={{ fontSize: "28px", fontWeight: 600, color: "#12332B" }}>
-                  {emailsSent}
-                </span>
-                <span style={{ fontSize: "16px", color: "#667085" }}>
-                  / {emailsQuota}
-                </span>
-              </div>
-              <div style={{ fontSize: "13px", color: "#667085", marginBottom: "8px" }}>
-                Emails Sent
-              </div>
-              {/* Progress Bar */}
-              <div 
-                className="w-full rounded-full overflow-hidden" 
-                style={{ height: "6px", backgroundColor: "#F3F4F6" }}
-              >
-                <div 
-                  style={{ 
-                    height: "100%", 
-                    width: `${Math.min(emailsProgress, 100)}%`,
-                    backgroundColor: getProgressColor(emailsProgress),
-                    transition: "width 0.3s ease"
-                  }} 
-                />
-              </div>
-              <div style={{ fontSize: "11px", color: getProgressColor(emailsProgress), marginTop: "4px" }}>
-                {Math.round(emailsProgress)}% to quota
+              <div className="space-y-2">
+                <p className="text-xs" style={{ color: "var(--neuron-ink-muted)" }}>Emails Sent</p>
+                <div className="flex items-end gap-1">
+                  <span className="text-2xl" style={{ color: "var(--neuron-ink-primary)" }}>{emailsSent}</span>
+                  <span className="text-xs mb-1" style={{ color: "var(--neuron-ink-muted)" }}>/ {emailsQuota}</span>
+                </div>
+                <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: getProgressBgColor(emailsProgress) }}>
+                  <div 
+                    className="h-full rounded-full transition-all"
+                    style={{ 
+                      width: `${Math.min(emailsProgress, 100)}%`,
+                      backgroundColor: getProgressColor(emailsProgress)
+                    }}
+                  />
+                </div>
               </div>
             </div>
 
             {/* Meetings Booked */}
             <div 
-              className="p-5 rounded-xl"
-              style={{
-                backgroundColor: "#FFFFFF",
-                border: `1.5px solid ${getProgressColor(meetingsProgress)}20`,
+              className="p-5 rounded-xl" 
+              style={{ 
+                border: "1.5px solid var(--neuron-ui-border)",
+                backgroundColor: "#FFFFFF" 
               }}
             >
-              <div className="flex items-center justify-between mb-3">
-                <div 
-                  className="w-10 h-10 rounded-lg flex items-center justify-center"
-                  style={{ backgroundColor: getProgressBgColor(meetingsProgress) }}
-                >
-                  <UserCheck size={20} style={{ color: getProgressColor(meetingsProgress) }} />
+              <div className="flex items-start justify-between mb-3">
+                <div className="p-2 rounded-lg" style={{ backgroundColor: "#E8F5F3" }}>
+                  <UserCheck size={18} style={{ color: "#0F766E" }} />
                 </div>
-                <div className="flex items-center gap-1" style={{ fontSize: "11px", color: meetingsTrend >= 0 ? "#0F766E" : "#C94F3D" }}>
-                  {meetingsTrend >= 0 ? <ArrowUp size={12} /> : <ArrowDown size={12} />}
-                  <span>{Math.abs(meetingsTrend)}%</span>
+                <div className="flex items-center gap-1">
+                  {meetingsTrend > 0 ? (
+                    <ArrowUp size={14} style={{ color: "#0F766E" }} />
+                  ) : (
+                    <ArrowDown size={14} style={{ color: "#C94F3D" }} />
+                  )}
+                  <span className="text-xs" style={{ color: meetingsTrend > 0 ? "#0F766E" : "#C94F3D" }}>
+                    {Math.abs(meetingsTrend)}%
+                  </span>
                 </div>
               </div>
-              <div className="flex items-baseline gap-2 mb-1">
-                <span style={{ fontSize: "28px", fontWeight: 600, color: "#12332B" }}>
-                  {meetingsBooked}
-                </span>
-                <span style={{ fontSize: "16px", color: "#667085" }}>
-                  / {meetingsQuota}
-                </span>
-              </div>
-              <div style={{ fontSize: "13px", color: "#667085", marginBottom: "8px" }}>
-                Meetings Booked
-              </div>
-              {/* Progress Bar */}
-              <div 
-                className="w-full rounded-full overflow-hidden" 
-                style={{ height: "6px", backgroundColor: "#F3F4F6" }}
-              >
-                <div 
-                  style={{ 
-                    height: "100%", 
-                    width: `${Math.min(meetingsProgress, 100)}%`,
-                    backgroundColor: getProgressColor(meetingsProgress),
-                    transition: "width 0.3s ease"
-                  }} 
-                />
-              </div>
-              <div style={{ fontSize: "11px", color: getProgressColor(meetingsProgress), marginTop: "4px" }}>
-                {Math.round(meetingsProgress)}% to quota
+              <div className="space-y-2">
+                <p className="text-xs" style={{ color: "var(--neuron-ink-muted)" }}>Meetings Booked</p>
+                <div className="flex items-end gap-1">
+                  <span className="text-2xl" style={{ color: "var(--neuron-ink-primary)" }}>{meetingsBooked}</span>
+                  <span className="text-xs mb-1" style={{ color: "var(--neuron-ink-muted)" }}>/ {meetingsQuota}</span>
+                </div>
+                <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: getProgressBgColor(meetingsProgress) }}>
+                  <div 
+                    className="h-full rounded-full transition-all"
+                    style={{ 
+                      width: `${Math.min(meetingsProgress, 100)}%`,
+                      backgroundColor: getProgressColor(meetingsProgress)
+                    }}
+                  />
+                </div>
               </div>
             </div>
           </div>
         )}
 
         {/* Search and Filters */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 mb-4">
           <div className="flex-1 relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: "var(--neuron-ink-muted)" }} />
             <input
@@ -583,9 +555,9 @@ export function ContactsListWithFilters({ userDepartment, onViewContact }: Conta
               placeholder="Search contacts..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+              className="w-full pl-10 pr-4 py-2 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
               style={{
-                border: "1px solid var(--neuron-ui-border)",
+                border: "1.5px solid var(--neuron-ui-border)",
                 backgroundColor: "#FFFFFF",
                 color: "var(--neuron-ink-primary)"
               }}
@@ -601,199 +573,150 @@ export function ContactsListWithFilters({ userDepartment, onViewContact }: Conta
           {/* BD sees filters, PD does not */}
           {userDepartment === "BD" && (
             <>
-              <CustomDropdown
-                label="STAGE"
-                value={lifecycleFilter}
-                onChange={(value) => setLifecycleFilter(value as LifecycleStage | "All")}
-                options={[
-                  { value: "All", label: "All Stages" },
-                  { value: "Lead", label: "Lead" },
-                  { value: "MQL", label: "MQL" },
-                  { value: "SQL", label: "SQL" },
-                  { value: "Customer", label: "Customer" }
-                ]}
-              />
+              <div style={{ minWidth: "140px" }}>
+                <CustomDropdown
+                  value={lifecycleFilter}
+                  onChange={(value) => setLifecycleFilter(value as LifecycleStage | "All")}
+                  options={[
+                    { value: "All", label: "All Stages" },
+                    { value: "Lead", label: "Lead" },
+                    { value: "MQL", label: "MQL" },
+                    { value: "SQL", label: "SQL" },
+                    { value: "Customer", label: "Customer" }
+                  ]}
+                />
+              </div>
 
-              <CustomDropdown
-                label="STATUS"
-                value={statusFilter}
-                onChange={(value) => setStatusFilter(value as LeadStatus | "All")}
-                options={[
-                  { value: "All", label: "All Statuses" },
-                  { value: "New", label: "New" },
-                  { value: "Open", label: "Open" },
-                  { value: "In Progress", label: "In Progress" },
-                  { value: "Unqualified", label: "Unqualified" },
-                  { value: "Attempted to contact", label: "Attempted to contact" },
-                  { value: "Connected", label: "Connected" },
-                  { value: "Bad timing", label: "Bad Timing" }
-                ]}
-              />
+              <div style={{ minWidth: "160px" }}>
+                <CustomDropdown
+                  value={statusFilter}
+                  onChange={(value) => setStatusFilter(value as LeadStatus | "All")}
+                  options={[
+                    { value: "All", label: "All Statuses" },
+                    { value: "New", label: "New" },
+                    { value: "Open", label: "Open" },
+                    { value: "In Progress", label: "In Progress" },
+                    { value: "Unqualified", label: "Unqualified" },
+                    { value: "Attempted to contact", label: "Attempted to contact" },
+                    { value: "Connected", label: "Connected" },
+                    { value: "Bad timing", label: "Bad Timing" }
+                  ]}
+                />
+              </div>
             </>
           )}
 
           {permissions.showOwnerFilter && (
-            <CustomDropdown
-              label="OWNER"
-              value={ownerFilter}
-              onChange={(value) => setOwnerFilter(value)}
-              options={[
-                { value: "All", label: "All Owners" },
-                ...users.map(user => ({ value: user.id, label: user.name }))
-              ]}
-            />
+            <div style={{ minWidth: "140px" }}>
+              <CustomDropdown
+                value={ownerFilter}
+                onChange={(value) => setOwnerFilter(value)}
+                options={[
+                  { value: "All", label: "All Owners" },
+                  ...users.map(user => ({ value: user.id, label: user.name }))
+                ]}
+              />
+            </div>
           )}
         </div>
-      </div>
 
-      {/* Table */}
-      <div className="px-12 pb-6">
-        <div className="rounded-[10px] overflow-hidden" style={{ 
-          backgroundColor: "#FFFFFF",
-          border: "1px solid var(--neuron-ui-border)"
+        {/* Contacts Table */}
+        <div style={{ 
+          border: "1.5px solid var(--neuron-ui-border)", 
+          borderRadius: "16px", 
+          overflow: "hidden",
+          backgroundColor: "#FFFFFF"
         }}>
-          {/* Table Header - Sticky */}
-          <div 
-            className="grid grid-cols-[48px_minmax(220px,1fr)_minmax(180px,220px)_minmax(140px,180px)_minmax(140px,180px)_40px] gap-4 px-6 py-3 border-b sticky top-0 z-10" 
-            style={{ 
-              backgroundColor: "var(--neuron-bg-page)",
-              borderColor: "var(--neuron-ui-divider)"
-            }}
-          >
-            <div></div>
-            <div className="text-[11px] font-medium uppercase tracking-wide" style={{ color: "var(--neuron-ink-muted)" }}>Contact</div>
-            <div className="text-[11px] font-medium uppercase tracking-wide" style={{ color: "var(--neuron-ink-muted)" }}>Company</div>
-            <div className="text-[11px] font-medium uppercase tracking-wide" style={{ color: "var(--neuron-ink-muted)" }}>Status</div>
-            <div className="text-[11px] font-medium uppercase tracking-wide" style={{ color: "var(--neuron-ink-muted)" }}>Last Activity</div>
-            <div></div>
-          </div>
-
-          {/* Table Body */}
-          <div className="divide-y" style={{ borderColor: "var(--neuron-ui-divider)" }}>
-            {filteredContacts.length === 0 ? (
-              <div className="px-6 py-12 text-center">
-                <UserCircle className="w-12 h-12 mx-auto mb-3" style={{ color: "var(--neuron-ink-muted)" }} />
-                <h3 style={{ color: "var(--neuron-ink-primary)" }} className="mb-1">No contacts found</h3>
-                <p style={{ color: "var(--neuron-ink-muted)" }}>
-                  {isLoading ? "Loading contacts..." : "Add your first contact to get started"}
-                </p>
-              </div>
-            ) : (
-              filteredContacts.map(contact => {
-                const lifecycle = mapStatusToLifecycle(contact.status);
-                
-                return (
-                  <div
-                    key={contact.id}
-                    onClick={() => {
-                      // Convert BackendContact to BD Contact format for onViewContact
-                      const bdContact: any = {
-                        id: contact.id,
-                        first_name: contact.name.split(' ')[0] || contact.name,
-                        last_name: contact.name.split(' ').slice(1).join(' ') || '',
-                        email: contact.email,
-                        mobile_number: contact.phone,
-                        company_id: contact.id, // Use contact id as company id for now
-                        lifecycle_stage: lifecycle,
-                        lead_status: "Connected" as LeadStatus,
-                        job_title: "",
-                        owner_id: "",
-                        created_at: contact.created_date,
-                        updated_at: contact.updated_at
-                      };
-                      onViewContact(bdContact);
-                    }}
-                    className="grid grid-cols-[48px_minmax(220px,1fr)_minmax(180px,220px)_minmax(140px,180px)_minmax(140px,180px)_40px] gap-4 px-6 py-4 cursor-pointer transition-colors items-center"
-                    style={{ backgroundColor: "#FFFFFF" }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor = "var(--neuron-state-hover)";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor = "#FFFFFF";
-                    }}
-                  >
-                    {/* Avatar - Person Icon */}
-                    <div>
-                      <div 
-                        className="w-9 h-9 rounded-full flex items-center justify-center"
-                        style={{ 
-                          backgroundColor: "var(--neuron-bg-page)",
-                          color: "var(--neuron-ink-muted)"
-                        }}
-                      >
-                        <UserCircle size={24} />
-                      </div>
-                    </div>
-
-                    {/* Contact Info (Name, Email, Phone) */}
-                    <div className="flex flex-col gap-1">
-                      <div className="text-[13px] font-medium" style={{ color: "var(--neuron-ink-primary)" }}>
-                        {contact.name}
-                      </div>
-                      {/* BD sees email and phone, PD sees nothing */}
-                      {userDepartment === "BD" && (
-                        <>
-                          <div className="flex items-center gap-1 text-[12px]" style={{ color: "var(--neuron-ink-muted)" }}>
-                            <Mail size={12} />
-                            <span>{contact.email}</span>
+          <table className="w-full">
+            <thead>
+              <tr style={{ borderBottom: "1.5px solid var(--neuron-ui-border)" }}>
+                <th className="text-left px-4 py-3 text-xs" style={{ color: "var(--neuron-ink-muted)", backgroundColor: "#FAFBFB" }}>CONTACT</th>
+                <th className="text-left px-4 py-3 text-xs" style={{ color: "var(--neuron-ink-muted)", backgroundColor: "#FAFBFB" }}>COMPANY</th>
+                <th className="text-left px-4 py-3 text-xs" style={{ color: "var(--neuron-ink-muted)", backgroundColor: "#FAFBFB" }}>PHONE</th>
+                <th className="text-left px-4 py-3 text-xs" style={{ color: "var(--neuron-ink-muted)", backgroundColor: "#FAFBFB" }}>EMAIL</th>
+                <th className="text-left px-4 py-3 text-xs" style={{ color: "var(--neuron-ink-muted)", backgroundColor: "#FAFBFB" }}>STAGE</th>
+                <th className="text-left px-4 py-3 text-xs" style={{ color: "var(--neuron-ink-muted)", backgroundColor: "#FAFBFB" }}>LAST ACTIVITY</th>
+                <th className="text-center px-4 py-3 text-xs" style={{ color: "var(--neuron-ink-muted)", backgroundColor: "#FAFBFB" }}>ACTIONS</th>
+              </tr>
+            </thead>
+            <tbody>
+              {isLoading ? (
+                <tr>
+                  <td colSpan={7} className="text-center py-12" style={{ color: "var(--neuron-ink-muted)" }}>
+                    Loading contacts...
+                  </td>
+                </tr>
+              ) : filteredContacts.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="text-center py-12" style={{ color: "var(--neuron-ink-muted)" }}>
+                    No contacts found
+                  </td>
+                </tr>
+              ) : (
+                filteredContacts.map((contact) => {
+                  const lifecycle = mapStatusToLifecycle(contact.status);
+                  return (
+                    <tr 
+                      key={contact.id} 
+                      className="cursor-pointer hover:bg-[#FAFBFB] transition-colors"
+                      style={{ borderBottom: "1px solid var(--neuron-ui-border)" }}
+                      onClick={() => onViewContact(contact as any)}
+                    >
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-3">
+                          <div 
+                            className="w-8 h-8 rounded-full flex items-center justify-center"
+                            style={{ backgroundColor: "#E8F5F3", color: "#0F766E" }}
+                          >
+                            <UserCircle size={16} />
                           </div>
-                          <div className="flex items-center gap-1 text-[12px]" style={{ color: "var(--neuron-ink-muted)" }}>
-                            <Phone size={12} />
-                            <span>{formatPhoneNumber(contact.phone)}</span>
-                          </div>
-                        </>
-                      )}
-                    </div>
-
-                    {/* Company */}
-                    <div className="flex items-center gap-2">
-                      <div 
-                        className="w-8 h-8 rounded flex items-center justify-center text-[11px] font-medium"
-                        style={{ 
-                          backgroundColor: "var(--neuron-bg-page)",
-                          color: "var(--neuron-ink-muted)"
-                        }}
-                      >
-                        <Building2 size={14} />
-                      </div>
-                      <span className="text-[13px]" style={{ color: "var(--neuron-ink-secondary)" }}>
-                        {contact.company}
-                      </span>
-                    </div>
-
-                    {/* Status Badges */}
-                    <div className="flex flex-col gap-1.5">
-                      <span 
-                        className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium text-white w-fit"
-                        style={{ backgroundColor: getLifecycleStageColor(lifecycle) }}
-                      >
-                        {contact.status}
-                      </span>
-                    </div>
-
-                    {/* Last Activity */}
-                    <div className="text-[12px]" style={{ color: "var(--neuron-ink-muted)" }}>
-                      {formatDate(contact.last_activity)}
-                    </div>
-
-                    {/* Actions Menu */}
-                    <div>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          // Add action menu logic here
-                        }}
-                        className="p-1 rounded hover:bg-gray-100 transition-colors"
-                        style={{ color: "var(--neuron-ink-muted)" }}
-                      >
-                        <MoreHorizontal className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
+                          <span className="text-[13px]" style={{ color: "var(--neuron-ink-primary)" }}>
+                            {`${contact.first_name || ''} ${contact.last_name || ''}`.trim()}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <Building2 size={14} style={{ color: "var(--neuron-ink-muted)" }} />
+                          <span className="text-[13px]" style={{ color: "var(--neuron-ink-primary)" }}>{contact.company}</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-[13px]" style={{ color: "var(--neuron-ink-primary)" }}>
+                        {formatPhoneNumber(contact.phone)}
+                      </td>
+                      <td className="px-4 py-3 text-[13px]" style={{ color: "var(--neuron-ink-primary)" }}>
+                        {contact.email}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span 
+                          className="px-2 py-1 rounded text-xs"
+                          style={{ 
+                            backgroundColor: `${getLifecycleStageColor(lifecycle)}15`,
+                            color: getLifecycleStageColor(lifecycle)
+                          }}
+                        >
+                          {lifecycle}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-[13px]" style={{ color: "var(--neuron-ink-muted)" }}>
+                        {contact.last_activity ? formatDate(contact.last_activity) : "—"}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <button 
+                          className="p-1 rounded hover:bg-[#E8F5F3] transition-colors"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                          }}
+                        >
+                          <MoreHorizontal size={16} style={{ color: "var(--neuron-ink-muted)" }} />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
 

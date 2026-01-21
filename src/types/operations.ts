@@ -9,6 +9,31 @@ export type ExecutionStatus =
   | "Completed"
   | "Cancelled";
 
+// ==================== SERVICE TYPES ====================
+
+export type ServiceType = 
+  | "Forwarding" 
+  | "Brokerage" 
+  | "Trucking" 
+  | "Marine Insurance" 
+  | "Others";
+
+// ==================== CLIENT HANDLER PREFERENCES ====================
+
+export interface ClientHandlerPreference {
+  id: string;
+  customer_id: string;
+  service_type: ServiceType;
+  preferred_manager_id: string;
+  preferred_manager_name: string;
+  preferred_supervisor_id: string;
+  preferred_supervisor_name: string;
+  preferred_handler_id: string;
+  preferred_handler_name: string;
+  created_at: string;
+  updated_at: string;
+}
+
 // ==================== FORWARDING BOOKING ====================
 
 export interface ForwardingBooking {
@@ -30,6 +55,14 @@ export interface ForwardingBooking {
   deliveryAddress: string;
   quotationReferenceNumber: string;
   status: ExecutionStatus;
+
+  // Team Assignments (new architecture)
+  assigned_manager_id?: string;
+  assigned_manager_name?: string;
+  assigned_supervisor_id?: string;
+  assigned_supervisor_name?: string;
+  assigned_handler_id?: string;
+  assigned_handler_name?: string;
 
   // Expected Volume
   qty20ft?: string;
@@ -94,6 +127,14 @@ export interface BrokerageBooking {
   quotationReferenceNumber?: string;
   status: ExecutionStatus;
 
+  // Team Assignments (new architecture)
+  assigned_manager_id?: string;
+  assigned_manager_name?: string;
+  assigned_supervisor_id?: string;
+  assigned_supervisor_name?: string;
+  assigned_handler_id?: string;
+  assigned_handler_name?: string;
+
   // Shipment Information
   consignee?: string;
   shipper?: string;
@@ -138,6 +179,14 @@ export interface TruckingBooking {
   quotationReferenceNumber?: string;
   status: ExecutionStatus;
 
+  // Team Assignments (new architecture)
+  assigned_manager_id?: string;
+  assigned_manager_name?: string;
+  assigned_supervisor_id?: string;
+  assigned_supervisor_name?: string;
+  assigned_handler_id?: string;
+  assigned_handler_name?: string;
+
   // Shipment Information
   consignee?: string;
   driver?: string;
@@ -174,6 +223,14 @@ export interface MarineInsuranceBooking {
   service?: string;
   quotationReferenceNumber?: string;
   status: ExecutionStatus;
+
+  // Team Assignments (new architecture)
+  assigned_manager_id?: string;
+  assigned_manager_name?: string;
+  assigned_supervisor_id?: string;
+  assigned_supervisor_name?: string;
+  assigned_handler_id?: string;
+  assigned_handler_name?: string;
 
   // Policy Information
   policyNumber?: string;
@@ -223,6 +280,14 @@ export interface OthersBooking {
   serviceDescription?: string;
   quotationReferenceNumber?: string;
   status: ExecutionStatus;
+
+  // Team Assignments (new architecture)
+  assigned_manager_id?: string;
+  assigned_manager_name?: string;
+  assigned_supervisor_id?: string;
+  assigned_supervisor_name?: string;
+  assigned_handler_id?: string;
+  assigned_handler_name?: string;
 
   // Service Details
   deliveryAddress?: string;

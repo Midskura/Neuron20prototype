@@ -36,7 +36,10 @@ The Quotation Builder has been completely refactored to align with the actual da
 - Margin tracking per line item
 
 ### 4. **Service Detail Forms**
-Each service type has specific fields based on your schema:
+
+Each form component is self-contained:
+- Number inputs with min/max constraints
+- Dropdowns use **CustomDropdown with icons** for consistency
 
 #### Brokerage
 - Subtype (Import Air, Import Ocean, Export Air, Export Ocean)
@@ -266,7 +269,7 @@ For each category:
 - Required fields marked with *
 - Read-only fields for inherited data
 - Number inputs with min/max constraints
-- Dropdowns use SimpleDropdown for consistency
+- Dropdowns use **CustomDropdown with icons** for consistency
 
 ### Real-time Calculations
 - Line item totals: `quantity × selling_price`
@@ -378,7 +381,7 @@ quotationServices = [
 - Pure white backgrounds
 - Stroke borders (no shadows)
 - Consistent padding (32px 48px)
-- SimpleDropdown for all form selectors
+- **CustomDropdown with icons** for all form selectors
 
 ✅ **Typography**
 - Section headers: 16px, 600 weight

@@ -1,5 +1,4 @@
 import { Shield, Package } from "lucide-react";
-import { SimpleDropdown } from "../../bd/SimpleDropdown";
 import type { MarineInsuranceDetails } from "../../../types/pricing";
 
 interface MarineInsuranceFormV2Props {

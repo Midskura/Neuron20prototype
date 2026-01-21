@@ -1,7 +1,6 @@
 import { Search, Plus, FileText, Briefcase, Ship, Shield, Truck, Inbox, Clock, CheckCircle, X } from "lucide-react";
 import { useState, useRef } from "react";
 import type { QuotationNew } from "../../types/pricing";
-import { SimpleDropdown } from "../bd/SimpleDropdown";
 import { MultiSelectDropdown } from "../bd/MultiSelectDropdown";
 
 interface PricingQuotationsProps {

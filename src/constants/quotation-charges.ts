@@ -1,43 +1,65 @@
 // Predefined charge items organized by category
 export const CHARGE_ITEMS_BY_CATEGORY: Record<string, string[]> = {
-  // Freight
-  "Freight": [
-    "Air Freight",
+  // Freight Charges
+  "Freight Charges": [
     "Ocean Freight",
-    "Others",
+    "Air Freight",
   ],
 
   // Origin Local Charges
   "Origin Local Charges": [
-    "Pick up",
-    "Export Clearance",
-    "Others",
+    "Pick up fee",
+    "CFS",
+    "CUS",
+    "DOCS",
+    "Handling Fee",
+    "FE Fee",
+    "THC",
+    "BL Fee",
+    "MBL Surrender Fee",
+    "Seal",
+    "IRF",
+    "Customs Clearance",
+    "Export Customs Fee",
+    "Add Broker",
+    "Gate Permission Receipt",
+    "Special Form A/I, C/O",
   ],
 
   // Destination Local Charges
   "Destination Local Charges": [
-    "Breakbulk Fee",
-    "Handling",
-    "Others",
+    "Turn Over Fee",
+    "LCL Charges",
+    "Documentation Fee",
+    "THC",
+    "CIC",
+    "CRS",
+    "BL Fee",
+    "Breakbulk Fee (BBF)",
+    "Equipment Examination Charge (EEC)",
+    "Import Release Fee (IRF)",
+    "Empty Control Charge (ECC)",
+    "Peak Season Surcharge (PSS)",
+    "Container Handling Charge (CHC)",
   ],
 
   // Reimbursable Charges
   "Reimbursable Charges": [
-    "Arrastre",
-    "Wharfage",
-    "Others",
+    "Warehouse Charges",
+    "Arrastre & Wharfage Due",
   ],
 
   // Brokerage Charges
   "Brokerage Charges": [
-    "Documentation",
-    "Clearance",
-    "Others",
+    "Documentation Fee",
+    "Processing Fee",
+    "Brokerage Fee",
+    "Handling",
   ],
 
   // Customs Duty & VAT
   "Customs Duty & VAT": [
-    "Others",
+    "Duties & Taxes",
   ],
 };
 
@@ -48,7 +70,7 @@ export function getChargeItemsForCategory(categoryName: string): string[] {
 
 // Available charge categories (fixed list)
 export const AVAILABLE_CHARGE_CATEGORIES = [
-  "Freight",
+  "Freight Charges",
   "Origin Local Charges",
   "Destination Local Charges",
   "Reimbursable Charges",

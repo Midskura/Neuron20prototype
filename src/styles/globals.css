@@ -626,17 +626,21 @@ table th,
   }
 }
 
-/* Slide-in animation for panels */
-.animate-slide-in {
-  animation: slideInPanel 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards;
-}
-
 @keyframes slideInPanel {
   from {
     transform: translateX(100%);
   }
   to {
     transform: translateX(0);
+  }
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
   }
 }
 

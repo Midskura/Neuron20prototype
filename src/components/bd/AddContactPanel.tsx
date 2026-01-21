@@ -3,6 +3,7 @@ import { X, User, Building2, Target, UserPlus } from "lucide-react";
 import type { LifecycleStage, LeadStatus } from "../../types/bd";
 import { projectId, publicAnonKey } from "../../utils/supabase/info";
 import { CustomSelect } from "./CustomSelect";
+import { CustomDropdown } from "./CustomDropdown";
 
 const API_URL = `https://${projectId}.supabase.co/functions/v1/make-server-c142e950`;
 
@@ -39,7 +40,8 @@ interface BackendUser {
 
 export function AddContactPanel({ isOpen, onClose, onSave, prefilledCustomerId, prefilledCustomerName }: AddContactPanelProps) {
   const [formData, setFormData] = useState({
-    name: "", // ✅ Backend uses single 'name' field
+    first_name: "",
+    last_name: "",
     title: "", // ✅ Backend uses 'title', not 'job_title'
     email: "",
     phone: "", // ✅ Backend uses 'phone', not 'mobile_number'
@@ -119,7 +121,8 @@ export function AddContactPanel({ isOpen, onClose, onSave, prefilledCustomerId, 
     onClose();
     // Reset form
     setFormData({
-      name: "",
+      first_name: "",
+      last_name: "",
       title: "",
       email: "",
       phone: "",
@@ -138,7 +141,8 @@ export function AddContactPanel({ isOpen, onClose, onSave, prefilledCustomerId, 
   if (!isOpen) return null;
 
   const isFormValid = 
-    formData.name.trim() !== "" &&
+    formData.first_name.trim() !== "" &&
+    formData.last_name.trim() !== "" &&
     formData.email.trim() !== "" &&
     formData.phone.trim() !== "" &&
     formData.customer_id !== "" &&
@@ -219,21 +223,46 @@ export function AddContactPanel({ isOpen, onClose, onSave, prefilledCustomerId, 
               </div>
 
               <div className="space-y-4">
-                {/* Name */}
+                {/* First Name */}
                 <div>
                   <label 
-                    htmlFor="name" 
+                    htmlFor="first_name" 
                     className="block mb-1.5"
                     style={{ fontSize: "13px", fontWeight: 500, color: "#12332B" }}
                   >
-                    Name <span style={{ color: "#C94F3D" }}>*</span>
+                    First Name <span style={{ color: "#C94F3D" }}>*</span>
                   </label>
                   <input
-                    id="name"
+                    id="first_name"
                     type="text"
-                    value={formData.name}
-                    onChange={(e) => handleChange("name", e.target.value)}
-                    placeholder="Juan Dela Cruz"
+                    value={formData.first_name}
+                    onChange={(e) => handleChange("first_name", e.target.value)}
+                    placeholder="Juan"
+                    className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                    style={{
+                      border: "1px solid var(--neuron-ui-border)",
+                      backgroundColor: "#FFFFFF",
+                      color: "var(--neuron-ink-primary)"
+                    }}
+                    required
+                  />
+                </div>
+
+                {/* Last Name */}
+                <div>
+                  <label 
+                    htmlFor="last_name" 
+                    className="block mb-1.5"
+                    style={{ fontSize: "13px", fontWeight: 500, color: "#12332B" }}
+                  >
+                    Last Name <span style={{ color: "#C94F3D" }}>*</span>
+                  </label>
+                  <input
+                    id="last_name"
+                    type="text"
+                    value={formData.last_name}
+                    onChange={(e) => handleChange("last_name", e.target.value)}
+                    placeholder="Dela Cruz"
                     className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
                     style={{
                       border: "1px solid var(--neuron-ui-border)",
@@ -385,56 +414,46 @@ export function AddContactPanel({ isOpen, onClose, onSave, prefilledCustomerId, 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label 
-                      htmlFor="lifecycle_stage" 
                       className="block mb-1.5"
                       style={{ fontSize: "13px", fontWeight: 500, color: "#12332B" }}
                     >
                       Lifecycle Stage
                     </label>
-                    <select
+                    <CustomSelect
                       id="lifecycle_stage"
                       value={formData.lifecycle_stage}
-                      onChange={(e) => handleChange("lifecycle_stage", e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
-                      style={{
-                        border: "1px solid var(--neuron-ui-border)",
-                        backgroundColor: "#FFFFFF",
-                        color: "var(--neuron-ink-primary)"
-                      }}
-                    >
-                      <option value="Lead">Lead</option>
-                      <option value="MQL">MQL</option>
-                      <option value="SQL">SQL</option>
-                      <option value="Customer">Customer</option>
-                    </select>
+                      onChange={(value) => handleChange("lifecycle_stage", value)}
+                      options={[
+                        { value: "Lead", label: "Lead" },
+                        { value: "MQL", label: "MQL" },
+                        { value: "SQL", label: "SQL" },
+                        { value: "Customer", label: "Customer" }
+                      ]}
+                      placeholder="Select stage..."
+                    />
                   </div>
                   <div>
                     <label 
-                      htmlFor="lead_status" 
                       className="block mb-1.5"
                       style={{ fontSize: "13px", fontWeight: 500, color: "#12332B" }}
                     >
                       Lead Status
                     </label>
-                    <select
+                    <CustomSelect
                       id="lead_status"
                       value={formData.lead_status}
-                      onChange={(e) => handleChange("lead_status", e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
-                      style={{
-                        border: "1px solid var(--neuron-ui-border)",
-                        backgroundColor: "#FFFFFF",
-                        color: "var(--neuron-ink-primary)"
-                      }}
-                    >
-                      <option value="New">New</option>
-                      <option value="Open">Open</option>
-                      <option value="In Progress">In Progress</option>
-                      <option value="Unqualified">Unqualified</option>
-                      <option value="Attempted to contact">Attempted to contact</option>
-                      <option value="Connected">Connected</option>
-                      <option value="Bad timing">Bad timing</option>
-                    </select>
+                      onChange={(value) => handleChange("lead_status", value)}
+                      options={[
+                        { value: "New", label: "New" },
+                        { value: "Open", label: "Open" },
+                        { value: "In Progress", label: "In Progress" },
+                        { value: "Unqualified", label: "Unqualified" },
+                        { value: "Attempted to contact", label: "Attempted to contact" },
+                        { value: "Connected", label: "Connected" },
+                        { value: "Bad timing", label: "Bad timing" }
+                      ]}
+                      placeholder="Select status..."
+                    />
                   </div>
                 </div>
 

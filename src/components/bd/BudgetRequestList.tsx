@@ -1,20 +1,24 @@
-import { useState, useMemo, useEffect } from "react";
-import { Plus, Search, ChevronDown, ChevronRight, Circle, SlidersHorizontal, X } from "lucide-react";
-import { PhilippinePeso } from "../icons/PhilippinePeso";
+import { useState, useMemo, useCallback, useEffect } from "react";
+import { Search, Calendar, ArrowUpDown, SlidersHorizontal, Plus, X, ChevronDown, ChevronRight, Circle, PhilippinePeso, FileText, DollarSign, Briefcase, Users, Package } from "lucide-react";
 import { AddRequestForPaymentPanel } from "../accounting/AddRequestForPaymentPanel";
 import { BudgetRequestDetailPanel } from "./BudgetRequestDetailPanel";
-import { SimpleDropdown } from "./SimpleDropdown";
 import { MultiSelectDropdown } from "./MultiSelectDropdown";
+import { CustomDropdown } from "./CustomDropdown";
 import type { EVoucher } from "../../types/evoucher";
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { toast } from "../ui/toast-utils";
 
 const API_URL = `https://${projectId}.supabase.co/functions/v1/make-server-c142e950`;
 
+type QuickFilterTab = "all" | "my-requests";
+type DateRangeFilter = "all" | "today" | "this-week" | "this-month" | "this-quarter" | "last-30-days";
+type SortOption = "date-newest" | "date-oldest" | "amount-highest" | "amount-lowest" | "status" | "requestor";
+
 export function BudgetRequestList() {
   // State
   const [searchQuery, setSearchQuery] = useState("");
   const [quickFilterTab, setQuickFilterTab] = useState<QuickFilterTab>("all");
+  const [statusFilter, setStatusFilter] = useState<string[]>([]);
   const [dateRangeFilter, setDateRangeFilter] = useState<DateRangeFilter>("all");
   const [categoryFilter, setCategoryFilter] = useState<string[]>([]);
   const [customerFilter, setCustomerFilter] = useState<string[]>([]);
@@ -100,15 +104,6 @@ export function BudgetRequestList() {
         case "my-requests":
           matchesQuickFilter = request.requestor_id === currentUserId;
           break;
-        case "this-week":
-          matchesQuickFilter = isWithinDateRange(request.request_date, "this-week");
-          break;
-        case "this-month":
-          matchesQuickFilter = isWithinDateRange(request.request_date, "this-month");
-          break;
-        case "needs-attention":
-          matchesQuickFilter = request.status === "Submitted" || request.status === "Under Review";
-          break;
       }
 
       // Date range filter
@@ -126,8 +121,11 @@ export function BudgetRequestList() {
       // Vendor filter
       const matchesVendor = vendorFilter.length === 0 || (request.vendor_name && vendorFilter.includes(request.vendor_name));
 
+      // Status filter
+      const matchesStatus = statusFilter.length === 0 || statusFilter.includes(request.status);
+
       return matchesSearch && matchesQuickFilter && matchesDateRange && matchesCategory && 
-             matchesCustomer && matchesRequestor && matchesVendor;
+             matchesCustomer && matchesRequestor && matchesVendor && matchesStatus;
     });
 
     // Sort
@@ -151,7 +149,7 @@ export function BudgetRequestList() {
     });
 
     return filtered;
-  }, [budgetRequests, searchQuery, quickFilterTab, dateRangeFilter, categoryFilter, customerFilter, requestorFilter, vendorFilter, sortOption, currentUserId]);
+  }, [budgetRequests, searchQuery, quickFilterTab, dateRangeFilter, categoryFilter, customerFilter, requestorFilter, vendorFilter, statusFilter, sortOption, currentUserId]);
 
   // Group requests by status
   const groupedRequests = useMemo(() => {
@@ -176,18 +174,44 @@ export function BudgetRequestList() {
   const getStatusColor = (status: string) => {
     switch (status) {
       case "Approved":
-        return { bg: "#E8F5F3", color: "#0F766E", iconColor: "#0F766E" };
+        return "bg-[#E8F5F3] text-[#0F766E]";
       case "Rejected":
-        return { bg: "#FFE5E5", color: "#C94F3D", iconColor: "#C94F3D" };
+        return "bg-[#FFE5E5] text-[#C94F3D]";
       case "Under Review":
-        return { bg: "#FEF3E7", color: "#C88A2B", iconColor: "#C88A2B" };
+        return "bg-[#FEF3E7] text-[#C88A2B]";
       case "Submitted":
-        return { bg: "#E0E7FF", color: "#4F46E5", iconColor: "#4F46E5" };
+        return "bg-[#E0E7FF] text-[#4F46E5]";
       case "Draft":
-        return { bg: "#F3F4F6", color: "#6B7280", iconColor: "#6B7280" };
+        return "bg-[#F3F4F6] text-[#6B7280]";
       default:
-        return { bg: "#F3F4F6", color: "#6B7A76", iconColor: "#6B7A76" };
+        return "bg-[#F3F4F6] text-[#6B7A76]";
     }
+  };
+
+  const getCategoryIcon = (category: string) => {
+    const iconProps = { className: "w-4 h-4", style: { color: "var(--neuron-ink-muted)" } };
+    
+    switch (category?.toLowerCase()) {
+      case "marketing":
+      case "advertising":
+        return <Users {...iconProps} />;
+      case "office supplies":
+      case "supplies":
+        return <Package {...iconProps} />;
+      case "client entertainment":
+      case "meals":
+        return <Briefcase {...iconProps} />;
+      default:
+        return <FileText {...iconProps} />;
+    }
+  };
+
+  const formatDate = (dateStr: string) => {
+    return new Date(dateStr).toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric'
+    });
   };
 
   const toggleGroup = (status: string) => {
@@ -208,6 +232,7 @@ export function BudgetRequestList() {
     setCustomerFilter([]);
     setRequestorFilter([]);
     setVendorFilter([]);
+    setStatusFilter([]);
     setSortOption("date-newest");
   };
 
@@ -219,40 +244,84 @@ export function BudgetRequestList() {
     if (customerFilter.length > 0) count++;
     if (requestorFilter.length > 0) count++;
     if (vendorFilter.length > 0) count++;
+    if (statusFilter.length > 0) count++;
     return count;
-  }, [quickFilterTab, dateRangeFilter, categoryFilter, customerFilter, requestorFilter, vendorFilter]);
+  }, [quickFilterTab, dateRangeFilter, categoryFilter, customerFilter, requestorFilter, vendorFilter, statusFilter]);
+
+  const fetchBudgetRequests = useCallback(async () => {
+    try {
+      // Fetch E-Vouchers with transaction_type = "budget_request"
+      console.log('🔍 [Budget Requests] Fetching from:', `${API_URL}/evouchers?source_module=bd&transaction_type=budget_request`);
+      
+      const response = await fetch(`${API_URL}/evouchers?source_module=bd&transaction_type=budget_request`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${publicAnonKey}`,
+          'Content-Type': 'application/json',
+        }
+      });
+
+      if (!response.ok) {
+        console.error('❌ [Budget Requests] Failed to fetch. Status:', response.status);
+        const errorText = await response.text();
+        console.error('❌ [Budget Requests] Error response:', errorText);
+        setBudgetRequests([]); // Set empty array on error
+        return;
+      }
+
+      const data = await response.json();
+      console.log('📦 [Budget Requests] Received response:', data);
+      
+      if (data.success) {
+        // Normalize status values and ensure amount field exists
+        const normalizedData = (data.data || []).map((ev: any) => ({
+          ...ev,
+          status: normalizeStatus(ev.status),
+          // Ensure amount field exists (fallback to total_amount if amount is missing)
+          amount: ev.amount ?? ev.total_amount ?? 0,
+          // Ensure other required fields have defaults
+          request_date: ev.request_date || ev.created_at,
+          requestor_name: ev.requestor_name || 'Unknown',
+          description: ev.description || ev.purpose || 'No description',
+          purpose: ev.purpose || ev.description || 'No purpose',
+        }));
+        
+        setBudgetRequests(normalizedData);
+        console.log(`✅ [Budget Requests] Fetched ${normalizedData.length} budget requests`);
+        console.log('📋 [Budget Requests] First item:', normalizedData[0]);
+      } else {
+        console.error('❌ [Budget Requests] API returned error:', data.error);
+        setBudgetRequests([]); // Set empty array on error
+      }
+    } catch (error) {
+      console.error('❌ [Budget Requests] Exception:', error);
+      // Don't show error toast on initial load - just set empty array
+      setBudgetRequests([]);
+    }
+  }, [currentUserId]);
+
+  // Helper function to normalize backend status to frontend display status
+  const normalizeStatus = (status: string): string => {
+    const statusMap: Record<string, string> = {
+      'draft': 'Draft',
+      'pending': 'Submitted',
+      'posted': 'Approved',
+      'rejected': 'Rejected',
+      'cancelled': 'Cancelled',
+      // Keep capitalized versions as-is
+      'Draft': 'Draft',
+      'Submitted': 'Submitted',
+      'Under Review': 'Under Review',
+      'Approved': 'Approved',
+      'Rejected': 'Rejected',
+    };
+    
+    return statusMap[status] || status;
+  };
 
   useEffect(() => {
-    const fetchBudgetRequests = async () => {
-      try {
-        const response = await fetch(API_URL, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'apikey': publicAnonKey
-          },
-          body: JSON.stringify({
-            "function": "get_budget_requests",
-            "data": {
-              "requestor_id": currentUserId
-            }
-          })
-        });
-
-        if (!response.ok) {
-          throw new Error('Network response was not ok');
-        }
-
-        const data = await response.json();
-        setBudgetRequests(data.data);
-      } catch (error) {
-        toast.error('Failed to fetch budget requests');
-        console.error('Error fetching budget requests:', error);
-      }
-    };
-
     fetchBudgetRequests();
-  }, [currentUserId]);
+  }, [fetchBudgetRequests]);
 
   return (
     <div 
@@ -305,9 +374,6 @@ export function BudgetRequestList() {
           {[
             { id: "all" as QuickFilterTab, label: "All Requests" },
             { id: "my-requests" as QuickFilterTab, label: "My Requests" },
-            { id: "this-week" as QuickFilterTab, label: "This Week" },
-            { id: "this-month" as QuickFilterTab, label: "This Month" },
-            { id: "needs-attention" as QuickFilterTab, label: "Needs Attention" },
           ].map(tab => (
             <button
               key={tab.id}
@@ -373,16 +439,16 @@ export function BudgetRequestList() {
 
           {/* Date Range Filter */}
           <div style={{ flex: "0 1 180px" }}>
-            <SimpleDropdown
+            <CustomDropdown
               value={dateRangeFilter}
               onChange={(value) => setDateRangeFilter(value as DateRangeFilter)}
               options={[
-                { value: "all", label: "All Time" },
-                { value: "today", label: "Today" },
-                { value: "this-week", label: "This Week" },
-                { value: "this-month", label: "This Month" },
-                { value: "this-quarter", label: "This Quarter" },
-                { value: "last-30-days", label: "Last 30 Days" },
+                { value: "all", label: "All Time", icon: <Calendar size={16} /> },
+                { value: "today", label: "Today", icon: <Calendar size={16} /> },
+                { value: "this-week", label: "This Week", icon: <Calendar size={16} /> },
+                { value: "this-month", label: "This Month", icon: <Calendar size={16} /> },
+                { value: "this-quarter", label: "This Quarter", icon: <Calendar size={16} /> },
+                { value: "last-30-days", label: "Last 30 Days", icon: <Calendar size={16} /> },
               ]}
               placeholder="Date Range"
             />
@@ -398,28 +464,28 @@ export function BudgetRequestList() {
             />
           </div>
 
-          {/* Customer Filter */}
+          {/* Status Filter */}
           <div style={{ flex: "0 1 200px" }}>
             <MultiSelectDropdown
-              values={customerFilter}
-              onChange={setCustomerFilter}
-              options={customers}
-              placeholder="All Customers"
+              values={statusFilter}
+              onChange={setStatusFilter}
+              options={["Draft", "Submitted", "Under Review", "Approved", "Rejected"]}
+              placeholder="All Statuses"
             />
           </div>
 
           {/* Sort */}
           <div style={{ flex: "0 1 180px" }}>
-            <SimpleDropdown
+            <CustomDropdown
               value={sortOption}
               onChange={(value) => setSortOption(value as SortOption)}
               options={[
-                { value: "date-newest", label: "Date (Newest)" },
-                { value: "date-oldest", label: "Date (Oldest)" },
-                { value: "amount-highest", label: "Amount (High)" },
-                { value: "amount-lowest", label: "Amount (Low)" },
-                { value: "status", label: "Status" },
-                { value: "requestor", label: "Requestor (A-Z)" },
+                { value: "date-newest", label: "Date (Newest)", icon: <ArrowUpDown size={16} /> },
+                { value: "date-oldest", label: "Date (Oldest)", icon: <ArrowUpDown size={16} /> },
+                { value: "amount-highest", label: "Amount (High)", icon: <ArrowUpDown size={16} /> },
+                { value: "amount-lowest", label: "Amount (Low)", icon: <ArrowUpDown size={16} /> },
+                { value: "status", label: "Status", icon: <ArrowUpDown size={16} /> },
+                { value: "requestor", label: "Requestor (A-Z)", icon: <ArrowUpDown size={16} /> },
               ]}
               placeholder="Sort by"
             />
@@ -514,243 +580,150 @@ export function BudgetRequestList() {
               options={vendors}
               placeholder="All Vendors"
             />
+            <MultiSelectDropdown
+              label="Customer"
+              values={customerFilter}
+              onChange={setCustomerFilter}
+              options={customers}
+              placeholder="All Customers"
+            />
           </div>
         )}
       </div>
 
-      {/* Grouped Table View */}
-      <div className="flex-1 overflow-auto" style={{ padding: "24px 48px" }}>
+      {/* Table View */}
+      <div className="flex-1 overflow-auto px-12 pt-6 pb-6">
         {filteredAndSortedRequests.length === 0 ? (
-          <div className="text-center py-12">
-            <PhilippinePeso size={48} style={{ color: "#667085", margin: "0 auto 16px" }} />
-            <p style={{ fontSize: "16px", color: "#667085", marginBottom: "8px" }}>
-              No budget requests found
-            </p>
-            <p style={{ fontSize: "14px", color: "#98A2B3" }}>
-              {activeFilterCount > 0 || searchQuery
-                ? "Try adjusting your filters or search query" 
-                : "Create your first budget request to get started"}
-            </p>
+          <div
+            style={{
+              borderRadius: "10px",
+              overflow: "hidden",
+              backgroundColor: "#FFFFFF",
+              border: "1px solid var(--neuron-ui-border)",
+            }}
+          >
+            <div
+              style={{
+                padding: "48px 24px",
+                textAlign: "center",
+              }}
+            >
+              <PhilippinePeso
+                size={48}
+                style={{
+                  color: "var(--neuron-ink-muted)",
+                  margin: "0 auto 12px",
+                  display: "block",
+                }}
+              />
+              <h3
+                style={{
+                  fontSize: "16px",
+                  fontWeight: 500,
+                  color: "var(--neuron-ink-primary)",
+                  marginBottom: "4px",
+                }}
+              >
+                No budget requests found
+              </h3>
+              <p
+                style={{
+                  fontSize: "14px",
+                  color: "var(--neuron-ink-muted)",
+                }}
+              >
+                {activeFilterCount > 0 || searchQuery
+                  ? "Try adjusting your filters or search query"
+                  : "Create your first budget request to get started"}
+              </p>
+            </div>
           </div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
-            {groupedRequests.map(([status, requests]) => {
-              const statusStyle = getStatusColor(status);
-              const isCollapsed = collapsedGroups.has(status);
-              
-              return (
-                <div key={status}>
-                  {/* Group Header */}
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "12px",
-                      marginBottom: "12px",
-                      cursor: "pointer",
-                      padding: "8px 0",
-                    }}
-                    onClick={() => toggleGroup(status)}
-                  >
-                    {isCollapsed ? <ChevronRight size={18} style={{ color: "#667085" }} /> : <ChevronDown size={18} style={{ color: "#667085" }} />}
-                    <Circle size={10} fill={statusStyle.iconColor} style={{ color: statusStyle.iconColor }} />
-                    <h3 style={{ 
-                      fontSize: "13px", 
-                      fontWeight: 600, 
-                      color: "#12332B",
-                      textTransform: "uppercase",
-                      letterSpacing: "0.5px",
-                      margin: 0
-                    }}>
-                      {status} ({requests.length})
-                    </h3>
+          <div className="rounded-[10px] overflow-hidden" style={{ 
+            backgroundColor: "#FFFFFF",
+            border: "1px solid var(--neuron-ui-border)"
+          }}>
+            {/* Table Header */}
+            <div className="grid grid-cols-[32px_minmax(200px,1fr)_140px_140px_110px_120px_1fr] gap-3 px-4 py-2 border-b" style={{ 
+              backgroundColor: "var(--neuron-bg-page)",
+              borderColor: "var(--neuron-ui-divider)"
+            }}>
+              <div></div>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.002em]" style={{ color: "var(--neuron-ink-muted)" }}>Request</div>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.002em]" style={{ color: "var(--neuron-ink-muted)" }}>Category</div>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.002em]" style={{ color: "var(--neuron-ink-muted)" }}>Requestor</div>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.002em]" style={{ color: "var(--neuron-ink-muted)" }}>Date</div>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.002em] text-right" style={{ color: "var(--neuron-ink-muted)" }}>Amount</div>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.002em] pl-8" style={{ color: "var(--neuron-ink-muted)" }}>Status</div>
+            </div>
+
+            {/* Request Rows */}
+            <div className="divide-y" style={{ borderColor: "var(--neuron-ui-divider)" }}>
+              {filteredAndSortedRequests.map(request => (
+                <div
+                  key={request.id}
+                  className="grid grid-cols-[32px_minmax(200px,1fr)_140px_140px_110px_120px_1fr] gap-3 px-4 py-3 transition-colors cursor-pointer"
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = "var(--neuron-state-hover)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = "transparent";
+                  }}
+                  onClick={() => {
+                    setSelectedRequest(request);
+                    setShowDetailPanel(true);
+                  }}
+                >
+                  {/* Icon Column */}
+                  <div className="flex items-center justify-center">
+                    {getCategoryIcon(request.sub_category)}
                   </div>
 
-                  {/* Table */}
-                  {!isCollapsed && (
-                    <div style={{ 
-                      border: "1px solid var(--neuron-ui-border)", 
-                      borderRadius: "8px",
-                      overflow: "hidden",
-                      backgroundColor: "#FFFFFF"
-                    }}>
-                      <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                        <thead>
-                          <tr style={{ backgroundColor: "#F9FAFB", borderBottom: "1px solid var(--neuron-ui-border)" }}>
-                            <th style={{ 
-                              padding: "12px 16px", 
-                              textAlign: "left", 
-                              fontSize: "11px", 
-                              fontWeight: 600, 
-                              color: "#667085",
-                              textTransform: "uppercase",
-                              letterSpacing: "0.5px",
-                              width: "30%"
-                            }}>
-                              REQUEST
-                            </th>
-                            <th style={{ 
-                              padding: "12px 16px", 
-                              textAlign: "left", 
-                              fontSize: "11px", 
-                              fontWeight: 600, 
-                              color: "#667085",
-                              textTransform: "uppercase",
-                              letterSpacing: "0.5px",
-                              width: "20%"
-                            }}>
-                              CATEGORY
-                            </th>
-                            <th style={{ 
-                              padding: "12px 16px", 
-                              textAlign: "left", 
-                              fontSize: "11px", 
-                              fontWeight: 600, 
-                              color: "#667085",
-                              textTransform: "uppercase",
-                              letterSpacing: "0.5px",
-                              width: "15%"
-                            }}>
-                              REQUESTOR
-                            </th>
-                            <th style={{ 
-                              padding: "12px 16px", 
-                              textAlign: "left", 
-                              fontSize: "11px", 
-                              fontWeight: 600, 
-                              color: "#667085",
-                              textTransform: "uppercase",
-                              letterSpacing: "0.5px",
-                              width: "12%"
-                            }}>
-                              DATE
-                            </th>
-                            <th style={{ 
-                              padding: "12px 16px", 
-                              textAlign: "right", 
-                              fontSize: "11px", 
-                              fontWeight: 600, 
-                              color: "#667085",
-                              textTransform: "uppercase",
-                              letterSpacing: "0.5px",
-                              width: "15%"
-                            }}>
-                              AMOUNT
-                            </th>
-                            <th style={{ 
-                              padding: "12px 16px", 
-                              textAlign: "center", 
-                              fontSize: "11px", 
-                              fontWeight: 600, 
-                              color: "#667085",
-                              textTransform: "uppercase",
-                              letterSpacing: "0.5px",
-                              width: "8%"
-                            }}>
-                              STATUS
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {requests.map((request, index) => (
-                            <tr
-                              key={request.id}
-                              style={{
-                                borderBottom: index < requests.length - 1 ? "1px solid var(--neuron-ui-border)" : "none",
-                                cursor: "pointer",
-                                transition: "background-color 0.15s ease",
-                              }}
-                              onMouseEnter={(e) => {
-                                e.currentTarget.style.backgroundColor = "#F9FAFB";
-                              }}
-                              onMouseLeave={(e) => {
-                                e.currentTarget.style.backgroundColor = "#FFFFFF";
-                              }}
-                              onClick={() => {
-                                setSelectedRequest(request);
-                                setShowDetailPanel(true);
-                              }}
-                            >
-                              {/* Request */}
-                              <td style={{ padding: "16px" }}>
-                                <div style={{ fontWeight: 600, fontSize: "14px", color: "#12332B", marginBottom: "4px" }}>
-                                  {request.description}
-                                </div>
-                                <div style={{ fontSize: "12px", color: "#667085" }}>
-                                  {request.voucher_number} • {request.purpose}
-                                </div>
-                                {request.customer_name && (
-                                  <div style={{ fontSize: "12px", color: "#0F766E", fontWeight: 500, marginTop: "4px" }}>
-                                    → {request.customer_name}
-                                  </div>
-                                )}
-                              </td>
-
-                              {/* Category */}
-                              <td style={{ padding: "16px" }}>
-                                <div style={{ fontSize: "13px", color: "#12332B" }}>
-                                  {request.sub_category}
-                                </div>
-                              </td>
-
-                              {/* Requestor */}
-                              <td style={{ padding: "16px" }}>
-                                <div style={{ fontSize: "13px", color: "#12332B" }}>
-                                  {request.requestor_name}
-                                </div>
-                              </td>
-
-                              {/* Date */}
-                              <td style={{ padding: "16px" }}>
-                                <div style={{ fontSize: "13px", color: "#667085" }}>
-                                  {new Date(request.request_date).toLocaleDateString('en-PH', { 
-                                    month: 'short', 
-                                    day: 'numeric', 
-                                    year: 'numeric' 
-                                  })}
-                                </div>
-                              </td>
-
-                              {/* Amount */}
-                              <td style={{ padding: "16px", textAlign: "right" }}>
-                                <div style={{ 
-                                  display: "flex", 
-                                  alignItems: "center", 
-                                  justifyContent: "flex-end",
-                                  fontSize: "14px", 
-                                  fontWeight: 600, 
-                                  color: "#12332B" 
-                                }}>
-                                  <PhilippinePeso size={14} style={{ marginRight: "4px" }} />
-                                  {request.amount.toLocaleString()}
-                                </div>
-                              </td>
-
-                              {/* Status Badge */}
-                              <td style={{ padding: "16px", textAlign: "center" }}>
-                                <span
-                                  style={{
-                                    fontSize: "11px",
-                                    fontWeight: 500,
-                                    padding: "4px 10px",
-                                    borderRadius: "6px",
-                                    backgroundColor: statusStyle.bg,
-                                    color: statusStyle.color,
-                                    display: "inline-block",
-                                  }}
-                                >
-                                  {request.status}
-                                </span>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                  {/* Request */}
+                  <div>
+                    <div className="text-[12px] font-semibold" style={{ color: "var(--neuron-ink-primary)" }}>
+                      {request.description}
                     </div>
-                  )}
+                    <div className="text-[10px] mt-0.5" style={{ color: "var(--neuron-ink-muted)" }}>
+                      {request.voucher_number} • {request.purpose}
+                    </div>
+                    {request.customer_name && (
+                      <div className="text-[10px] mt-0.5" style={{ color: "#0F766E", fontWeight: 500 }}>
+                        → {request.customer_name}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Category */}
+                  <div className="text-[12px]" style={{ color: "var(--neuron-ink-secondary)" }}>
+                    {request.sub_category || "—"}
+                  </div>
+
+                  {/* Requestor */}
+                  <div className="text-[12px]" style={{ color: "var(--neuron-ink-secondary)" }}>
+                    {request.requestor_name}
+                  </div>
+
+                  {/* Date */}
+                  <div className="text-[11px]" style={{ color: "var(--neuron-ink-muted)" }}>
+                    {formatDate(request.request_date)}
+                  </div>
+
+                  {/* Amount */}
+                  <div className="text-[13px] font-semibold text-right flex items-center justify-end" style={{ color: "var(--neuron-ink-primary)" }}>
+                    <PhilippinePeso size={13} style={{ marginRight: "4px" }} />
+                    {request.amount.toLocaleString()}
+                  </div>
+
+                  {/* Status Badge */}
+                  <div className="pl-8">
+                    <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-[0.002em] ${getStatusColor(request.status)}`}>
+                      {request.status}
+                    </span>
+                  </div>
                 </div>
-              );
-            })}
+              ))}
+            </div>
           </div>
         )}
       </div>
@@ -759,88 +732,12 @@ export function BudgetRequestList() {
       <AddRequestForPaymentPanel
         isOpen={showCreateModal}
         onClose={() => setShowCreateModal(false)}
-        onSave={(data) => {
-          // Create new EVoucher object from form data
-          const newRequest: EVoucher = {
-            id: `ev${String(budgetRequests.length + 1).padStart(3, '0')}`,
-            voucher_number: data.evrnNumber,
-            requestor_id: "user001", // In real app, get from auth context
-            requestor_name: data.requestor,
-            request_date: data.date,
-            expense_category: data.expenseCategory,
-            sub_category: data.subCategory,
-            amount: data.totalAmount,
-            currency: "PHP",
-            purpose: data.requestName,
-            description: data.requestName,
-            vendor_name: data.vendor,
-            status: data.status,
-            project_number: data.projectNumber,
-            payment_method: data.preferredPayment,
-            credit_terms: data.creditTerms,
-            payment_schedule: data.paymentSchedule,
-            notes: data.notes,
-            line_items: data.lineItems,
-            approvers: [],
-            workflow_history: [
-              {
-                id: `wh${Date.now()}`,
-                timestamp: new Date().toISOString(),
-                status: data.status,
-                user_name: data.requestor,
-                user_role: "BD",
-                action: data.status === "Submitted" ? "Submitted for approval" : "Saved as draft"
-              }
-            ],
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          };
-
-          // Add to the beginning of the list (most recent first)
-          setBudgetRequests([newRequest, ...budgetRequests]);
-          setShowCreateModal(false);
+        onSuccess={() => {
+          // Refresh the list after successful save
+          fetchBudgetRequests();
         }}
-        onSaveDraft={(data) => {
-          // Create new EVoucher object with Draft status
-          const newDraft: EVoucher = {
-            id: `ev${String(budgetRequests.length + 1).padStart(3, '0')}`,
-            voucher_number: data.evrnNumber,
-            requestor_id: "user001",
-            requestor_name: data.requestor,
-            request_date: data.date,
-            expense_category: data.expenseCategory,
-            sub_category: data.subCategory,
-            amount: data.totalAmount,
-            currency: "PHP",
-            purpose: data.requestName,
-            description: data.requestName,
-            vendor_name: data.vendor,
-            status: "Draft",
-            project_number: data.projectNumber,
-            payment_method: data.preferredPayment,
-            credit_terms: data.creditTerms,
-            payment_schedule: data.paymentSchedule,
-            notes: data.notes,
-            line_items: data.lineItems,
-            approvers: [],
-            workflow_history: [
-              {
-                id: `wh${Date.now()}`,
-                timestamp: new Date().toISOString(),
-                status: "Draft",
-                user_name: data.requestor,
-                user_role: "BD",
-                action: "Saved as draft"
-              }
-            ],
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          };
-
-          // Add to the beginning of the list
-          setBudgetRequests([newDraft, ...budgetRequests]);
-          setShowCreateModal(false);
-        }}
+        context="bd"
+        defaultRequestor={currentUserId}
       />
 
       {/* Budget Request Detail Panel */}

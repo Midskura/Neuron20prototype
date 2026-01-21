@@ -1,5 +1,5 @@
-import { X, Package, Ship, Box, Warehouse, Link as LinkIcon } from "lucide-react";
-import { useState } from "react";
+import { X, Package, Ship, Box, Warehouse, Link as LinkIcon, Users } from "lucide-react";
+import { useState, useEffect } from "react";
 import type { ForwardingBooking, ExecutionStatus } from "../../../types/operations";
 import type { Project } from "../../../types/pricing";
 import { projectId, publicAnonKey } from "../../../utils/supabase/info";
@@ -7,12 +7,19 @@ import { toast } from "../../ui/toast-utils";
 import { ProjectAutofillSection } from "../shared/ProjectAutofillSection";
 import { ServicesMultiSelect } from "../shared/ServicesMultiSelect";
 import { autofillForwardingFromProject, linkBookingToProject } from "../../../utils/projectAutofill";
+import { TeamAssignmentForm, type TeamAssignment } from "../../pricing/TeamAssignmentForm";
+import type { User } from "../../../hooks/useUser";
+import { CustomDropdown } from "../../bd/CustomDropdown";
 
 interface CreateForwardingBookingPanelProps {
   isOpen: boolean;
   onClose: () => void;
-  onBookingCreated: () => void;
-  currentUser?: { name: string; email: string; department: string } | null;
+  onBookingCreated: (bookingData?: any) => void; // Updated to accept optional booking data
+  currentUser?: { id?: string; name: string; email: string; department: string } | null;
+  prefillData?: any; // NEW: For auto-fill from project
+  source?: "operations" | "pricing"; // NEW: Indicates where the panel is being used
+  customerId?: string; // NEW: For team assignment
+  serviceType?: string; // NEW: For team assignment
 }
 
 const API_URL = `https://${projectId}.supabase.co/functions/v1/make-server-c142e950`;
@@ -21,12 +28,17 @@ export function CreateForwardingBookingPanel({
   isOpen,
   onClose,
   onBookingCreated,
-  currentUser
+  currentUser,
+  prefillData,
+  source = "operations",
+  customerId,
+  serviceType = "Forwarding",
 }: CreateForwardingBookingPanelProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [bookingNumber, setBookingNumber] = useState("");
   const [projectNumber, setProjectNumber] = useState("");
   const [fetchedProject, setFetchedProject] = useState<Project | null>(null);
+  const [teamAssignment, setTeamAssignment] = useState<TeamAssignment | null>(null);
   
   // General Information
   const [customerName, setCustomerName] = useState("");
@@ -84,6 +96,22 @@ export function CreateForwardingBookingPanel({
   // LCL/AIR-specific
   const [warehouseLocation, setWarehouseLocation] = useState("");
 
+  // Apply prefill data when component mounts or prefillData changes
+  useEffect(() => {
+    if (prefillData && source === "pricing") {
+      // Auto-populate fields from prefillData
+      if (prefillData.customerName) setCustomerName(prefillData.customerName);
+      if (prefillData.projectNumber) setProjectNumber(prefillData.projectNumber);
+      if (prefillData.quotationReferenceNumber) setQuotationReferenceNumber(prefillData.quotationReferenceNumber);
+      if (prefillData.commodityDescription) setCommodityDescription(prefillData.commodityDescription);
+      if (prefillData.deliveryAddress) setDeliveryAddress(prefillData.deliveryAddress);
+      if (prefillData.aolPol) setAolPol(prefillData.aolPol);
+      if (prefillData.aodPod) setAodPod(prefillData.aodPod);
+      if (prefillData.cargoType) setCargoType(prefillData.cargoType);
+      if (prefillData.mode) setMode(prefillData.mode as "FCL" | "LCL" | "AIR");
+    }
+  }, [prefillData, source]);
+
   const handleProjectAutofill = (project: Project) => {
     setFetchedProject(project);
     
@@ -111,6 +139,12 @@ export function CreateForwardingBookingPanel({
   const validateForm = () => {
     if (!customerName) {
       toast.error("Customer Name is required");
+      return false;
+    }
+
+    // If from Pricing module, require team assignments
+    if (source === "pricing" && !teamAssignment) {
+      toast.error("Please complete team assignments");
       return false;
     }
 
@@ -146,7 +180,14 @@ export function CreateForwardingBookingPanel({
     setIsSubmitting(true);
 
     try {
-      const bookingData: Partial<ForwardingBooking> = {
+      const bookingData: Partial<ForwardingBooking> & {
+        assigned_manager_id?: string;
+        assigned_manager_name?: string;
+        assigned_supervisor_id?: string;
+        assigned_supervisor_name?: string;
+        assigned_handler_id?: string;
+        assigned_handler_name?: string;
+      } = {
         bookingId: bookingNumber || undefined,
         projectNumber: projectNumber || undefined,
         customerName,
@@ -195,6 +236,16 @@ export function CreateForwardingBookingPanel({
         volumeChargeableWeight: mode === "FCL" ? volumeChargeableWeight : undefined,
       };
 
+      // Add team assignments if from Pricing
+      if (source === "pricing" && teamAssignment) {
+        bookingData.assigned_manager_id = teamAssignment.manager.id;
+        bookingData.assigned_manager_name = teamAssignment.manager.name;
+        bookingData.assigned_supervisor_id = teamAssignment.supervisor?.id;
+        bookingData.assigned_supervisor_name = teamAssignment.supervisor?.name;
+        bookingData.assigned_handler_id = teamAssignment.handler?.id;
+        bookingData.assigned_handler_name = teamAssignment.handler?.name;
+      }
+
       const response = await fetch(`${API_URL}/forwarding-bookings`, {
         method: "POST",
         headers: {
@@ -215,21 +266,45 @@ export function CreateForwardingBookingPanel({
             await linkBookingToProject(
               fetchedProject.id,
               createdBooking.bookingId,
-              createdBooking.bookingNumber,
+              createdBooking.bookingId, // Use bookingId as the booking number
               "Forwarding",
               createdBooking.status,
               projectId,
               publicAnonKey
             );
-            console.log(`Linked booking ${createdBooking.bookingNumber} to project ${projectNumber}`);
+            console.log(`Linked booking ${createdBooking.bookingId} to project ${projectNumber}`);
           } catch (linkError) {
             console.error("Error linking booking to project:", linkError);
             // Don't fail the whole operation, just log it
           }
         }
         
+        // Save team preference if requested and from Pricing
+        if (source === "pricing" && teamAssignment?.saveAsDefault && customerId) {
+          try {
+            await fetch(
+              `${API_URL}/client-handler-preferences`,
+              {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${publicAnonKey}`,
+                },
+                body: JSON.stringify({
+                  client_id: customerId,
+                  service_type: serviceType,
+                  preferred_supervisor_id: teamAssignment.supervisor?.id,
+                  preferred_handler_id: teamAssignment.handler?.id,
+                }),
+              }
+            );
+          } catch (error) {
+            console.error("Error saving team preference:", error);
+          }
+        }
+        
         toast.success(`Forwarding booking ${createdBooking.bookingId} created successfully`);
-        onBookingCreated();
+        onBookingCreated(createdBooking); // Pass the booking data
         onClose();
       } else {
         toast.error("Error creating booking: " + result.error);
@@ -248,7 +323,8 @@ export function CreateForwardingBookingPanel({
 
   if (!isOpen) return null;
 
-  const isFormValid = customerName.trim() !== "";
+  const isFormValid = customerName.trim() !== "" && 
+    (source === "operations" || (source === "pricing" && teamAssignment !== null));
 
   return (
     <>
@@ -314,13 +390,15 @@ export function CreateForwardingBookingPanel({
         {/* Form Content */}
         <div className="flex-1 overflow-auto px-12 py-8">
           <form onSubmit={handleSubmit} id="create-forwarding-form">
-            {/* Project Reference - Autofill Section */}
-            <ProjectAutofillSection
-              projectNumber={projectNumber}
-              onProjectNumberChange={setProjectNumber}
-              onAutofill={handleProjectAutofill}
-              serviceType="Forwarding"
-            />
+            {/* Project Reference - Autofill Section - Only show when from Operations */}
+            {source === "operations" && (
+              <ProjectAutofillSection
+                projectNumber={projectNumber}
+                onProjectNumberChange={setProjectNumber}
+                onAutofill={handleProjectAutofill}
+                serviceType="Forwarding"
+              />
+            )}
 
             {/* Booking Number */}
             <div className="mb-8">
@@ -455,28 +533,18 @@ export function CreateForwardingBookingPanel({
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label
-                      className="block mb-1.5"
-                      style={{ fontSize: "13px", fontWeight: 500, color: "#12332B" }}
-                    >
-                      Mode
-                    </label>
-                    <select
-                      value={mode}
-                      onChange={(e) => setMode(e.target.value as "FCL" | "LCL" | "AIR")}
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
-                      style={{
-                        border: "1px solid var(--neuron-ui-border)",
-                        backgroundColor: "#FFFFFF",
-                        color: "var(--neuron-ink-primary)",
-                      }}
-                    >
-                      <option value="FCL">FCL</option>
-                      <option value="LCL">LCL</option>
-                      <option value="AIR">AIR</option>
-                    </select>
-                  </div>
+                  <CustomDropdown
+                    label="Mode"
+                    value={mode}
+                    onChange={(value) => setMode(value as "FCL" | "LCL" | "AIR")}
+                    options={[
+                      { value: "FCL", label: "FCL" },
+                      { value: "LCL", label: "LCL" },
+                      { value: "AIR", label: "AIR" },
+                    ]}
+                    placeholder="Select Mode..."
+                    fullWidth
+                  />
 
                   <div>
                     <label
@@ -586,30 +654,22 @@ export function CreateForwardingBookingPanel({
                   </div>
 
                   <div>
-                    <label
-                      className="block mb-1.5"
-                      style={{ fontSize: "13px", fontWeight: 500, color: "#12332B" }}
-                    >
-                      Status
-                    </label>
-                    <select
+                    <CustomDropdown
+                      label="Status"
                       value={status}
-                      onChange={(e) => setStatus(e.target.value as ExecutionStatus)}
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
-                      style={{
-                        border: "1px solid var(--neuron-ui-border)",
-                        backgroundColor: "#FFFFFF",
-                        color: "var(--neuron-ink-primary)",
-                      }}
-                    >
-                      <option value="Draft">Draft</option>
-                      <option value="Confirmed">Confirmed</option>
-                      <option value="In Progress">In Progress</option>
-                      <option value="Pending">Pending</option>
-                      <option value="On Hold">On Hold</option>
-                      <option value="Completed">Completed</option>
-                      <option value="Cancelled">Cancelled</option>
-                    </select>
+                      onChange={(value) => setStatus(value as ExecutionStatus)}
+                      options={[
+                        { value: "Draft", label: "Draft" },
+                        { value: "Confirmed", label: "Confirmed" },
+                        { value: "In Progress", label: "In Progress" },
+                        { value: "Pending", label: "Pending" },
+                        { value: "On Hold", label: "On Hold" },
+                        { value: "Completed", label: "Completed" },
+                        { value: "Cancelled", label: "Cancelled" },
+                      ]}
+                      placeholder="Select Status..."
+                      fullWidth
+                    />
                   </div>
                 </div>
 
@@ -1466,6 +1526,31 @@ export function CreateForwardingBookingPanel({
                       backgroundColor: "#FFFFFF",
                       color: "var(--neuron-ink-primary)",
                     }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Team Assignment - Only show when from Pricing */}
+            {source === "pricing" && customerId && (
+              <div className="mb-8">
+                <div className="flex items-center gap-2 mb-4">
+                  <Users size={16} style={{ color: "#0F766E" }} />
+                  <h3 style={{ fontSize: "14px", fontWeight: 600, color: "#12332B", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                    Team Assignment
+                  </h3>
+                </div>
+                
+                <div style={{
+                  padding: "20px",
+                  backgroundColor: "#F9FAFB",
+                  border: "1px solid var(--neuron-ui-border)",
+                  borderRadius: "8px"
+                }}>
+                  <TeamAssignmentForm
+                    serviceType={serviceType as any}
+                    customerId={customerId}
+                    onChange={setTeamAssignment}
                   />
                 </div>
               </div>

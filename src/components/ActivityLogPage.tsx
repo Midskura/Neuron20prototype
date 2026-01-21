@@ -1,8 +1,6 @@
-import { useState, useEffect, useRef } from "react";
-import { Activity, Download, RefreshCw, ExternalLink, Filter } from "lucide-react";
 import { useUser } from "../hooks/useUser";
 import { projectId, publicAnonKey } from "../utils/supabase/info";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import { CustomDropdown } from "./bd/CustomDropdown";
 
 interface ActivityLog {

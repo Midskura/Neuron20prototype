@@ -493,8 +493,8 @@ export function ForwardingServiceForm({ data, onChange, builderMode = "quotation
         {data.incoterms === "EXW" && (
           <div style={{
             padding: "16px",
-            backgroundColor: "#FEF3F2",
-            border: "1px solid #FEE4E2",
+            backgroundColor: "#F8FBFB",
+            border: "1px solid var(--neuron-ui-border)",
             borderRadius: "6px"
           }}>
             <label style={{
@@ -824,93 +824,67 @@ export function ForwardingServiceForm({ data, onChange, builderMode = "quotation
           </div>
         )}
 
-        {/* Cross-Service Fields */}
-        <div style={{
-          padding: "16px",
-          backgroundColor: "#F0FDF4",
-          border: "1px solid #BBF7D0",
-          borderRadius: "6px"
-        }}>
-          <div style={{ marginBottom: "12px" }}>
-            <p style={{
-              fontSize: "11px",
-              fontWeight: 600,
-              color: "#166534",
-              textTransform: "uppercase",
-              letterSpacing: "0.5px",
-              marginBottom: "8px"
-            }}>
-              Cross-Service Fields (Brokerage)
-            </p>
-            <p style={{
+        {/* Country of Origin & Preferential Treatment */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+          <div>
+            <label style={{
+              display: "block",
               fontSize: "12px",
-              color: "#15803D",
-              marginBottom: "0"
+              fontWeight: 500,
+              color: "var(--neuron-ink-base)",
+              marginBottom: "6px"
             }}>
-              These fields are shared with Brokerage service and will be autofilled in Operations bookings.
-            </p>
+              Country of Origin
+            </label>
+            <input
+              type="text"
+              value={data.countryOfOrigin || ""}
+              onChange={(e) => updateField("countryOfOrigin", e.target.value)}
+              placeholder="Enter country of origin"
+              style={{
+                width: "100%",
+                padding: "8px 10px",
+                fontSize: "13px",
+                color: "var(--neuron-ink-base)",
+                backgroundColor: "white",
+                border: "1px solid var(--neuron-ui-border)",
+                borderRadius: "6px",
+                outline: "none",
+                transition: "border-color 0.15s ease"
+              }}
+              onFocus={(e) => {
+                e.currentTarget.style.borderColor = "var(--neuron-brand-teal)";
+              }}
+              onBlur={(e) => {
+                e.currentTarget.style.borderColor = "var(--neuron-ui-border)";
+              }}
+            />
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-            <div>
-              <label style={{
-                display: "block",
-                fontSize: "12px",
-                fontWeight: 500,
-                color: "var(--neuron-ink-base)",
-                marginBottom: "6px"
-              }}>
-                Country of Origin
-              </label>
-              <input
-                type="text"
-                value={data.countryOfOrigin || ""}
-                onChange={(e) => updateField("countryOfOrigin", e.target.value)}
-                placeholder="Enter country of origin"
-                style={{
-                  width: "100%",
-                  padding: "8px 10px",
-                  fontSize: "13px",
-                  color: "var(--neuron-ink-base)",
-                  backgroundColor: "white",
-                  border: "1px solid var(--neuron-ui-border)",
-                  borderRadius: "6px",
-                  outline: "none",
-                  transition: "border-color 0.15s ease"
-                }}
-                onFocus={(e) => {
-                  e.currentTarget.style.borderColor = "var(--neuron-brand-teal)";
-                }}
-                onBlur={(e) => {
-                  e.currentTarget.style.borderColor = "var(--neuron-ui-border)";
-                }}
-              />
-            </div>
-            <div>
-              <label style={{
-                display: "block",
-                fontSize: "12px",
-                fontWeight: 500,
-                color: "var(--neuron-ink-base)",
-                marginBottom: "6px"
-              }}>
-                Preferential Treatment
-              </label>
-              <FormSelect
-                value={data.preferentialTreatment || ""}
-                onChange={(value) => updateField("preferentialTreatment", value)}
-                options={[
-                  { value: "ATIGA", label: "ATIGA" },
-                  { value: "AJCEP", label: "AJCEP" },
-                  { value: "AKFTA", label: "AKFTA" },
-                  { value: "AANZFTA", label: "AANZFTA" },
-                  { value: "ACFTA", label: "ACFTA" },
-                  { value: "AIFTA", label: "AIFTA" },
-                  { value: "RCEP", label: "RCEP" },
-                  { value: "None", label: "None" }
-                ]}
-                placeholder="Select preferential treatment..."
-              />
-            </div>
+          <div>
+            <label style={{
+              display: "block",
+              fontSize: "12px",
+              fontWeight: 500,
+              color: "var(--neuron-ink-base)",
+              marginBottom: "6px"
+            }}>
+              Preferential Treatment
+            </label>
+            <FormSelect
+              value={data.preferentialTreatment || ""}
+              onChange={(value) => updateField("preferentialTreatment", value)}
+              options={[
+                { value: "ATIGA", label: "ATIGA" },
+                { value: "AJCEP", label: "AJCEP" },
+                { value: "AKFTA", label: "AKFTA" },
+                { value: "AANZFTA", label: "AANZFTA" },
+                { value: "ACFTA", label: "ACFTA" },
+                { value: "AIFTA", label: "AIFTA" },
+                { value: "RCEP", label: "RCEP" },
+                { value: "None", label: "None" }
+              ]}
+              placeholder="Select preferential treatment..."
+            />
           </div>
         </div>
       </div>

@@ -1,15 +1,37 @@
 // E-Voucher System Types
 
 export type EVoucherStatus = 
-  | "Draft"           // Initial creation
-  | "Submitted"       // Submitted to Accounting
-  | "Under Review"    // Accounting reviewing
-  | "Approved"        // Accounting approved and categorized
-  | "Rejected"        // Accounting rejected
-  | "Processing"      // Payment processing
-  | "Disbursed"       // Payment completed
-  | "Recorded"        // Recorded in books
-  | "Audited";        // Final audit complete
+  | "draft"           // Initial creation (lowercase to match backend)
+  | "pending"         // Submitted, awaiting Accounting approval
+  | "posted"          // Approved and posted to ledger
+  | "rejected"        // Rejected by Accounting
+  | "cancelled"       // Cancelled by user
+  | "Submitted"       // Legacy - keeping for backwards compatibility
+  | "Under Review"    // Legacy
+  | "Approved"        // Legacy
+  | "Rejected"        // Legacy (capitalized)
+  | "Processing"      // Legacy
+  | "Disbursed"       // Legacy
+  | "Recorded"        // Legacy
+  | "Audited";        // Legacy
+
+// Transaction Types - Universal E-Voucher System
+export type EVoucherTransactionType = 
+  | "expense"           // General expense voucher
+  | "budget_request"    // Budget request from BD module
+  | "collection"        // Collection entry
+  | "billing"           // Billing adjustment
+  | "adjustment"        // General adjustment
+  | "reimbursement";    // Employee reimbursement
+
+// Source Module - Which module created this E-Voucher
+export type EVoucherSourceModule = 
+  | "bd"                // Business Development
+  | "operations"        // Operations
+  | "accounting"        // Accounting
+  | "pricing"           // Pricing
+  | "hr"                // HR
+  | "executive";        // Executive
 
 // GL Account Categories for Financial Statements
 export type GLCategory = 
@@ -104,6 +126,10 @@ export interface EVoucher {
   id: string;
   voucher_number: string; // e.g., EVRN-2025-001 or BR-001
   
+  // Universal Transaction Fields
+  transaction_type: EVoucherTransactionType; // Type of transaction
+  source_module: EVoucherSourceModule; // Which module created this
+  
   // Request Details
   requestor_id: string;
   requestor_name: string;
@@ -173,6 +199,8 @@ export interface EVoucher {
 
 export interface EVoucherFilters {
   status?: EVoucherStatus | "all";
+  transaction_type?: EVoucherTransactionType | "all"; // New filter
+  source_module?: EVoucherSourceModule | "all"; // New filter
   gl_category?: GLCategory | "all";
   date_from?: string;
   date_to?: string;

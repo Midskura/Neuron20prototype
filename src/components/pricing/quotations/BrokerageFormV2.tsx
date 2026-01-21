@@ -1,5 +1,5 @@
-import { FileText, Package, MapPin } from "lucide-react";
-import { SimpleDropdown } from "../../bd/SimpleDropdown";
+import { FileText, Package, MapPin, Plane, Ship, Truck, Container, Box, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { CustomDropdown } from "../../bd/CustomDropdown";
 import type { BrokerageDetails, BrokerageSubtype, ShipmentType, Mode, CargoType } from "../../../types/pricing";
 
 interface BrokerageFormV2Props {
@@ -37,10 +37,15 @@ export function BrokerageFormV2({ data, onChange }: BrokerageFormV2Props) {
           <label style={{ display: "block", fontSize: "11px", fontWeight: 500, color: "#667085", marginBottom: "4px" }}>
             Brokerage Subtype *
           </label>
-          <SimpleDropdown
+          <CustomDropdown
             value={data.subtype || ""}
             onChange={(value) => updateField('subtype', value as BrokerageSubtype)}
-            options={["Import Air", "Import Ocean", "Export Air", "Export Ocean"]}
+            options={[
+              { value: "Import Air", label: "Import Air", icon: <Plane size={16} /> },
+              { value: "Import Ocean", label: "Import Ocean", icon: <Ship size={16} /> },
+              { value: "Export Air", label: "Export Air", icon: <Plane size={16} /> },
+              { value: "Export Ocean", label: "Export Ocean", icon: <Ship size={16} /> }
+            ]}
             placeholder="Select subtype"
           />
         </div>
@@ -50,10 +55,15 @@ export function BrokerageFormV2({ data, onChange }: BrokerageFormV2Props) {
           <label style={{ display: "block", fontSize: "11px", fontWeight: 500, color: "#667085", marginBottom: "4px" }}>
             Shipment Type *
           </label>
-          <SimpleDropdown
+          <CustomDropdown
             value={data.shipment_type || ""}
             onChange={(value) => updateField('shipment_type', value as ShipmentType)}
-            options={["FCL", "LCL", "Consolidation", "Break Bulk"]}
+            options={[
+              { value: "FCL", label: "FCL", icon: <Container size={16} /> },
+              { value: "LCL", label: "LCL", icon: <Box size={16} /> },
+              { value: "Consolidation", label: "Consolidation", icon: <Package size={16} /> },
+              { value: "Break Bulk", label: "Break Bulk", icon: <Package size={16} /> }
+            ]}
             placeholder="Select type"
           />
         </div>
@@ -105,10 +115,14 @@ export function BrokerageFormV2({ data, onChange }: BrokerageFormV2Props) {
           <label style={{ display: "block", fontSize: "11px", fontWeight: 500, color: "#667085", marginBottom: "4px" }}>
             Mode
           </label>
-          <SimpleDropdown
+          <CustomDropdown
             value={data.mode || ""}
             onChange={(value) => updateField('mode', value as Mode)}
-            options={["Air", "Ocean", "Land"]}
+            options={[
+              { value: "Air", label: "Air", icon: <Plane size={16} /> },
+              { value: "Ocean", label: "Ocean", icon: <Ship size={16} /> },
+              { value: "Land", label: "Land", icon: <Truck size={16} /> }
+            ]}
             placeholder="Select mode"
           />
         </div>
@@ -118,10 +132,16 @@ export function BrokerageFormV2({ data, onChange }: BrokerageFormV2Props) {
           <label style={{ display: "block", fontSize: "11px", fontWeight: 500, color: "#667085", marginBottom: "4px" }}>
             Cargo Type
           </label>
-          <SimpleDropdown
+          <CustomDropdown
             value={data.cargo_type || ""}
             onChange={(value) => updateField('cargo_type', value as CargoType)}
-            options={["General", "Perishable", "Hazardous", "Fragile", "High Value"]}
+            options={[
+              { value: "General", label: "General", icon: <Package size={16} /> },
+              { value: "Perishable", label: "Perishable", icon: <AlertTriangle size={16} /> },
+              { value: "Hazardous", label: "Hazardous", icon: <AlertTriangle size={16} style={{ color: "#EF4444" }} /> },
+              { value: "Fragile", label: "Fragile", icon: <AlertTriangle size={16} style={{ color: "#F59E0B" }} /> },
+              { value: "High Value", label: "High Value", icon: <CheckCircle2 size={16} style={{ color: "#10B981" }} /> }
+            ]}
             placeholder="Select cargo type"
           />
         </div>
@@ -260,10 +280,13 @@ export function BrokerageFormV2({ data, onChange }: BrokerageFormV2Props) {
           <label style={{ display: "block", fontSize: "11px", fontWeight: 500, color: "#667085", marginBottom: "4px" }}>
             AEO
           </label>
-          <SimpleDropdown
+          <CustomDropdown
             value={data.aeo || ""}
             onChange={(value) => updateField('aeo', value)}
-            options={["Yes", "No"]}
+            options={[
+              { value: "Yes", label: "Yes", icon: <CheckCircle2 size={16} style={{ color: "#10B981" }} /> },
+              { value: "No", label: "No" }
+            ]}
             placeholder="Select AEO status"
           />
         </div>

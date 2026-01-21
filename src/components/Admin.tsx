@@ -1,18 +1,16 @@
 import { useState } from "react";
-import { Card } from "./ui/card";
-import { Button } from "./ui/button";
-import { Input } from "./ui/input";
-import { Label } from "./ui/label";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "./ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
-import { Badge } from "./ui/badge";
-import { Plus, Trash2, Edit, Download, Settings as SettingsIcon, TestTube, RefreshCw } from "lucide-react";
 import { cleanupDuplicates } from "../utils/cleanupDuplicates";
 import { toast } from "sonner@2.0.3";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import { projectId, publicAnonKey } from "../utils/supabase/info";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
+import { Input } from "./ui/input";
+import { Label } from "./ui/label";
+import { Button } from "./ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
+import { Plus, Edit, Trash2, RefreshCw, TestTube } from "lucide-react";
 
 interface User {
   id: string;
@@ -43,6 +41,8 @@ export function Admin({ users = [], onAddUser, onDeleteUser }: AdminProps) {
   const [isMigratingServices, setIsMigratingServices] = useState(false);
   const [isSeeding, setIsSeeding] = useState(false);
   const [isClearingSeed, setIsClearingSeed] = useState(false);
+  const [isMigratingContactNames, setIsMigratingContactNames] = useState(false);
+  const [isSeedingUsers, setIsSeedingUsers] = useState(false);
 
   // Mock users data
   const mockUsers: User[] = [
@@ -251,6 +251,60 @@ export function Admin({ users = [], onAddUser, onDeleteUser }: AdminProps) {
       toast.error("Failed to clear seed data. Check console for details.");
     } finally {
       setIsClearingSeed(false);
+    }
+  };
+
+  const handleMigrateContactNames = async () => {
+    setIsMigratingContactNames(true);
+    try {
+      const API_URL = `https://${projectId}.supabase.co/functions/v1/make-server-c142e950`;
+      const response = await fetch(`${API_URL}/contacts/migrate-names`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${publicAnonKey}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        toast.success(`Migration complete! ${result.migrated} contacts migrated, ${result.skipped} already up-to-date.`);
+      } else {
+        toast.error(`Migration failed: ${result.error}`);
+      }
+    } catch (error) {
+      console.error("Error migrating contact names:", error);
+      toast.error("Failed to migrate contact names. Check console for details.");
+    } finally {
+      setIsMigratingContactNames(false);
+    }
+  };
+
+  const handleSeedUsers = async () => {
+    setIsSeedingUsers(true);
+    try {
+      const API_URL = `https://${projectId}.supabase.co/functions/v1/make-server-c142e950`;
+      const response = await fetch(`${API_URL}/users/seed`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${publicAnonKey}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        toast.success(`🎉 Seed complete! ${result.summary.users} users created!`);
+      } else {
+        toast.error(`Seed failed: ${result.error}`);
+      }
+    } catch (error) {
+      console.error("Error seeding users:", error);
+      toast.error("Failed to seed users. Check console for details.");
+    } finally {
+      setIsSeedingUsers(false);
     }
   };
 
@@ -869,6 +923,91 @@ export function Admin({ users = [], onAddUser, onDeleteUser }: AdminProps) {
                   >
                     <RefreshCw className={`w-4 h-4 ${isClearingSeed ? 'animate-spin' : ''}`} />
                     {isClearingSeed ? "Clearing..." : "Clear All Data"}
+                  </button>
+                </div>
+
+                {/* Migrate Contact Names */}
+                <div style={{ padding: "16px", background: "#F0F9FF", borderRadius: "12px", border: "1px solid #BAE6FD" }}>
+                  <p style={{ fontSize: "13px", color: "#0369A1", marginBottom: "8px" }}>Migrate Contact Names</p>
+                  <p style={{ fontSize: "14px", color: "#667085", marginBottom: "12px" }}>
+                    Migrate contacts from old schema (single 'name' field) to new schema (separate 'first_name' and 'last_name' fields)
+                  </p>
+                  <button
+                    onClick={handleMigrateContactNames}
+                    disabled={isMigratingContactNames}
+                    style={{
+                      height: "36px",
+                      padding: "0 20px",
+                      borderRadius: "8px",
+                      background: isMigratingContactNames ? "#F3F4F6" : "#0F766E",
+                      border: "none",
+                      color: isMigratingContactNames ? "#9CA3AF" : "#FFFFFF",
+                      fontSize: "13px",
+                      fontWeight: 600,
+                      cursor: isMigratingContactNames ? "not-allowed" : "pointer",
+                      transition: "all 150ms ease",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px"
+                    }}
+                  >
+                    <RefreshCw className={`w-4 h-4 ${isMigratingContactNames ? 'animate-spin' : ''}`} />
+                    {isMigratingContactNames ? "Migrating..." : "Migrate Contact Names"}
+                  </button>
+                </div>
+
+                {/* Seed Users */}
+                <div style={{ padding: "16px", background: "#ECFDF5", borderRadius: "12px", border: "1px solid #A7F3D0" }}>
+                  <p style={{ fontSize: "13px", color: "#047857", marginBottom: "8px", fontWeight: 600 }}>👥 Seed Operations Users</p>
+                  <p style={{ fontSize: "14px", color: "#667085", marginBottom: "12px" }}>
+                    Populate the database with 30+ test users including complete Operations teams for all service types
+                  </p>
+                  
+                  {/* User breakdown */}
+                  <div style={{ 
+                    background: "#FFFFFF", 
+                    border: "1px solid #D1FAE5", 
+                    borderRadius: "8px", 
+                    padding: "12px",
+                    marginBottom: "12px"
+                  }}>
+                    <p style={{ fontSize: "12px", color: "#047857", marginBottom: "8px", fontWeight: 600 }}>Users to be created:</p>
+                    <div style={{ fontSize: "13px", color: "#374151", lineHeight: "1.8" }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+                        <div>• <strong>Forwarding Team:</strong> 6 users</div>
+                        <div>• <strong>Brokerage Team:</strong> 6 users</div>
+                        <div>• <strong>Trucking Team:</strong> 6 users</div>
+                        <div>• <strong>Marine Insurance Team:</strong> 6 users</div>
+                        <div>• <strong>Others Team:</strong> 6 users</div>
+                        <div>• <strong>BD/Pricing/Exec:</strong> 5 users</div>
+                      </div>
+                      <div style={{ marginTop: "8px", paddingTop: "8px", borderTop: "1px solid #E5E7EB", fontWeight: 600 }}>
+                        Total: 35 users (1 Manager, 2 Supervisors, 3 Handlers per service type)
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <button
+                    onClick={handleSeedUsers}
+                    disabled={isSeedingUsers}
+                    style={{
+                      height: "36px",
+                      padding: "0 20px",
+                      borderRadius: "8px",
+                      background: isSeedingUsers ? "#F3F4F6" : "#0F766E",
+                      border: "none",
+                      color: isSeedingUsers ? "#9CA3AF" : "#FFFFFF",
+                      fontSize: "13px",
+                      fontWeight: 600,
+                      cursor: isSeedingUsers ? "not-allowed" : "pointer",
+                      transition: "all 150ms ease",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px"
+                    }}
+                  >
+                    <RefreshCw className={`w-4 h-4 ${isSeedingUsers ? 'animate-spin' : ''}`} />
+                    {isSeedingUsers ? "Seeding..." : "Seed All Users"}
                   </button>
                 </div>
               </div>

@@ -122,24 +122,36 @@ export function autofillBrokerageFromProject(project: Project) {
   const serviceDetails = extractServiceDetails(project, "Brokerage");
   
   return {
-    // From Project
+    // From Project - Basic Info
     projectNumber: project.project_number,
     customerName: project.customer_name,
     quotationReferenceNumber: project.quotation_number,
     
     // From Service Details (if available)
     ...(serviceDetails && {
-      customsEntryType: (serviceDetails as any).type_of_entry || "",
-      commodityDescription: (serviceDetails as any).commodity || project.commodity || "",
-      deliveryAddress: (serviceDetails as any).delivery_address || "",
+      // Brokerage Type from subtype
+      brokerageType: (serviceDetails as any).subtype || (serviceDetails as any).brokerage_type || "",
+      
+      // General fields from Quotation Builder
+      customsEntryType: (serviceDetails as any).type_of_entry || (serviceDetails as any).typeOfEntry || "",
+      commodityDescription: (serviceDetails as any).commodity_description || (serviceDetails as any).commodity || project.commodity || "",
+      deliveryAddress: (serviceDetails as any).delivery_address || (serviceDetails as any).deliveryAddress || "",
       shipmentOrigin: (serviceDetails as any).pod || project.pod_aod || "",
-      // For All Inclusive mode
-      preferentialTreatment: (serviceDetails as any).preferential_treatment || "",
+      
+      // NEW: Shipment details from Quotation Builder
+      pod: (serviceDetails as any).pod || "",
+      mode: (serviceDetails as any).mode || "",
+      cargoType: (serviceDetails as any).cargo_type || (serviceDetails as any).cargoType || "",
+      
+      // All-Inclusive specific fields
+      countryOfOrigin: (serviceDetails as any).country_of_origin || (serviceDetails as any).countryOfOrigin || "",
+      preferentialTreatment: (serviceDetails as any).preferential_treatment || (serviceDetails as any).preferentialTreatment || "",
     }),
     
-    // Fallback to project level
+    // Fallback to project level (if no service details)
     ...(!serviceDetails && {
       commodityDescription: project.commodity || "",
+      shipmentOrigin: project.pod_aod || "",
     }),
   };
 }

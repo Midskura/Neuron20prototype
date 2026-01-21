@@ -1,14 +1,18 @@
 import { useState, useEffect } from "react";
 import { Plus } from "lucide-react";
 import type { Billing } from "../../../types/operations";
-import { CreateBillingModal } from "./CreateBillingModal";
+import { AddRequestForPaymentPanel } from "../../accounting/AddRequestForPaymentPanel";
 import { projectId, publicAnonKey } from "../../../utils/supabase/info";
 import { toast } from "../../ui/toast-utils";
 
 interface BillingsTabProps {
   bookingId: string;
-  bookingType: "forwarding" | "brokerage" | "trucking" | "marine-insurance" | "others";
+  bookingType?: "forwarding" | "brokerage" | "trucking" | "marine-insurance" | "others";
+  currentUserId?: string;
+  currentUserName?: string;
+  currentUserDepartment?: string;
   currentUser?: { name: string; email: string; department: string } | null;
+  readOnly?: boolean;
 }
 
 const API_URL = `https://${projectId}.supabase.co/functions/v1/make-server-c142e950`;
@@ -19,7 +23,7 @@ const STATUS_COLORS = {
   "Paid": "bg-emerald-50 text-emerald-700 border-emerald-300",
 };
 
-export function BillingsTab({ bookingId, bookingType, currentUser }: BillingsTabProps) {
+export function BillingsTab({ bookingId, bookingType, currentUser, currentUserId, currentUserName, currentUserDepartment, readOnly = false }: BillingsTabProps) {
   const [billings, setBillings] = useState<Billing[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -78,13 +82,15 @@ export function BillingsTab({ bookingId, bookingType, currentUser }: BillingsTab
             <div>
               <h3 className="text-[#12332B] mb-2">Billings</h3>
             </div>
-            <button
-              onClick={() => setShowCreateModal(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-[#0F766E] text-white rounded-lg hover:bg-[#0F766E]/90 transition-colors"
-            >
-              <Plus className="w-4 h-4" />
-              Add Billing
-            </button>
+            {!readOnly && (
+              <button
+                onClick={() => setShowCreateModal(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-[#0F766E] text-white rounded-lg hover:bg-[#0F766E]/90 transition-colors"
+              >
+                <Plus className="w-4 h-4" />
+                Add Billing
+              </button>
+            )}
           </div>
 
           {/* Table */}
@@ -95,12 +101,14 @@ export function BillingsTab({ bookingId, bookingType, currentUser }: BillingsTab
           ) : billings.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-64 border border-[#12332B]/10 rounded-lg">
               <div className="text-[#12332B]/60 mb-2">No billings yet</div>
-              <button
-                onClick={() => setShowCreateModal(true)}
-                className="text-[#0F766E] hover:underline"
-              >
-                Add your first billing
-              </button>
+              {!readOnly && (
+                <button
+                  onClick={() => setShowCreateModal(true)}
+                  className="text-[#0F766E] hover:underline"
+                >
+                  Add your first billing
+                </button>
+              )}
             </div>
           ) : (
             <div className="border border-[#12332B]/10 rounded-lg overflow-hidden">
@@ -163,11 +171,14 @@ export function BillingsTab({ bookingId, bookingType, currentUser }: BillingsTab
       </div>
 
       {showCreateModal && (
-        <CreateBillingModal
+        <AddRequestForPaymentPanel
+          context="billing"
+          isOpen={showCreateModal}
+          onClose={() => setShowCreateModal(false)}
+          onSave={handleBillingCreated}
+          defaultRequestor={currentUser?.name || currentUserName || "Current User"}
           bookingId={bookingId}
           bookingType={bookingType}
-          onClose={() => setShowCreateModal(false)}
-          onBillingCreated={handleBillingCreated}
         />
       )}
     </>

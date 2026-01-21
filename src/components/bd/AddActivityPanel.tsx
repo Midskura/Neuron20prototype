@@ -1,7 +1,7 @@
-import { X, Upload } from "lucide-react";
+import { X, Upload, Phone, Mail, Users, MessageSquare, Send, MessageCircle, Linkedin, StickyNote } from "lucide-react";
 import { useState, useEffect } from "react";
 import type { Activity, ActivityType } from "../../types/bd";
-import { SimpleDropdown } from "./SimpleDropdown";
+import { CustomDropdown } from "./CustomDropdown";
 import { projectId, publicAnonKey } from "../../utils/supabase/info";
 
 const API_URL = `https://${projectId}.supabase.co/functions/v1/make-server-c142e950`;
@@ -19,6 +19,8 @@ interface BackendContact {
   customer_id: string;
   email: string;
   phone: string;
+  first_name: string;
+  last_name: string;
 }
 
 interface BackendCustomer {
@@ -177,18 +179,18 @@ export function AddActivityPanel({ isOpen, onClose, onSave }: AddActivityPanelPr
               <label className="block text-[11px] font-medium uppercase tracking-wide mb-2" style={{ color: "#667085" }}>
                 Activity Type *
               </label>
-              <SimpleDropdown
+              <CustomDropdown
                 options={[
-                  "Call Logged",
-                  "Email Logged",
-                  "Meeting Logged",
-                  "Marketing Email Logged",
-                  "SMS Logged",
-                  "Viber Logged",
-                  "WeChat Logged",
-                  "WhatsApp Logged",
-                  "LinkedIn Logged",
-                  "Note"
+                  { value: "Call Logged", label: "Call Logged", icon: <Phone size={16} /> },
+                  { value: "Email Logged", label: "Email Logged", icon: <Mail size={16} /> },
+                  { value: "Meeting Logged", label: "Meeting Logged", icon: <Users size={16} /> },
+                  { value: "Marketing Email Logged", label: "Marketing Email Logged", icon: <MessageSquare size={16} /> },
+                  { value: "SMS Logged", label: "SMS Logged", icon: <Send size={16} /> },
+                  { value: "Viber Logged", label: "Viber Logged", icon: <MessageCircle size={16} /> },
+                  { value: "WeChat Logged", label: "WeChat Logged", icon: <MessageCircle size={16} /> },
+                  { value: "WhatsApp Logged", label: "WhatsApp Logged", icon: <MessageCircle size={16} /> },
+                  { value: "LinkedIn Logged", label: "LinkedIn Logged", icon: <Linkedin size={16} /> },
+                  { value: "Note", label: "Note", icon: <StickyNote size={16} /> }
                 ]}
                 value={activityData.type || "Call Logged"}
                 onChange={(value) => setActivityData({ ...activityData, type: value as ActivityType })}
@@ -245,7 +247,7 @@ export function AddActivityPanel({ isOpen, onClose, onSave }: AddActivityPanelPr
               <label className="block text-[11px] font-medium uppercase tracking-wide mb-2" style={{ color: "#667085" }}>
                 Related Customer (Optional)
               </label>
-              <SimpleDropdown
+              <CustomDropdown
                 value={activityData.customer_id || ""}
                 onChange={(value) => setActivityData({ ...activityData, customer_id: value || null, contact_id: null })}
                 options={[
@@ -264,7 +266,7 @@ export function AddActivityPanel({ isOpen, onClose, onSave }: AddActivityPanelPr
                 Related Contact (Optional)
               </label>
               <div style={{ opacity: activityData.customer_id ? 1 : 0.6, pointerEvents: activityData.customer_id ? 'auto' : 'none' }}>
-                <SimpleDropdown
+                <CustomDropdown
                   value={activityData.contact_id || ""}
                   onChange={(value) => setActivityData({ ...activityData, contact_id: value || null })}
                   options={[
@@ -272,7 +274,7 @@ export function AddActivityPanel({ isOpen, onClose, onSave }: AddActivityPanelPr
                     ...(activityData.customer_id && contactsByCustomer[activityData.customer_id]
                       ? contactsByCustomer[activityData.customer_id].map(contact => ({
                           value: contact.id,
-                          label: contact.name + (contact.title ? ` - ${contact.title}` : '') // ✅ Use 'name' and 'title' fields
+                          label: `${contact.first_name || ''} ${contact.last_name || ''}`.trim() + (contact.title ? ` - ${contact.title}` : '')
                         }))
                       : [])
                   ]}

@@ -1,9 +1,10 @@
 import { ArrowLeft, Edit3, FileText, Calendar, Ticket, CheckCircle, FolderPlus } from "lucide-react";
 import { useState } from "react";
-import type { QuotationNew } from "../../types/pricing";
+import type { QuotationNew, Project } from "../../types/pricing";
 import { QuotationActionMenu } from "./QuotationActionMenu";
 import { StatusChangeButton } from "./StatusChangeButton";
 import { CreateProjectModal } from "../bd/CreateProjectModal";
+import { CreateBookingsFromProjectModal } from "./CreateBookingsFromProjectModal";
 import { 
   BrokerageServiceDisplay, 
   ForwardingServiceDisplay, 
@@ -13,6 +14,7 @@ import {
 } from "./ServiceDetailsDisplay";
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { toast } from "../ui/toast-utils";
+import { CommentsTab } from "../shared/CommentsTab";
 
 interface QuotationFileViewProps {
   quotation: QuotationNew;
@@ -29,9 +31,19 @@ interface QuotationFileViewProps {
 
 const API_URL = `https://${projectId}.supabase.co/functions/v1/make-server-c142e950`;
 
+type TabType = "details" | "comments";
+
 export function QuotationFileView({ quotation, onBack, onEdit, userDepartment, onAcceptQuotation, onDelete, onUpdate, onCreateTicket, onConvertToProject, currentUser }: QuotationFileViewProps) {
+  const [activeTab, setActiveTab] = useState<TabType>("details");
   const [showCreateProjectModal, setShowCreateProjectModal] = useState(false);
   const [isCreatingProject, setIsCreatingProject] = useState(false);
+  const [showCreateBookingsModal, setShowCreateBookingsModal] = useState(false);
+  const [createdProject, setCreatedProject] = useState<Project | null>(null);
+  
+  // TODO: Replace with actual user data from context/auth
+  const currentUserId = currentUser?.id || "user-123";
+  const currentUserName = currentUser?.name || "John Doe";
+  const currentUserDepartment = currentUser?.department || userDepartment || "BD";
   
   // Check if pricing information should be visible
   // Visible if: user is PD, OR status indicates quotation has been priced
@@ -176,9 +188,18 @@ export function QuotationFileView({ quotation, onBack, onEdit, userDepartment, o
       // Show success message
       toast.success(`✓ Project ${project.project_number} created successfully!`);
 
-      // Navigate to the created project
-      if (onConvertToProject) {
-        onConvertToProject(project.id);
+      // Store created project
+      setCreatedProject(project);
+
+      // Different behavior for PD vs BD users
+      if (userDepartment === "PD") {
+        // PD users: Open booking creation modal
+        setShowCreateBookingsModal(true);
+      } else {
+        // BD users: Navigate to project (existing behavior)
+        if (onConvertToProject) {
+          onConvertToProject(project.id);
+        }
       }
 
     } catch (error) {
@@ -276,8 +297,8 @@ export function QuotationFileView({ quotation, onBack, onEdit, userDepartment, o
             </button>
           )}
 
-          {/* Create Project - BD Only, Accepted by Client Status */}
-          {userDepartment === "BD" && quotation.status === "Accepted by Client" && !quotation.project_id && (
+          {/* Create Project - BD and PD, Accepted by Client Status */}
+          {(userDepartment === "BD" || userDepartment === "PD") && quotation.status === "Accepted by Client" && !quotation.project_id && (
             <button
               onClick={handleAcceptAndCreateProject}
               disabled={isCreatingProject}
@@ -377,11 +398,55 @@ export function QuotationFileView({ quotation, onBack, onEdit, userDepartment, o
         </div>
       </div>
 
+      {/* Tab Navigation */}
+      <div style={{ padding: "0 48px", borderBottom: "1px solid var(--neuron-ui-border)" }}>
+        <div style={{ display: "flex", gap: "24px" }}>
+          <button
+            onClick={() => setActiveTab("details")}
+            style={{
+              padding: "12px 4px",
+              fontSize: "14px",
+              fontWeight: 500,
+              color: activeTab === "details" ? "#0F766E" : "var(--neuron-ink-muted)",
+              background: "none",
+              borderTop: "none",
+              borderLeft: "none",
+              borderRight: "none",
+              borderBottom: activeTab === "details" ? "2px solid #0F766E" : "2px solid transparent",
+              cursor: "pointer",
+              transition: "all 0.2s",
+            }}
+          >
+            Details
+          </button>
+          <button
+            onClick={() => setActiveTab("comments")}
+            style={{
+              padding: "12px 4px",
+              fontSize: "14px",
+              fontWeight: 500,
+              color: activeTab === "comments" ? "#0F766E" : "var(--neuron-ink-muted)",
+              background: "none",
+              borderTop: "none",
+              borderLeft: "none",
+              borderRight: "none",
+              borderBottom: activeTab === "comments" ? "2px solid #0F766E" : "2px solid transparent",
+              cursor: "pointer",
+              transition: "all 0.2s",
+            }}
+          >
+            Comments
+          </button>
+        </div>
+      </div>
+
       {/* Main Content Area */}
       <div style={{ 
         flex: 1,
         overflow: "auto"
       }}>
+        {activeTab === "details" ? (
+        <div>
         {/* Form Sections (Scrollable) */}
         <div style={{ 
           padding: "32px 48px",
@@ -1077,6 +1142,17 @@ export function QuotationFileView({ quotation, onBack, onEdit, userDepartment, o
             </div>
           )}
         </div>
+        </div>
+        ) : (
+        <div style={{ height: "100%" }}>
+          <CommentsTab
+            inquiryId={quotation.id}
+            currentUserId={currentUserId}
+            currentUserName={currentUserName}
+            currentUserDepartment={currentUserDepartment}
+          />
+        </div>
+        )}
       </div>
 
       {/* Create Project Modal */}
@@ -1086,6 +1162,25 @@ export function QuotationFileView({ quotation, onBack, onEdit, userDepartment, o
           onClose={() => setShowCreateProjectModal(false)}
           onSuccess={handleProjectCreationSuccess}
           currentUser={currentUser}
+        />
+      )}
+
+      {/* Create Bookings Modal */}
+      {showCreateBookingsModal && createdProject && currentUser && (
+        <CreateBookingsFromProjectModal
+          isOpen={showCreateBookingsModal}
+          onClose={() => {
+            setShowCreateBookingsModal(false);
+            setCreatedProject(null);
+          }}
+          project={createdProject}
+          currentUser={currentUser}
+          onSuccess={() => {
+            setShowCreateBookingsModal(false);
+            setCreatedProject(null);
+            // Optionally refresh quotation view
+            onUpdate(quotation);
+          }}
         />
       )}
     </div>

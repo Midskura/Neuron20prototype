@@ -93,7 +93,8 @@ export function ContactPersonAutocomplete({
   }, []);
 
   const handleSelect = (contact: Contact) => {
-    onChange(contact.name, contact.id);
+    const fullName = `${contact.first_name || ''} ${contact.last_name || ''}`.trim();
+    onChange(fullName, contact.id);
     setIsOpen(false);
     setSearchQuery("");
     setHighlightedIndex(0);
@@ -316,7 +317,7 @@ export function ContactPersonAutocomplete({
                     color: "var(--neuron-ink-primary)",
                   }}
                 >
-                  {contact.name}
+                  {`${contact.first_name || ''} ${contact.last_name || ''}`.trim()}
                 </div>
               </div>
             ))}

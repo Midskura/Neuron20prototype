@@ -28,7 +28,7 @@ import { ExpenseCategoriesDrawer } from "./accounting-v6/ExpenseCategoriesDrawer
 import { BillingFileView } from "./accounting-v6/BillingFileView";
 import { CollectionFileView } from "./accounting-v6/CollectionFileView";
 import { ExpenseFileView } from "./accounting-v6/ExpenseFileView";
-import { EVouchersList } from "./accounting/EVouchersList";
+import { EVouchersContent } from "./accounting/EVouchersContent";
 
 type TabType = "Billings" | "Collections" | "Expenses" | "E-Vouchers";
 type StatusType = "All" | "Draft" | "Posted" | "Paid" | "Unpaid" | "Partial" | "Fully Applied" | "Partially Applied" | "Unapplied";
@@ -916,7 +916,7 @@ export default function AccountingV8() {
               )}
 
               {activeTab === "E-Vouchers" && (
-                <EVouchersList />
+                <EVouchersContent />
               )}
             </div>
           </div>

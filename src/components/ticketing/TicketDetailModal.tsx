@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { X, Send, ExternalLink, FileText, Building2, AlertCircle, MessageCircle, Clock, User, Activity } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import { useUser } from "../../hooks/useUser";
 import { projectId, publicAnonKey } from "../../utils/supabase/info";
 import { toast } from "sonner@2.0.3";

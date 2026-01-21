@@ -431,7 +431,7 @@ Structured data capture:
 
 ```
 AddInquiryPanel.tsx
-├─ Uses: SimpleDropdown (for dropdowns)
+├─ Uses: CustomDropdown with icons (for dropdowns)
 ├─ Imports service form components:
 │  ├─ BrokerageFormV2
 │  ├─ ForwardingFormV2

@@ -91,6 +91,7 @@ export interface Customer {
   credit_terms?: string;
   phone?: string;
   email?: string;
+  notes?: string | null;
   created_by?: string;
   created_at: string;
   updated_at: string;
@@ -137,6 +138,7 @@ export interface Activity {
   task_id: string | null;
   user_id: string;
   created_at: string;
+  updated_at?: string;
 }
 
 export interface Inquiry {

@@ -1,8 +1,8 @@
-import { ArrowLeft, Mail, Phone, Building2, User, Edit, Trash2, Paperclip, Download, FileText, Image as ImageIcon, File, Upload, CheckCircle2, AlertCircle, MessageSquare, Send, Plus } from "lucide-react";
+import { ArrowLeft, Mail, Phone, Building2, User, Edit, Trash2, Paperclip, Download, FileText, Image as ImageIcon, File, Upload, CheckCircle2, AlertCircle, MessageSquare, Send, Plus, Users, MessageCircle, Linkedin, StickyNote, Flag, CheckSquare } from "lucide-react";
 import { useState, useEffect } from "react";
 import type { Contact, LifecycleStage, LeadStatus, Task, Activity, Customer } from "../../types/bd";
 import type { QuotationNew } from "../../types/pricing";
-import { SimpleDropdown } from "./SimpleDropdown";
+import { CustomDropdown } from "./CustomDropdown";
 import { projectId, publicAnonKey } from "../../utils/supabase/info";
 
 const API_URL = `https://${projectId}.supabase.co/functions/v1/make-server-c142e950`;
@@ -179,12 +179,24 @@ export function ContactDetail({ contact, onBack, onCreateInquiry }: ContactDetai
         headers: { Authorization: `Bearer ${publicAnonKey}` },
         cache: 'no-store',
       });
+      
+      if (!response.ok) {
+        console.error(`HTTP error fetching activities! status: ${response.status}`);
+        setActivities([]);
+        return;
+      }
+      
       const result = await response.json();
       if (result.success) {
         setActivities(result.data);
+      } else {
+        console.error("Failed to fetch activities:", result.error);
+        setActivities([]);
       }
     } catch (error) {
       console.error("Error fetching activities:", error);
+      // Silently fail - set empty array
+      setActivities([]);
     }
   };
 
@@ -718,7 +730,7 @@ export function ContactDetail({ contact, onBack, onCreateInquiry }: ContactDetai
                     </span>
                   </div>
                   {isEditing ? (
-                    <SimpleDropdown
+                    <CustomDropdown
                       value={editedContact.lifecycle_stage}
                       onChange={(value) => setEditedContact({ ...editedContact, lifecycle_stage: value as LifecycleStage })}
                       options={[
@@ -746,7 +758,7 @@ export function ContactDetail({ contact, onBack, onCreateInquiry }: ContactDetai
                     </span>
                   </div>
                   {isEditing ? (
-                    <SimpleDropdown
+                    <CustomDropdown
                       value={editedContact.lead_status}
                       onChange={(value) => setEditedContact({ ...editedContact, lead_status: value as LeadStatus })}
                       options={[
@@ -1009,8 +1021,19 @@ export function ContactDetail({ contact, onBack, onCreateInquiry }: ContactDetai
                                   Type *
                                 </span>
                               </div>
-                              <SimpleDropdown
-                                options={["Call", "Email", "Meeting", "SMS", "Viber", "WhatsApp", "WeChat", "LinkedIn", "Note", "Marketing Email"]}
+                              <CustomDropdown
+                                options={[
+                                  { value: "Call", label: "Call", icon: <Phone size={16} /> },
+                                  { value: "Email", label: "Email", icon: <Mail size={16} /> },
+                                  { value: "Meeting", label: "Meeting", icon: <Users size={16} /> },
+                                  { value: "SMS", label: "SMS", icon: <Send size={16} /> },
+                                  { value: "Viber", label: "Viber", icon: <MessageCircle size={16} /> },
+                                  { value: "WhatsApp", label: "WhatsApp", icon: <MessageSquare size={16} /> },
+                                  { value: "WeChat", label: "WeChat", icon: <MessageSquare size={16} /> },
+                                  { value: "LinkedIn", label: "LinkedIn", icon: <Linkedin size={16} /> },
+                                  { value: "Note", label: "Note", icon: <StickyNote size={16} /> },
+                                  { value: "Marketing Email", label: "Marketing Email", icon: <MessageSquare size={16} /> }
+                                ]}
                                 value={newActivity.type || "Call"}
                                 onChange={(value) => setNewActivity({ ...newActivity, type: value })}
                               />
@@ -1586,8 +1609,19 @@ export function ContactDetail({ contact, onBack, onCreateInquiry }: ContactDetai
                                   Type *
                                 </span>
                               </div>
-                              <SimpleDropdown
-                                options={["Call", "Email", "Meeting", "SMS", "Viber", "WhatsApp", "WeChat", "LinkedIn", "To-do", "Marketing Email"]}
+                              <CustomDropdown
+                                options={[
+                                  { value: "Call", label: "Call", icon: <Phone size={16} /> },
+                                  { value: "Email", label: "Email", icon: <Mail size={16} /> },
+                                  { value: "Meeting", label: "Meeting", icon: <Users size={16} /> },
+                                  { value: "SMS", label: "SMS", icon: <Send size={16} /> },
+                                  { value: "Viber", label: "Viber", icon: <MessageCircle size={16} /> },
+                                  { value: "WhatsApp", label: "WhatsApp", icon: <MessageSquare size={16} /> },
+                                  { value: "WeChat", label: "WeChat", icon: <MessageSquare size={16} /> },
+                                  { value: "LinkedIn", label: "LinkedIn", icon: <Linkedin size={16} /> },
+                                  { value: "To-do", label: "To-do", icon: <CheckSquare size={16} /> },
+                                  { value: "Marketing Email", label: "Marketing Email", icon: <MessageSquare size={16} /> }
+                                ]}
                                 value={newTask.type || "Call"}
                                 onChange={(value) => setNewTask({ ...newTask, type: value })}
                               />
@@ -1641,8 +1675,12 @@ export function ContactDetail({ contact, onBack, onCreateInquiry }: ContactDetai
                                   Priority *
                                 </span>
                               </div>
-                              <SimpleDropdown
-                                options={["High", "Medium", "Low"]}
+                              <CustomDropdown
+                                options={[
+                                  { value: "High", label: "High", icon: <Flag size={16} style={{ color: "#EF4444" }} /> },
+                                  { value: "Medium", label: "Medium", icon: <Flag size={16} style={{ color: "#F59E0B" }} /> },
+                                  { value: "Low", label: "Low", icon: <Flag size={16} style={{ color: "#10B981" }} /> }
+                                ]}
                                 value={newTask.priority || "Medium"}
                                 onChange={(value) => setNewTask({ ...newTask, priority: value as "High" | "Medium" | "Low" })}
                               />
@@ -1920,20 +1958,20 @@ export function ContactDetail({ contact, onBack, onCreateInquiry }: ContactDetai
                               </span>
                             </div>
                             {isEditingTask && editedTask ? (
-                              <SimpleDropdown
+                              <CustomDropdown
                                 value={editedTask.type}
                                 onChange={(value) => setEditedTask({ ...editedTask, type: value as any })}
                                 options={[
-                                  { value: "To-do", label: "To-do" },
-                                  { value: "Call", label: "Call" },
-                                  { value: "Email", label: "Email" },
-                                  { value: "Marketing Email", label: "Marketing Email" },
-                                  { value: "Meeting", label: "Meeting" },
-                                  { value: "SMS", label: "SMS" },
-                                  { value: "Viber", label: "Viber" },
-                                  { value: "WeChat", label: "WeChat" },
-                                  { value: "WhatsApp", label: "WhatsApp" },
-                                  { value: "LinkedIn", label: "LinkedIn" }
+                                  { value: "To-do", label: "To-do", icon: <CheckSquare size={16} /> },
+                                  { value: "Call", label: "Call", icon: <Phone size={16} /> },
+                                  { value: "Email", label: "Email", icon: <Mail size={16} /> },
+                                  { value: "Marketing Email", label: "Marketing Email", icon: <MessageSquare size={16} /> },
+                                  { value: "Meeting", label: "Meeting", icon: <Users size={16} /> },
+                                  { value: "SMS", label: "SMS", icon: <Send size={16} /> },
+                                  { value: "Viber", label: "Viber", icon: <MessageCircle size={16} /> },
+                                  { value: "WeChat", label: "WeChat", icon: <MessageSquare size={16} /> },
+                                  { value: "WhatsApp", label: "WhatsApp", icon: <MessageSquare size={16} /> },
+                                  { value: "LinkedIn", label: "LinkedIn", icon: <Linkedin size={16} /> }
                                 ]}
                               />
                             ) : (
@@ -2023,13 +2061,13 @@ export function ContactDetail({ contact, onBack, onCreateInquiry }: ContactDetai
                               </span>
                             </div>
                             {isEditingTask && editedTask ? (
-                              <SimpleDropdown
+                              <CustomDropdown
                                 value={editedTask.priority}
                                 onChange={(value) => setEditedTask({ ...editedTask, priority: value as any })}
                                 options={[
-                                  { value: "Low", label: "Low" },
-                                  { value: "Medium", label: "Medium" },
-                                  { value: "High", label: "High" }
+                                  { value: "Low", label: "Low", icon: <Flag size={16} style={{ color: "#10B981" }} /> },
+                                  { value: "Medium", label: "Medium", icon: <Flag size={16} style={{ color: "#F59E0B" }} /> },
+                                  { value: "High", label: "High", icon: <Flag size={16} style={{ color: "#EF4444" }} /> }
                                 ]}
                               />
                             ) : (

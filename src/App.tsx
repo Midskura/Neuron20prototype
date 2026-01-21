@@ -1,95 +1,65 @@
 import { useState } from "react";
-import { HashRouter as BrowserRouter, Routes, Route, Navigate, useNavigate, useParams, useSearchParams, useLocation } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation, useParams, useSearchParams } from "react-router";
 import { Layout } from "./components/Layout";
 import { ExecutiveDashboard } from "./components/ExecutiveDashboard";
 import { BusinessDevelopment } from "./components/BusinessDevelopment";
 import { Pricing } from "./components/Pricing";
 import { Operations } from "./components/Operations";
-import { Bookings } from "./components/Bookings";
-import { CreateBooking } from "./components/CreateBooking";
-import { BookingFullView } from "./components/BookingFullView";
-import { Accounting } from "./components/Accounting";
+import { ProjectsModule } from "./components/projects/ProjectsModule";
+import { Accounting } from "./components/accounting/Accounting";
 import { HR } from "./components/HR";
-import { EmployeeProfile } from "./components/EmployeeProfile";
-import { Admin } from "./components/Admin";
-import { TicketTestingDashboard } from "./components/TicketTestingDashboard";
 import { InboxPage } from "./components/InboxPage";
 import { TicketQueuePage } from "./components/TicketQueuePage";
 import { ActivityLogPage } from "./components/ActivityLogPage";
-import { ProjectsList } from "./components/operations/ProjectsList";
-import { ProjectsModule } from "./components/projects/ProjectsModule";
+import { EmployeeProfile } from "./components/EmployeeProfile";
+import { Admin } from "./components/Admin";
+import { TicketTestingDashboard } from "./components/TicketTestingDashboard";
+import { ReportControlCenter } from "./components/bd/reports/ReportControlCenter";
+import { CreateBooking } from "./components/operations/CreateBooking";
+import { BookingFullView } from "./components/operations/BookingFullView";
 import { TruckingBookings } from "./components/operations/TruckingBookings";
 import { BrokerageBookings } from "./components/operations/BrokerageBookings";
 import { MarineInsuranceBookings } from "./components/operations/MarineInsuranceBookings";
 import { OthersBookings } from "./components/operations/OthersBookings";
-import { ForwardingBookings } from "./components/operations/forwarding/ForwardingBookings";
 import { OperationsReports } from "./components/operations/OperationsReports";
+import { DiagnosticsPage } from "./components/DiagnosticsPage";
+import { UserProvider, useUser } from "./hooks/useUser";
+import { toast, Toaster } from "sonner@2.0.3";
 import type { Customer } from "./types/bd";
 import logoImage from "figma:asset/28c84ed117b026fbf800de0882eb478561f37f4f.png";
-import { Toaster } from "sonner@2.0.3";
-import { toast } from "sonner@2.0.3";
-import { UserProvider, useUser } from "./hooks/useUser";
+import { DesignSystemGuide } from "./components/DesignSystemGuide";
 
 function LoginPage() {
-  const { login } = useUser();
+  const { setUser } = useUser();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [selectedUser, setSelectedUser] = useState("executive");
-
-  const testUsers = {
-    executive: {
-      id: "user-executive-001",
-      email: "ana.garcia@neuron.ph",
-      name: "Ana Garcia",
-      department: "Executive" as const,
-      role: "manager" as const,
-    },
-    bd: {
-      id: "user-bd-rep-001",
-      email: "bd.rep@neuron.ph",
-      name: "Maria Santos",
-      department: "Business Development" as const,
-      role: "rep" as const,
-    },
-    operations: {
-      id: "user-ops-rep-001",
-      email: "ops.rep@neuron.ph",
-      name: "Carlos Mendoza",
-      department: "Operations" as const,
-      role: "rep" as const,
-    },
-    pricing: {
-      id: "user-pricing-rep-001",
-      email: "pricing.rep@neuron.ph",
-      name: "Luis Rodriguez",
-      department: "Pricing" as const,
-      role: "rep" as const,
-    }
-  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     
-    // DEV MODE: Log in as selected test user
+    // Default user - always log in as Executive for demo purposes
+    // User can change their role in Settings using the account overrider
     const mockUser = {
-      ...testUsers[selectedUser as keyof typeof testUsers],
+      id: "user-executive-001",
+      email: email || "user@neuron.ph",
+      name: "Ana Garcia",
+      department: "Executive" as const,
+      role: "manager" as const,
       created_at: new Date().toISOString(),
       is_active: true
     };
     
-    // Store user directly (bypass server call)
-    localStorage.setItem('neuron_user', JSON.stringify(mockUser));
-    
     // Small delay to simulate loading
     await new Promise(resolve => setTimeout(resolve, 500));
     
+    // Store user in localStorage AND update state directly (no reload needed)
+    localStorage.setItem('neuron_user', JSON.stringify(mockUser));
+    setUser(mockUser);
+    
     setIsLoading(false);
     toast.success('Welcome to Neuron OS!');
-    
-    // Force reload to trigger auth state update
-    window.location.reload();
   };
 
   const isDisabled = !email || !password || isLoading;
@@ -111,25 +81,6 @@ function LoginPage() {
 
         {/* Login Form */}
         <form onSubmit={handleLogin} className="space-y-4">
-          {/* User Selection (Dev Mode) */}
-          <div className="space-y-1.5">
-            <label htmlFor="user" className="block text-[#0a1d4d] font-['Inter:Medium',sans-serif] font-medium">
-              Select Test User
-            </label>
-            <select
-              id="user"
-              value={selectedUser}
-              onChange={(e) => setSelectedUser(e.target.value)}
-              className="w-full px-3.5 py-2.5 rounded-lg border border-gray-200 bg-gray-50 font-['Inter:Regular',sans-serif] text-[#0a1d4d] focus:outline-none focus:border-[#2f7f6f] focus:bg-white transition-all"
-              disabled={isLoading}
-            >
-              <option value="executive">Ana Garcia (Executive)</option>
-              <option value="bd">Maria Santos (Business Development)</option>
-              <option value="operations">Carlos Mendoza (Operations)</option>
-              <option value="pricing">Luis Rodriguez (Pricing)</option>
-            </select>
-          </div>
-
           {/* Email Field */}
           <div className="space-y-1.5">
             <label htmlFor="email" className="block text-[#0a1d4d] font-['Inter:Medium',sans-serif] font-medium">
@@ -154,7 +105,7 @@ function LoginPage() {
               </label>
               <button 
                 type="button"
-                className="text-[#2f7f6f] hover:underline transition-all"
+                className="text-[#2f7f6f] hover:underline transition-all text-sm"
               >
                 Forgot?
               </button>
@@ -180,26 +131,9 @@ function LoginPage() {
           </button>
         </form>
 
-        {/* Dev Mode Notice */}
-        <div className="mt-6 p-4 bg-teal-50 rounded-lg border border-teal-200">
-          <div className="flex items-start gap-2">
-            <div className="flex-shrink-0 mt-0.5">
-              <svg className="w-5 h-5 text-teal-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-            <div>
-              <p className="text-sm font-medium text-teal-900 mb-1">🔓 Dev Mode Active</p>
-              <p className="text-xs text-teal-700">
-                <strong>Select a test user above</strong>, then enter any email/password to log in
-              </p>
-            </div>
-          </div>
-        </div>
-
         {/* Footer */}
         <div className="mt-8 text-center">
-          <p className="text-gray-400">
+          <p className="text-gray-400 text-sm">
             © 2025 Neuron. All rights reserved.
           </p>
         </div>
@@ -229,9 +163,9 @@ function RouteWrapper({ children, page }: { children: React.ReactNode; page: str
     if (path.startsWith("/pricing/contacts")) return "pricing-contacts";
     if (path.startsWith("/pricing/customers")) return "pricing-customers";
     if (path.startsWith("/pricing/quotations")) return "pricing-quotations";
+    if (path.startsWith("/pricing/projects")) return "pricing-projects";
     if (path.startsWith("/pricing/vendors")) return "pricing-vendors";
     if (path.startsWith("/pricing/reports")) return "pricing-reports";
-    if (path.startsWith("/operations/projects")) return "ops-projects";
     if (path.startsWith("/operations/forwarding")) return "ops-forwarding";
     if (path.startsWith("/operations/brokerage")) return "ops-brokerage";
     if (path.startsWith("/operations/trucking")) return "ops-trucking";
@@ -254,6 +188,7 @@ function RouteWrapper({ children, page }: { children: React.ReactNode; page: str
     if (path.startsWith("/profile")) return "profile";
     if (path.startsWith("/admin")) return "admin";
     if (path.startsWith("/tickets")) return "ticket-testing";
+    if (path.startsWith("/design-system")) return "design-system";
     return "dashboard";
   };
 
@@ -273,10 +208,10 @@ function RouteWrapper({ children, page }: { children: React.ReactNode; page: str
       "pricing-contacts": "/pricing/contacts",
       "pricing-customers": "/pricing/customers",
       "pricing-quotations": "/pricing/quotations",
+      "pricing-projects": "/pricing/projects",
       "pricing-vendors": "/pricing/vendors",
       "pricing-reports": "/pricing/reports",
       "operations": "/operations",
-      "ops-projects": "/operations/projects",
       "ops-forwarding": "/operations/forwarding",
       "ops-brokerage": "/operations/brokerage",
       "ops-trucking": "/operations/trucking",
@@ -296,7 +231,8 @@ function RouteWrapper({ children, page }: { children: React.ReactNode; page: str
       "activity-log": "/activity-log",
       "profile": "/profile",
       "admin": "/admin",
-      "ticket-testing": "/tickets"
+      "ticket-testing": "/tickets",
+      "design-system": "/design-system"
     };
     
     const route = routeMap[page] || "/dashboard";
@@ -436,9 +372,16 @@ function BDBudgetRequestsPage() {
 }
 
 function BDReportsPage() {
+  const navigate = useNavigate();
+  
+  const handleBack = () => {
+    // For now, just refresh or stay on reports
+    // In future, this could navigate to a reports list view
+  };
+  
   return (
     <RouteWrapper page="bd-reports">
-      <BusinessDevelopment view="reports" />
+      <ReportControlCenter onBack={handleBack} />
     </RouteWrapper>
   );
 }
@@ -535,6 +478,30 @@ function PricingQuotationsPage() {
   );
 }
 
+function PricingProjectsPage() {
+  const { user } = useUser();
+  const navigate = useNavigate();
+  
+  const handleCreateTicket = (entity: { type: string; id: string; name: string }) => {
+    const params = new URLSearchParams({
+      entityType: entity.type,
+      entityId: entity.id,
+      entityName: entity.name,
+      entityStatus: ''
+    });
+    navigate(`/tickets?${params.toString()}`);
+  };
+  
+  return (
+    <RouteWrapper page="pricing-projects">
+      <ProjectsModule 
+        currentUser={user || undefined}
+        onCreateTicket={handleCreateTicket}
+      />
+    </RouteWrapper>
+  );
+}
+
 function PricingVendorsPage() {
   const { user } = useUser();
   return (
@@ -593,15 +560,12 @@ function OperationsProjectsPage() {
 
 function ForwardingBookingsPage() {
   const { user } = useUser();
-  const [selectedBooking, setSelectedBooking] = useState<any>(null);
   
   return (
     <RouteWrapper page="ops-forwarding">
       <Operations 
         view="forwarding"
         currentUser={user}
-        selectedBooking={selectedBooking}
-        onSelectBooking={setSelectedBooking}
       />
     </RouteWrapper>
   );
@@ -824,6 +788,14 @@ function TicketsPage() {
   );
 }
 
+function DesignSystemPage() {
+  return (
+    <RouteWrapper page="design-system">
+      <DesignSystemGuide />
+    </RouteWrapper>
+  );
+}
+
 function AppContent() {
   const { isAuthenticated, isLoading } = useUser();
 
@@ -878,6 +850,7 @@ function AppContent() {
         <Route path="/pricing/customers" element={<PricingCustomersPage />} />
         <Route path="/pricing/quotations" element={<PricingQuotationsPage />} />
         <Route path="/pricing/quotations/:inquiryId" element={<PricingQuotationsPage />} />
+        <Route path="/pricing/projects" element={<PricingProjectsPage />} />
         <Route path="/pricing/vendors" element={<PricingVendorsPage />} />
         <Route path="/pricing/reports" element={<PricingReportsPage />} />
         
@@ -885,7 +858,6 @@ function AppContent() {
         <Route path="/operations" element={<OperationsPage />} />
         <Route path="/operations/create" element={<CreateBookingPage />} />
         <Route path="/operations/:bookingId" element={<BookingDetailPage />} />
-        <Route path="/operations/projects" element={<OperationsProjectsPage />} />
         <Route path="/operations/forwarding" element={<ForwardingBookingsPage />} />
         <Route path="/operations/trucking" element={<RouteWrapper page="ops-trucking"><TruckingBookings /></RouteWrapper>} />
         <Route path="/operations/brokerage" element={<RouteWrapper page="ops-brokerage"><BrokerageBookings /></RouteWrapper>} />
@@ -910,6 +882,10 @@ function AppContent() {
         <Route path="/profile" element={<ProfilePage />} />
         <Route path="/admin" element={<AdminPage />} />
         <Route path="/tickets" element={<TicketsPage />} />
+        <Route path="/design-system" element={<DesignSystemPage />} />
+        
+        {/* Diagnostics (hidden utility page) */}
+        <Route path="/diagnostics" element={<DiagnosticsPage />} />
         
         {/* 404 fallback */}
         <Route path="*" element={<Navigate to="/dashboard" replace />} />

@@ -44,6 +44,7 @@ export function AddCustomerPanel({ isOpen, onClose, onSave }: AddCustomerPanelPr
     status: "Prospect" as CustomerStatus,
     lead_source: "",
     owner_id: "",
+    notes: "",
   });
 
   const [users, setUsers] = useState<BackendUser[]>([]);
@@ -97,6 +98,7 @@ export function AddCustomerPanel({ isOpen, onClose, onSave }: AddCustomerPanelPr
       status: "Prospect",
       lead_source: "",
       owner_id: "",
+      notes: "",
     });
   };
 
@@ -114,6 +116,7 @@ export function AddCustomerPanel({ isOpen, onClose, onSave }: AddCustomerPanelPr
       status: "Prospect",
       lead_source: "",
       owner_id: "",
+      notes: "",
     });
   };
 
@@ -347,6 +350,30 @@ export function AddCustomerPanel({ isOpen, onClose, onSave }: AddCustomerPanelPr
                     ]}
                     placeholder="Assign to..."
                     required
+                  />
+                </div>
+
+                {/* Notes */}
+                <div>
+                  <label
+                    htmlFor="notes"
+                    className="block mb-1.5"
+                    style={{ fontSize: "13px", fontWeight: 500, color: "#12332B" }}
+                  >
+                    Notes
+                  </label>
+                  <textarea
+                    id="notes"
+                    value={formData.notes}
+                    onChange={(e) => handleChange("notes", e.target.value)}
+                    placeholder="Additional information about the customer..."
+                    rows={3}
+                    className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px] resize-none"
+                    style={{
+                      border: "1px solid var(--neuron-ui-border)",
+                      backgroundColor: "#FFFFFF",
+                      color: "var(--neuron-ink-primary)",
+                    }}
                   />
                 </div>
               </div>

@@ -2,14 +2,32 @@ import { X, Printer, Download, CheckCircle2, XCircle, Clock, AlertCircle } from 
 import logoImage from "figma:asset/28c84ed117b026fbf800de0882eb478561f37f4f.png";
 import { PhilippinePeso } from "../icons/PhilippinePeso";
 import type { EVoucher } from "../../types/evoucher";
+import { useState } from "react";
+import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { toast } from "../ui/toast-utils";
+
+const API_URL = `https://${projectId}.supabase.co/functions/v1/make-server-c142e950`;
 
 interface BudgetRequestDetailPanelProps {
   request: EVoucher | null;
   isOpen: boolean;
   onClose: () => void;
+  currentUser?: { id: string; name: string; email: string; role?: string; department?: string };
+  onStatusChange?: () => void;
+  showAccountingControls?: boolean;
 }
 
-export function BudgetRequestDetailPanel({ request, isOpen, onClose }: BudgetRequestDetailPanelProps) {
+export function BudgetRequestDetailPanel({ 
+  request, 
+  isOpen, 
+  onClose, 
+  currentUser,
+  onStatusChange,
+  showAccountingControls = false
+}: BudgetRequestDetailPanelProps) {
+  const [isApproving, setIsApproving] = useState(false);
+  const [isPosting, setIsPosting] = useState(false);
+
   if (!isOpen || !request) return null;
 
   const getStatusColor = (status: string) => {
@@ -36,6 +54,82 @@ export function BudgetRequestDetailPanel({ request, isOpen, onClose }: BudgetReq
   const approvedBy = request.approvers && request.approvers.length > 0 
     ? request.approvers[request.approvers.length - 1]
     : null;
+
+  // Check if user is accounting staff and can approve/post
+  // Matches approval access logic: Accounting department OR Executive department OR Finance Manager role
+  const isAccountingStaff = 
+    currentUser?.department === "Accounting" || 
+    currentUser?.department === "Executive" ||
+    currentUser?.role === "Finance Manager" || 
+    currentUser?.role === "Accountant";
+  const canApprove = showAccountingControls && isAccountingStaff && (request.status === "Submitted" || request.status === "Draft" || request.status === "pending");
+  const canPostToLedger = showAccountingControls && isAccountingStaff && request.status === "Approved" && !request.posted_to_ledger;
+
+  const handleApprove = async () => {
+    if (!canApprove) return;
+    
+    setIsApproving(true);
+    try {
+      const response = await fetch(`${API_URL}/evouchers/${request.id}/approve`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${publicAnonKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          user_id: currentUser?.id,
+          user_name: currentUser?.name,
+          user_role: currentUser?.role,
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to approve E-Voucher');
+      }
+
+      toast.success('E-Voucher approved successfully');
+      onStatusChange?.();
+      onClose();
+    } catch (error) {
+      console.error('Error approving E-Voucher:', error);
+      toast.error('Failed to approve E-Voucher');
+    } finally {
+      setIsApproving(false);
+    }
+  };
+
+  const handlePostToLedger = async () => {
+    if (!canPostToLedger) return;
+    
+    setIsPosting(true);
+    try {
+      const response = await fetch(`${API_URL}/evouchers/${request.id}/post-to-ledger`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${publicAnonKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          user_id: currentUser?.id,
+          user_name: currentUser?.name,
+          user_role: currentUser?.role,
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to post to ledger');
+      }
+
+      toast.success('E-Voucher posted to ledger successfully');
+      onStatusChange?.();
+      onClose();
+    } catch (error) {
+      console.error('Error posting to ledger:', error);
+      toast.error('Failed to post to ledger');
+    } finally {
+      setIsPosting(false);
+    }
+  };
 
   return (
     <>
@@ -99,6 +193,88 @@ export function BudgetRequestDetailPanel({ request, isOpen, onClose }: BudgetReq
             </button>
           </div>
         </div>
+
+        {/* Action Control Bar for Accounting Staff */}
+        {showAccountingControls && (canApprove || canPostToLedger) && (
+          <div
+            style={{
+              padding: "16px 48px",
+              borderBottom: "1px solid var(--neuron-ui-border)",
+              backgroundColor: "#F9FAFB",
+              display: "flex",
+              gap: "12px",
+              alignItems: "center",
+            }}
+          >
+            <div style={{ flex: 1 }}>
+              <p style={{ fontSize: "13px", fontWeight: 500, color: "#374151" }}>
+                Accounting Controls
+              </p>
+              <p style={{ fontSize: "12px", color: "#667085" }}>
+                {canApprove && "Review and approve this E-Voucher"}
+                {canPostToLedger && "Post this approved E-Voucher to the general ledger"}
+              </p>
+            </div>
+            {canApprove && (
+              <button
+                onClick={handleApprove}
+                disabled={isApproving}
+                style={{
+                  padding: "10px 20px",
+                  borderRadius: "8px",
+                  border: "none",
+                  backgroundColor: isApproving ? "#9CA3AF" : "#0F766E",
+                  color: "#FFFFFF",
+                  fontSize: "14px",
+                  fontWeight: 500,
+                  cursor: isApproving ? "not-allowed" : "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  transition: "all 0.2s",
+                }}
+                onMouseEnter={(e) => {
+                  if (!isApproving) e.currentTarget.style.backgroundColor = "#0D6560";
+                }}
+                onMouseLeave={(e) => {
+                  if (!isApproving) e.currentTarget.style.backgroundColor = "#0F766E";
+                }}
+              >
+                <CheckCircle2 size={16} />
+                {isApproving ? "Approving..." : "Approve E-Voucher"}
+              </button>
+            )}
+            {canPostToLedger && (
+              <button
+                onClick={handlePostToLedger}
+                disabled={isPosting}
+                style={{
+                  padding: "10px 20px",
+                  borderRadius: "8px",
+                  border: "none",
+                  backgroundColor: isPosting ? "#9CA3AF" : "#0F766E",
+                  color: "#FFFFFF",
+                  fontSize: "14px",
+                  fontWeight: 500,
+                  cursor: isPosting ? "not-allowed" : "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  transition: "all 0.2s",
+                }}
+                onMouseEnter={(e) => {
+                  if (!isPosting) e.currentTarget.style.backgroundColor = "#0D6560";
+                }}
+                onMouseLeave={(e) => {
+                  if (!isPosting) e.currentTarget.style.backgroundColor = "#0F766E";
+                }}
+              >
+                <CheckCircle2 size={16} />
+                {isPosting ? "Posting..." : "Post to Ledger"}
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Form Content - Scrollable */}
         <div style={{ flex: 1, overflowY: "auto", padding: "32px 48px" }}>
@@ -713,6 +889,31 @@ export function BudgetRequestDetailPanel({ request, isOpen, onClose }: BudgetReq
             gap: "12px"
           }}
         >
+          {request.status === "Under Review" && currentUser?.role === "Approver" && (
+            <button
+              onClick={handleApprove}
+              style={{
+                padding: "10px 24px",
+                backgroundColor: "#0F766E",
+                color: "#FFFFFF",
+                border: "none",
+                borderRadius: "8px",
+                cursor: "pointer",
+                fontSize: "14px",
+                fontWeight: 500,
+                transition: "all 0.2s",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = "#0F766E";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = "#0F766E";
+              }}
+              disabled={isApproving}
+            >
+              {isApproving ? 'Approving...' : 'Approve'}
+            </button>
+          )}
           <button
             onClick={onClose}
             style={{

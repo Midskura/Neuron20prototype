@@ -3,6 +3,7 @@ import { ArrowLeft, MoreVertical, Lock, Edit3, Clock, ChevronRight } from "lucid
 import type { MarineInsuranceBooking, ExecutionStatus } from "../../types/operations";
 import { BillingsTab } from "./shared/BillingsTab";
 import { ExpensesTab } from "./shared/ExpensesTab";
+import { BookingCommentsTab } from "../shared/BookingCommentsTab";
 
 interface MarineInsuranceBookingDetailsProps {
   booking: MarineInsuranceBooking;
@@ -11,7 +12,7 @@ interface MarineInsuranceBookingDetailsProps {
   currentUser?: { name: string; email: string; department: string } | null;
 }
 
-type DetailTab = "booking-info" | "billings" | "expenses";
+type DetailTab = "booking-info" | "billings" | "expenses" | "comments";
 
 const STATUS_COLORS: Record<ExecutionStatus, string> = {
   "Draft": "bg-gray-100 text-gray-700 border-gray-300",
@@ -45,29 +46,9 @@ const initialActivityLog: ActivityLogEntry[] = [
   },
 ];
 
+// NOTE: All fields are now editable regardless of status since changes are tracked in activity log
 function isFieldLocked(fieldName: string, status: ExecutionStatus): { locked: boolean; reason: string } {
-  if (status === "Completed") {
-    const operationalFields = [
-      "accountHandler", "policyNumber", "insuranceCompany", "insuredValue",
-      "commodityDescription", "hsCode", "aol", "pol", "aod", "pod"
-    ];
-    
-    if (operationalFields.includes(fieldName)) {
-      return { locked: true, reason: "This field is locked because the booking is Completed" };
-    }
-  }
-
-  if (status === "Cancelled") {
-    return { locked: true, reason: "This field is locked because the booking is Cancelled" };
-  }
-
-  if (status === "In Progress") {
-    const routingFields = ["aol", "pol", "aod", "pod", "insuranceCompany"];
-    if (routingFields.includes(fieldName)) {
-      return { locked: true, reason: "This field is locked because the booking is In Progress" };
-    }
-  }
-
+  // All fields are editable - changes will be tracked in the activity log
   return { locked: false, reason: "" };
 }
 
@@ -293,6 +274,23 @@ export function MarineInsuranceBookingDetails({
         >
           Expenses
         </button>
+        <button
+          onClick={() => setActiveTab("comments")}
+          style={{
+            padding: "16px 0",
+            background: "none",
+            border: "none",
+            borderBottom: activeTab === "comments" ? "2px solid #0F766E" : "2px solid transparent",
+            color: activeTab === "comments" ? "#0F766E" : "#667085",
+            fontSize: "14px",
+            fontWeight: 600,
+            cursor: "pointer",
+            transition: "all 0.2s ease",
+            marginBottom: "-1px"
+          }}
+        >
+          Comments
+        </button>
       </div>
 
       {/* Content with Timeline Sidebar */}
@@ -326,6 +324,14 @@ export function MarineInsuranceBookingDetails({
               bookingId={booking.bookingId}
               bookingType="marine-insurance"
               currentUser={currentUser}
+            />
+          )}
+          {activeTab === "comments" && (
+            <BookingCommentsTab
+              bookingId={booking.bookingId}
+              currentUserId={currentUser?.email || "unknown"}
+              currentUserName={currentUser?.name || "Unknown User"}
+              currentUserDepartment={currentUser?.department || "Operations"}
             />
           )}
         </div>
@@ -703,18 +709,7 @@ function EditableField({
             className="edit-icon"
           />
         )}
-        {saveSuccess && (
-          <span style={{
-            position: "absolute",
-            right: "14px",
-            top: "50%",
-            transform: "translateY(-50%)",
-            fontSize: "12px",
-            color: "#10B981"
-          }}>
-            ✓ Saved
-          </span>
-        )}
+        {/* Removed "✓ Saved" indicator */}
       </div>
       <style>{`
         div:hover .edit-icon {

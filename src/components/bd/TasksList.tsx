@@ -336,7 +336,7 @@ export function TasksList({ onViewTask }: TasksListProps) {
           </div>
 
           <CustomDropdown
-            label="TYPE"
+            label=""
             value={typeFilter}
             onChange={(value) => setTypeFilter(value as TaskType | "All")}
             options={[
@@ -355,7 +355,7 @@ export function TasksList({ onViewTask }: TasksListProps) {
           />
 
           <CustomDropdown
-            label="STATUS"
+            label=""
             value={statusFilter}
             onChange={(value) => setStatusFilter(value as TaskStatus | "All")}
             options={[
@@ -367,7 +367,7 @@ export function TasksList({ onViewTask }: TasksListProps) {
           />
 
           <CustomDropdown
-            label="PRIORITY"
+            label=""
             value={priorityFilter}
             onChange={(value) => setPriorityFilter(value as TaskPriority | "All")}
             options={[

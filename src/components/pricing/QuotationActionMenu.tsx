@@ -51,9 +51,9 @@ export function QuotationActionMenu({
 
   const confirmDelete = () => {
     console.log("Deleting quotation:", quotation.quote_number);
-    alert(`🗑️ Quotation ${quotation.quote_number} will be deleted.`);
     onDelete();
     setShowDeleteModal(false);
+    setShowMenu(false);
   };
 
   return (

@@ -76,11 +76,14 @@ export function ProjectsModule({ currentUser, onCreateTicket }: ProjectsModulePr
   };
 
   const handleProjectUpdated = async () => {
+    console.log('🔄 handleProjectUpdated called - Refreshing project data...');
+    
     // Refresh the project data
     await fetchProjects();
     
     // If we're viewing a specific project, update it with fresh data
     if (selectedProject) {
+      console.log(`🔍 Fetching fresh data for project ${selectedProject.project_number}...`);
       try {
         const response = await fetch(`${API_URL}/projects/${selectedProject.id}`, {
           headers: {
@@ -91,21 +94,36 @@ export function ProjectsModule({ currentUser, onCreateTicket }: ProjectsModulePr
         if (response.ok) {
           const result = await response.json();
           if (result.success) {
+            console.log('✅ Successfully refreshed project:', {
+              projectNumber: result.data.project_number,
+              linkedBookingsCount: result.data.linkedBookings?.length || 0,
+              linkedBookings: result.data.linkedBookings,
+              bookingStatus: result.data.booking_status
+            });
             setSelectedProject(result.data);
             console.log('✓ Refreshed selected project with latest data');
           }
+        } else {
+          console.error('Failed to fetch project:', response.status, await response.text());
         }
       } catch (error) {
         console.error('Error refreshing selected project:', error);
       }
+    } else {
+      console.log('ℹ️ No selected project to refresh');
     }
   };
 
-  // ALWAYS show Operations view in the unified Projects module
-  // Department restrictions removed since BD has access to Operations anyway
-  const department = "Operations";
+  // Use the current user's department to determine which tabs to show
+  // BD and Pricing users see: Overview, Specifications, Pricing, Bookings, Activity, Comments
+  // Operations users see: Overview, Services & Bookings, Activity
+  const department = (
+    currentUser?.department === "BD" || 
+    currentUser?.department === "Business Development" ||
+    currentUser?.department === "Pricing"
+  ) ? "BD" : "Operations";
   
-  console.log("ProjectsModule - Unified view always shows Operations tabs (Service Bookings)");
+  console.log("ProjectsModule - Department:", department, "- User:", currentUser?.department);
 
   return (
     <div className="h-full bg-white">

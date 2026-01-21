@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import { projectId, publicAnonKey } from '../utils/supabase/info';
 import { useUser } from '../hooks/useUser';
-import { AlertCircle, CheckCircle2, Send, User, Calendar, Clock, MessageSquare } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Send, User, Calendar, Clock, MessageSquare, CircleDot, Flag } from 'lucide-react';
 import { EntityPickerModal } from './ticketing/EntityPickerModal';
+import { CustomDropdown } from './bd/CustomDropdown';
 
 interface TicketTestingDashboardProps {
   prefilledEntity?: {
@@ -938,39 +939,32 @@ export function TicketTestingDashboard({ prefilledEntity }: TicketTestingDashboa
             
             {/* Filters */}
             <div style={{ display: 'flex', gap: '16px', marginBottom: '24px' }}>
-              <select
-                value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value)}
-                style={{
-                  padding: '8px 12px',
-                  border: '1px solid var(--neuron-ui-border)',
-                  borderRadius: '8px',
-                  background: 'white',
-                  color: 'var(--neuron-ink-primary)'
-                }}
-              >
-                <option value="">All Statuses</option>
-                {statuses.map(s => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
-              </select>
+              <CustomDropdown
+                value={filterStatus || "All Statuses"}
+                onChange={(value) => setFilterStatus(value === "All Statuses" ? "" : value)}
+                options={[
+                  { value: "All Statuses", label: "All Statuses", icon: <CircleDot size={16} /> },
+                  { value: "Open", label: "Open", icon: <CircleDot size={16} style={{ color: "#3B82F6" }} /> },
+                  { value: "Assigned", label: "Assigned", icon: <CircleDot size={16} style={{ color: "#8B5CF6" }} /> },
+                  { value: "In Progress", label: "In Progress", icon: <CircleDot size={16} style={{ color: "#F59E0B" }} /> },
+                  { value: "Waiting on Requester", label: "Waiting on Requester", icon: <CircleDot size={16} style={{ color: "#EF4444" }} /> },
+                  { value: "Resolved", label: "Resolved", icon: <CheckCircle2 size={16} style={{ color: "#10B981" }} /> },
+                  { value: "Closed", label: "Closed", icon: <CheckCircle2 size={16} style={{ color: "#6B7280" }} /> }
+                ]}
+                placeholder="Filter by status"
+              />
               
-              <select
-                value={filterPriority}
-                onChange={(e) => setFilterPriority(e.target.value)}
-                style={{
-                  padding: '8px 12px',
-                  border: '1px solid var(--neuron-ui-border)',
-                  borderRadius: '8px',
-                  background: 'white',
-                  color: 'var(--neuron-ink-primary)'
-                }}
-              >
-                <option value="">All Priorities</option>
-                {priorities.map(p => (
-                  <option key={p} value={p}>{p}</option>
-                ))}
-              </select>
+              <CustomDropdown
+                value={filterPriority || "All Priorities"}
+                onChange={(value) => setFilterPriority(value === "All Priorities" ? "" : value)}
+                options={[
+                  { value: "All Priorities", label: "All Priorities", icon: <Flag size={16} /> },
+                  { value: "Normal", label: "Normal", icon: <Flag size={16} style={{ color: "#10B981" }} /> },
+                  { value: "High", label: "High", icon: <Flag size={16} style={{ color: "#F59E0B" }} /> },
+                  { value: "Urgent", label: "Urgent", icon: <Flag size={16} style={{ color: "#EF4444" }} /> }
+                ]}
+                placeholder="Filter by priority"
+              />
             </div>
             
             {/* Tickets Table */}

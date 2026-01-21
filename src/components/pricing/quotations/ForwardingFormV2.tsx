@@ -1,5 +1,5 @@
-import { Ship, MapPin, Package } from "lucide-react";
-import { SimpleDropdown } from "../../bd/SimpleDropdown";
+import { Ship, MapPin, Package, Plane, Truck, AlertTriangle, CheckCircle2, FileText } from "lucide-react";
+import { CustomDropdown } from "../../bd/CustomDropdown";
 import type { ForwardingDetails, Incoterm, CargoType, Mode } from "../../../types/pricing";
 
 interface ForwardingFormV2Props {
@@ -37,10 +37,20 @@ export function ForwardingFormV2({ data, onChange }: ForwardingFormV2Props) {
           <label style={{ display: "block", fontSize: "11px", fontWeight: 500, color: "#667085", marginBottom: "4px" }}>
             Incoterms *
           </label>
-          <SimpleDropdown
+          <CustomDropdown
             value={data.incoterms || ""}
             onChange={(value) => updateField('incoterms', value as Incoterm)}
-            options={["EXW", "FOB", "CIF", "FCA", "CPT", "CIP", "DAP", "DPU", "DDP"]}
+            options={[
+              { value: "EXW", label: "EXW", icon: <FileText size={16} /> },
+              { value: "FOB", label: "FOB", icon: <FileText size={16} /> },
+              { value: "CIF", label: "CIF", icon: <FileText size={16} /> },
+              { value: "FCA", label: "FCA", icon: <FileText size={16} /> },
+              { value: "CPT", label: "CPT", icon: <FileText size={16} /> },
+              { value: "CIP", label: "CIP", icon: <FileText size={16} /> },
+              { value: "DAP", label: "DAP", icon: <FileText size={16} /> },
+              { value: "DPU", label: "DPU", icon: <FileText size={16} /> },
+              { value: "DDP", label: "DDP", icon: <FileText size={16} /> }
+            ]}
             placeholder="Select incoterms"
           />
         </div>
@@ -50,10 +60,16 @@ export function ForwardingFormV2({ data, onChange }: ForwardingFormV2Props) {
           <label style={{ display: "block", fontSize: "11px", fontWeight: 500, color: "#667085", marginBottom: "4px" }}>
             Cargo Type *
           </label>
-          <SimpleDropdown
+          <CustomDropdown
             value={data.cargo_type || ""}
             onChange={(value) => updateField('cargo_type', value as CargoType)}
-            options={["General", "Perishable", "Hazardous", "Fragile", "High Value"]}
+            options={[
+              { value: "General", label: "General", icon: <Package size={16} /> },
+              { value: "Perishable", label: "Perishable", icon: <AlertTriangle size={16} /> },
+              { value: "Hazardous", label: "Hazardous", icon: <AlertTriangle size={16} style={{ color: "#EF4444" }} /> },
+              { value: "Fragile", label: "Fragile", icon: <AlertTriangle size={16} style={{ color: "#F59E0B" }} /> },
+              { value: "High Value", label: "High Value", icon: <CheckCircle2 size={16} style={{ color: "#10B981" }} /> }
+            ]}
             placeholder="Select cargo type"
           />
         </div>
@@ -63,10 +79,14 @@ export function ForwardingFormV2({ data, onChange }: ForwardingFormV2Props) {
           <label style={{ display: "block", fontSize: "11px", fontWeight: 500, color: "#667085", marginBottom: "4px" }}>
             Mode *
           </label>
-          <SimpleDropdown
+          <CustomDropdown
             value={data.mode || ""}
             onChange={(value) => updateField('mode', value as Mode)}
-            options={["Air", "Ocean", "Land"]}
+            options={[
+              { value: "Air", label: "Air", icon: <Plane size={16} /> },
+              { value: "Ocean", label: "Ocean", icon: <Ship size={16} /> },
+              { value: "Land", label: "Land", icon: <Truck size={16} /> }
+            ]}
             placeholder="Select mode"
           />
         </div>

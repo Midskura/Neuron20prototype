@@ -70,10 +70,10 @@ function CheckboxDisplay({ label, checked }: { label: string; checked: boolean }
 
 // Comprehensive Brokerage Service Display
 export function BrokerageServiceDisplay({ details }: { details: any }) {
-  const showFCL = details.cargoType === "FCL";
-  const showLCL = details.cargoType === "LCL";
+  const showFCL = details.cargo_type === "FCL";
+  const showLCL = details.cargo_type === "LCL";
   const showAir = details.mode === "Air";
-  const isAllInclusive = details.brokerageType === "All-Inclusive";
+  const isAllInclusive = details.subtype === "All-Inclusive";
 
   return (
     <div style={{
@@ -94,15 +94,15 @@ export function BrokerageServiceDisplay({ details }: { details: any }) {
 
       <div style={{ display: "grid", gap: "20px" }}>
         {/* Brokerage Type */}
-        <FieldDisplay label="Brokerage Type" value={details.brokerageType} fullWidth />
+        <FieldDisplay label="Brokerage Type" value={details.subtype} fullWidth />
 
         {/* Type of Entry (for Standard & Non-Regular) */}
-        {details.brokerageType !== "All-Inclusive" && (
-          <FieldDisplay label="Type of Entry" value={details.typeOfEntry} fullWidth />
+        {details.subtype !== "All-Inclusive" && (
+          <FieldDisplay label="Type of Entry" value={details.type_of_entry} fullWidth />
         )}
 
         {/* Checkboxes (for Standard & Non-Regular) */}
-        {details.brokerageType !== "All-Inclusive" && (
+        {details.subtype !== "All-Inclusive" && (
           <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
             <CheckboxDisplay label="Consumption" checked={details.consumption || false} />
             <CheckboxDisplay label="Warehousing" checked={details.warehousing || false} />
@@ -114,42 +114,42 @@ export function BrokerageServiceDisplay({ details }: { details: any }) {
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}>
           <FieldDisplay label="POD" value={details.pod} />
           <FieldDisplay label="Mode" value={details.mode} />
-          <FieldDisplay label="Cargo Type" value={details.cargoType} />
+          <FieldDisplay label="Cargo Type" value={details.cargo_type} />
         </div>
 
         {/* FCL Container Details */}
         {showFCL && (
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}>
-            <FieldDisplay label="FCL Container Type" value={details.fclContainerType} />
-            <FieldDisplay label="FCL Quantity" value={details.fclQty} />
+            <FieldDisplay label="FCL Container Type" value={details.fcl_container_type} />
+            <FieldDisplay label="FCL Quantity" value={details.fcl_qty} />
           </div>
         )}
 
         {/* LCL Details */}
         {showLCL && (
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}>
-            <FieldDisplay label="LCL GWT" value={details.lclGwt} />
-            <FieldDisplay label="LCL Dimensions" value={details.lclDims} />
+            <FieldDisplay label="LCL GWT" value={details.lcl_gwt} />
+            <FieldDisplay label="LCL Dimensions" value={details.lcl_dims} />
           </div>
         )}
 
         {/* Air Details */}
         {showAir && (
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}>
-            <FieldDisplay label="Air GWT" value={details.airGwt} />
-            <FieldDisplay label="Air CWT" value={details.airCwt} />
+            <FieldDisplay label="Air GWT" value={details.air_gwt} />
+            <FieldDisplay label="Air CWT" value={details.air_cwt} />
           </div>
         )}
 
         {/* Full-width fields */}
-        <FieldDisplay label="Commodity Description" value={details.commodityDescription} fullWidth />
-        <FieldDisplay label="Delivery Address" value={details.deliveryAddress} fullWidth />
+        <FieldDisplay label="Commodity Description" value={details.commodity} fullWidth />
+        <FieldDisplay label="Delivery Address" value={details.delivery_address} fullWidth />
 
         {/* All-Inclusive specific fields */}
         {isAllInclusive && (
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}>
-            <FieldDisplay label="Country of Origin" value={details.countryOfOrigin} />
-            <FieldDisplay label="Preferential Treatment" value={details.preferentialTreatment} />
+            <FieldDisplay label="Country of Origin" value={details.country_of_origin} />
+            <FieldDisplay label="Preferential Treatment" value={details.preferential_treatment} />
           </div>
         )}
       </div>
@@ -159,11 +159,15 @@ export function BrokerageServiceDisplay({ details }: { details: any }) {
 
 // Comprehensive Forwarding Service Display
 export function ForwardingServiceDisplay({ details }: { details: any }) {
-  const showFCL = details.mode === "Sea" && details.cargoType === "FCL";
-  const showLCL = details.mode === "Sea" && details.cargoType === "LCL";
+  const showFCL = details.mode === "Sea" && details.cargo_type === "FCL";
+  const showLCL = details.mode === "Sea" && details.cargo_type === "LCL";
   const showAir = details.mode === "Air";
   const showInctermDetails = ["EXW", "FOB", "FCA"].includes(details.incoterms);
   const showCollectionAddress = details.incoterms === "EXW";
+  
+  // Reconstruct compound fields for display
+  const aolPol = details.aol && details.pol ? `${details.aol} → ${details.pol}` : "";
+  const aodPod = details.aod && details.pod ? `${details.aod} → ${details.pod}` : "";
 
   return (
     <div style={{
@@ -187,51 +191,51 @@ export function ForwardingServiceDisplay({ details }: { details: any }) {
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}>
           <FieldDisplay label="Incoterms" value={details.incoterms} />
           <FieldDisplay label="Mode" value={details.mode} />
-          <FieldDisplay label="AOL / POL" value={details.aolPol} />
-          <FieldDisplay label="AOD / POD" value={details.aodPod} />
-          <FieldDisplay label="Cargo Type" value={details.cargoType} />
-          <FieldDisplay label="Cargo Nature" value={details.cargoNature} />
+          <FieldDisplay label="AOL / POL" value={aolPol} />
+          <FieldDisplay label="AOD / POD" value={aodPod} />
+          <FieldDisplay label="Cargo Type" value={details.cargo_type} />
+          <FieldDisplay label="Cargo Nature" value={details.cargo_nature} />
         </div>
 
         {/* FCL Container Details */}
         {showFCL && (
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}>
-            <FieldDisplay label="FCL Container Type" value={details.fclContainerType} />
-            <FieldDisplay label="FCL Quantity" value={details.fclQty} />
+            <FieldDisplay label="FCL Container Type" value={details.fcl_container_type} />
+            <FieldDisplay label="FCL Quantity" value={details.fcl_qty} />
           </div>
         )}
 
         {/* LCL Details */}
         {showLCL && (
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}>
-            <FieldDisplay label="LCL GWT" value={details.lclGwt} />
-            <FieldDisplay label="LCL Dimensions" value={details.lclDims} />
+            <FieldDisplay label="LCL GWT" value={details.lcl_gwt} />
+            <FieldDisplay label="LCL Dimensions" value={details.lcl_dims} />
           </div>
         )}
 
         {/* Air Details */}
         {showAir && (
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}>
-            <FieldDisplay label="Air GWT" value={details.airGwt} />
-            <FieldDisplay label="Air CWT" value={details.airCwt} />
+            <FieldDisplay label="Air GWT" value={details.air_gwt} />
+            <FieldDisplay label="Air CWT" value={details.air_cwt} />
           </div>
         )}
 
         {/* Full-width fields */}
-        <FieldDisplay label="Commodity Description" value={details.commodityDescription} fullWidth />
-        <FieldDisplay label="Delivery Address" value={details.deliveryAddress} fullWidth />
+        <FieldDisplay label="Commodity Description" value={details.commodity} fullWidth />
+        <FieldDisplay label="Delivery Address" value={details.delivery_address} fullWidth />
 
         {/* Collection Address (EXW only) */}
         {showCollectionAddress && (
-          <FieldDisplay label="Collection Address" value={details.collectionAddress} fullWidth />
+          <FieldDisplay label="Collection Address" value={details.collection_address} fullWidth />
         )}
 
         {/* Incoterm-specific details (EXW/FOB/FCA) */}
         {showInctermDetails && (
           <>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}>
-              <FieldDisplay label="Carrier / Airline" value={details.carrierAirline} />
-              <FieldDisplay label="Transit Time" value={details.transitTime} />
+              <FieldDisplay label="Carrier / Airline" value={details.carrier_airline} />
+              <FieldDisplay label="Transit Time" value={details.transit_time} />
             </div>
             <FieldDisplay label="Route" value={details.route} fullWidth />
             <FieldDisplay label="Stackable" value={details.stackable} fullWidth />
@@ -263,12 +267,11 @@ export function TruckingServiceDisplay({ details }: { details: any }) {
 
       <div style={{ display: "grid", gap: "20px" }}>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}>
-          <FieldDisplay label="Truck Type" value={details.truckType} />
-          <FieldDisplay label="Cargo Type" value={details.cargoType} />
+          <FieldDisplay label="Truck Type" value={details.truck_type} />
+          <FieldDisplay label="Pull Out" value={details.pull_out} />
         </div>
-        <FieldDisplay label="Pickup Address" value={details.pickupAddress} fullWidth />
-        <FieldDisplay label="Delivery Address" value={details.deliveryAddress} fullWidth />
-        <FieldDisplay label="Commodity Description" value={details.commodityDescription} fullWidth />
+        <FieldDisplay label="Delivery Address" value={details.delivery_address} fullWidth />
+        <FieldDisplay label="Delivery Instructions" value={details.delivery_instructions} fullWidth />
       </div>
     </div>
   );
@@ -276,6 +279,10 @@ export function TruckingServiceDisplay({ details }: { details: any }) {
 
 // Marine Insurance Service Display
 export function MarineInsuranceServiceDisplay({ details }: { details: any }) {
+  // Reconstruct compound fields for display
+  const aolPol = details.aol && details.pol ? `${details.aol} → ${details.pol}` : "";
+  const aodPod = details.aod && details.pod ? `${details.aod} → ${details.pod}` : "";
+
   return (
     <div style={{
       backgroundColor: "white",
@@ -295,10 +302,12 @@ export function MarineInsuranceServiceDisplay({ details }: { details: any }) {
 
       <div style={{ display: "grid", gap: "20px" }}>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}>
-          <FieldDisplay label="Insurance Type" value={details.insuranceType} />
-          <FieldDisplay label="Coverage Amount" value={details.coverageAmount} />
+          <FieldDisplay label="HS Code" value={details.hs_code} />
+          <FieldDisplay label="Invoice Value" value={details.invoice_value} />
+          <FieldDisplay label="AOL / POL" value={aolPol} />
+          <FieldDisplay label="AOD / POD" value={aodPod} />
         </div>
-        <FieldDisplay label="Commodity Description" value={details.commodityDescription} fullWidth />
+        <FieldDisplay label="Commodity Description" value={details.commodity_description} fullWidth />
       </div>
     </div>
   );
@@ -324,8 +333,7 @@ export function OthersServiceDisplay({ details }: { details: any }) {
       </h2>
 
       <div style={{ display: "grid", gap: "20px" }}>
-        <FieldDisplay label="Service Description" value={details.serviceDescription} fullWidth />
-        <FieldDisplay label="Additional Details" value={details.additionalDetails} fullWidth />
+        <FieldDisplay label="Service Description" value={details.service_description} fullWidth />
       </div>
     </div>
   );

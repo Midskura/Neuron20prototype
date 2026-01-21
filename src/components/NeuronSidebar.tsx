@@ -1,24 +1,14 @@
 import { useState, useEffect } from "react";
 import { 
   Home, 
-  Building2, 
-  UserCircle2, 
-  Mail, 
-  CheckSquare, 
-  Activity, 
-  Wallet, 
-  BarChart, 
-  FileSpreadsheet, 
-  Briefcase, 
-  Globe, 
-  FileText, 
-  Receipt, 
-  Coins, 
-  CreditCard, 
-  BookOpen, 
+  Users, 
+  ShoppingCart, 
   Package, 
-  UserCircle, 
+  FileText, 
+  BarChart3, 
+  User, 
   Calendar, 
+  Activity, 
   Inbox, 
   ChevronDown, 
   ChevronRight, 
@@ -31,12 +21,14 @@ import {
   Truck,
   Container,
   Ship,
-  BaggageClaim
+  Building,
+  Briefcase,
+  Palette
 } from "lucide-react";
 import logoImage from "figma:asset/28c84ed117b026fbf800de0882eb478561f37f4f.png";
 import { useUser } from "../hooks/useUser";
 
-type Page = "dashboard" | "bd-contacts" | "bd-customers" | "bd-inquiries" | "projects" | "bd-projects" | "bd-tasks" | "bd-activities" | "bd-budget-requests" | "bd-reports" | "pricing-contacts" | "pricing-customers" | "pricing-quotations" | "pricing-vendors" | "pricing-reports" | "ops-forwarding" | "ops-brokerage" | "ops-trucking" | "ops-marine-insurance" | "ops-others" | "ops-projects" | "ops-reports" | "operations" | "acct-evouchers" | "acct-billings" | "acct-collections" | "acct-expenses" | "acct-ledger" | "acct-reports" | "hr" | "calendar" | "inbox" | "ticket-queue" | "profile" | "admin" | "ticket-testing" | "activity-log";
+type Page = "dashboard" | "bd-contacts" | "bd-customers" | "bd-inquiries" | "projects" | "bd-projects" | "bd-tasks" | "bd-activities" | "bd-budget-requests" | "bd-reports" | "pricing-contacts" | "pricing-customers" | "pricing-quotations" | "pricing-projects" | "pricing-vendors" | "pricing-reports" | "ops-forwarding" | "ops-brokerage" | "ops-trucking" | "ops-marine-insurance" | "ops-others" | "ops-reports" | "operations" | "acct-evouchers" | "acct-billings" | "acct-collections" | "acct-expenses" | "acct-ledger" | "acct-reports" | "hr" | "calendar" | "inbox" | "ticket-queue" | "profile" | "admin" | "ticket-testing" | "activity-log" | "design-system";
 
 // SVG for Philippine Peso icon
 const Vector = () => (
@@ -144,44 +136,44 @@ export function NeuronSidebar({ currentPage, onNavigate, currentUser }: NeuronSi
   
   // Business Development sub-items
   const bdSubItems = [
-    { id: "bd-contacts" as Page, label: "Contacts", icon: UserCircle2 },
-    { id: "bd-customers" as Page, label: "Customers", icon: Building2 },
-    { id: "bd-inquiries" as Page, label: "Inquiries", icon: Mail },
+    { id: "bd-contacts" as Page, label: "Contacts", icon: User },
+    { id: "bd-customers" as Page, label: "Customers", icon: Building },
+    { id: "bd-inquiries" as Page, label: "Inquiries", icon: ShoppingCart },
     { id: "bd-projects" as Page, label: "Projects", icon: Briefcase },
-    { id: "bd-tasks" as Page, label: "Tasks", icon: CheckSquare },
+    { id: "bd-tasks" as Page, label: "Tasks", icon: Package },
     { id: "bd-activities" as Page, label: "Activities", icon: Activity },
-    { id: "bd-budget-requests" as Page, label: "Budget Requests", icon: Wallet },
-    { id: "bd-reports" as Page, label: "Reports", icon: BarChart },
+    { id: "bd-budget-requests" as Page, label: "Budget Requests", icon: Banknote },
+    { id: "bd-reports" as Page, label: "Reports", icon: BarChart3 },
   ];
 
   // Pricing sub-items
   const pricingSubItems = [
-    { id: "pricing-contacts" as Page, label: "Contacts", icon: UserCircle2 },
-    { id: "pricing-customers" as Page, label: "Customers", icon: Building2 },
-    { id: "pricing-quotations" as Page, label: "Quotations", icon: FileSpreadsheet },
-    { id: "pricing-vendors" as Page, label: "Vendor", icon: Globe },
-    { id: "pricing-reports" as Page, label: "Reports", icon: BarChart },
+    { id: "pricing-contacts" as Page, label: "Contacts", icon: User },
+    { id: "pricing-customers" as Page, label: "Customers", icon: Building },
+    { id: "pricing-quotations" as Page, label: "Quotations", icon: FileText },
+    { id: "pricing-projects" as Page, label: "Projects", icon: Briefcase },
+    { id: "pricing-vendors" as Page, label: "Vendor", icon: Palette },
+    { id: "pricing-reports" as Page, label: "Reports", icon: BarChart3 },
   ];
 
   // Operations sub-items
   const operationsSubItems = [
-    { id: "ops-projects" as Page, label: "Projects", icon: Briefcase },
     { id: "ops-forwarding" as Page, label: "Forwarding", icon: Container },
-    { id: "ops-brokerage" as Page, label: "Brokerage", icon: BaggageClaim },
+    { id: "ops-brokerage" as Page, label: "Brokerage", icon: Palette },
     { id: "ops-trucking" as Page, label: "Trucking", icon: Truck },
     { id: "ops-marine-insurance" as Page, label: "Marine Insurance", icon: Ship },
-    { id: "ops-others" as Page, label: "Others", icon: FileSpreadsheet },
-    { id: "ops-reports" as Page, label: "Reports", icon: BarChart },
+    { id: "ops-others" as Page, label: "Others", icon: FileText },
+    { id: "ops-reports" as Page, label: "Reports", icon: BarChart3 },
   ];
 
   // Accounting sub-items
   const acctSubItems = [
     { id: "acct-evouchers" as Page, label: "E-Vouchers", icon: FileText },
-    { id: "acct-billings" as Page, label: "Billings", icon: Receipt },
-    { id: "acct-collections" as Page, label: "Collections", icon: Coins },
-    { id: "acct-expenses" as Page, label: "Expenses", icon: CreditCard },
-    { id: "acct-ledger" as Page, label: "Client Ledger", icon: BookOpen },
-    { id: "acct-reports" as Page, label: "Reports", icon: BarChart },
+    { id: "acct-billings" as Page, label: "Billings", icon: Banknote },
+    { id: "acct-collections" as Page, label: "Collections", icon: Palette },
+    { id: "acct-expenses" as Page, label: "Expenses", icon: Palette },
+    { id: "acct-ledger" as Page, label: "Client Ledger", icon: Palette },
+    { id: "acct-reports" as Page, label: "Reports", icon: BarChart3 },
   ];
   
   // Check if any BD page is active
@@ -196,13 +188,13 @@ export function NeuronSidebar({ currentPage, onNavigate, currentUser }: NeuronSi
   // Work section (without BD and Accounting, we'll render them separately)
   const workItems = [
     { id: "operations" as Page, label: "Operations", icon: Package },
-    { id: "hr" as Page, label: "HR", icon: UserCircle },
+    { id: "hr" as Page, label: "HR", icon: User },
   ];
   
   // Personal section
   const personalItems = [
     { id: "calendar" as Page, label: "My Calendar", icon: Calendar },
-    { id: "inbox" as Page, label: "My Inbox", icon: Mail },
+    { id: "inbox" as Page, label: "My Inbox", icon: Inbox },
   ];
   
   // Add Ticket Queue for managers/directors only
@@ -216,6 +208,7 @@ export function NeuronSidebar({ currentPage, onNavigate, currentUser }: NeuronSi
   }
 
   const otherItems = [
+    { id: "design-system" as Page, label: "Design System", icon: Palette },
     { id: "admin" as Page, label: "Settings", icon: Settings },
   ];
 
@@ -299,6 +292,9 @@ export function NeuronSidebar({ currentPage, onNavigate, currentUser }: NeuronSi
         width: isCollapsed ? "72px" : "272px",
         backgroundColor: "var(--neuron-bg-elevated)",
         borderRight: "1px solid var(--neuron-ui-border)",
+        // ⚡ PERFORMANCE: GPU acceleration for smooth animations
+        willChange: "width",
+        transform: "translateZ(0)",
       }}
     >
       {/* Header */}
@@ -413,7 +409,7 @@ export function NeuronSidebar({ currentPage, onNavigate, currentUser }: NeuronSi
             {/* BD Sub-items */}
             <div 
               style={{
-                maxHeight: isBDExpanded ? "240px" : "0px",
+                maxHeight: isBDExpanded ? "360px" : "0px",
                 opacity: isBDExpanded ? 1 : 0,
                 overflow: "hidden",
                 transition: "max-height 0.3s ease-in-out, opacity 0.25s ease-in-out",
@@ -508,7 +504,7 @@ export function NeuronSidebar({ currentPage, onNavigate, currentUser }: NeuronSi
               onClick={() => {
                 if (isCollapsed) {
                   // If collapsed, navigate to first Operations item
-                  onNavigate("projects");
+                  onNavigate("ops-forwarding");
                 } else {
                   // If expanded, toggle the dropdown
                   setIsOperationsExpanded(!isOperationsExpanded);
@@ -578,7 +574,7 @@ export function NeuronSidebar({ currentPage, onNavigate, currentUser }: NeuronSi
         
         {/* HR */}
         <div className="space-y-1">
-          {showHR && renderNavButton({ id: "hr" as Page, label: "HR", icon: UserCircle })}
+          {showHR && renderNavButton({ id: "hr" as Page, label: "HR", icon: User })}
         </div>
         
         {/* Accounting with sub-items */}

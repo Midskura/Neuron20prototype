@@ -1,6 +1,7 @@
-import { Search, Plus, FileText, Briefcase, Ship, Shield, Truck, ChevronDown, SlidersHorizontal } from "lucide-react";
+import { Search, Plus, FileText, Briefcase, Ship, Shield, Truck, ChevronDown, SlidersHorizontal, Calendar, CircleDot, Building2 } from "lucide-react";
 import { useState, useRef, useMemo, useEffect } from "react";
 import type { QuotationNew } from "../../types/pricing";
+import { CustomDropdown } from "../bd/CustomDropdown";
 
 // Default column widths
 const DEFAULT_COLUMN_WIDTHS = {
@@ -504,155 +505,106 @@ export function QuotationsListWithFilters({ onViewItem, onCreateQuotation, quota
           </button>
         </div>
 
-        {/* Filters Row 1: Search + Dropdowns */}
+        {/* Search Bar - Full Width */}
+        <div style={{ position: "relative", marginBottom: "12px" }}>
+          <Search
+            size={18}
+            style={{
+              position: "absolute",
+              left: "12px",
+              top: "50%",
+              transform: "translateY(-50%)",
+              color: "#667085",
+            }}
+          />
+          <input
+            type="text"
+            placeholder={searchPlaceholder}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            style={{
+              width: "100%",
+              padding: "10px 12px 10px 40px",
+              border: "1px solid #E5E7EB",
+              borderRadius: "8px",
+              fontSize: "14px",
+              outline: "none",
+              color: "#12332B",
+              backgroundColor: "#FFFFFF",
+            }}
+          />
+        </div>
+
+        {/* Filters Row - All Filters on One Line */}
         <div style={{ 
-          display: "grid", 
-          gridTemplateColumns: "1fr auto auto auto",
-          gap: "12px",
-          marginBottom: "12px"
+          display: "flex",
+          gap: "4px",
+          marginBottom: "20px"
         }}>
-          {/* Search Bar */}
-          <div style={{ position: "relative" }}>
-            <Search 
-              size={18} 
-              style={{ 
-                position: "absolute",
-                left: "12px",
-                top: "50%",
-                transform: "translateY(-50%)",
-                color: "var(--neuron-ink-muted)"
-              }} 
-            />
-            <input
-              type="text"
-              placeholder={searchPlaceholder}
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              style={{
-                width: "100%",
-                padding: "10px 12px 10px 40px",
-                border: "1px solid var(--neuron-ui-border)",
-                borderRadius: "8px",
-                fontSize: "14px",
-                outline: "none",
-                transition: "border-color 0.2s ease"
-              }}
-              onFocus={(e) => {
-                e.currentTarget.style.borderColor = "var(--neuron-brand-green)";
-              }}
-              onBlur={(e) => {
-                e.currentTarget.style.borderColor = "var(--neuron-ui-border)";
-              }}
+          {/* Date Filter */}
+          <div style={{ minWidth: "120px" }}>
+            <CustomDropdown
+              value={dateFilter}
+              onChange={setDateFilter}
+              options={[
+                { value: "All Time", label: "All Time", icon: <Calendar size={16} /> },
+                { value: "Today", label: "Today", icon: <Calendar size={16} /> },
+                { value: "This Week", label: "This Week", icon: <Calendar size={16} /> },
+                { value: "This Month", label: "This Month", icon: <Calendar size={16} /> },
+                { value: "This Quarter", label: "This Quarter", icon: <Calendar size={16} /> }
+              ]}
+              placeholder="Select time period"
             />
           </div>
 
-          {/* Date Filter */}
-          <select
-            value={dateFilter}
-            onChange={(e) => setDateFilter(e.target.value)}
-            style={{
-              padding: "10px 36px 10px 14px",
-              border: "1px solid var(--neuron-ui-border)",
-              borderRadius: "8px",
-              fontSize: "14px",
-              color: "var(--neuron-ink-secondary)",
-              backgroundColor: "white",
-              cursor: "pointer",
-              outline: "none",
-              appearance: "none",
-              backgroundImage: `url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1.5L6 6.5L11 1.5' stroke='%236B7280' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")`,
-              backgroundRepeat: "no-repeat",
-              backgroundPosition: "right 12px center",
-              minWidth: "140px"
-            }}
-          >
-            <option key="date-all">All Time</option>
-            <option key="date-today">Today</option>
-            <option key="date-week">This Week</option>
-            <option key="date-month">This Month</option>
-            <option key="date-quarter">This Quarter</option>
-          </select>
-
           {/* Status Filter */}
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            style={{
-              padding: "10px 36px 10px 14px",
-              border: "1px solid var(--neuron-ui-border)",
-              borderRadius: "8px",
-              fontSize: "14px",
-              color: "var(--neuron-ink-secondary)",
-              backgroundColor: "white",
-              cursor: "pointer",
-              outline: "none",
-              appearance: "none",
-              backgroundImage: `url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1.5L6 6.5L11 1.5' stroke='%236B7280' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")`,
-              backgroundRepeat: "no-repeat",
-              backgroundPosition: "right 12px center",
-              minWidth: "150px"
-            }}
-          >
-            <option key="status-all">All Statuses</option>
-            <option key="status-draft">Draft</option>
-            <option key="status-pending">Pending Pricing</option>
-            <option key="status-quotation">Quotation</option>
-            <option key="status-approved">Approved</option>
-            <option key="status-disapproved">Disapproved</option>
-            <option key="status-cancelled">Cancelled</option>
-          </select>
+          <div style={{ minWidth: "140px" }}>
+            <CustomDropdown
+              value={statusFilter}
+              onChange={setStatusFilter}
+              options={[
+                { value: "All Statuses", label: "All Statuses", icon: <CircleDot size={16} /> },
+                { value: "Draft", label: "Draft", icon: <CircleDot size={16} style={{ color: "#6B7280" }} /> },
+                { value: "Pending Pricing", label: "Pending Pricing", icon: <CircleDot size={16} style={{ color: "#F59E0B" }} /> },
+                { value: "Quotation", label: "Quotation", icon: <CircleDot size={16} style={{ color: "#8B5CF6" }} /> },
+                { value: "Approved", label: "Approved", icon: <CircleDot size={16} style={{ color: "#10B981" }} /> },
+                { value: "Disapproved", label: "Disapproved", icon: <CircleDot size={16} style={{ color: "#EF4444" }} /> },
+                { value: "Cancelled", label: "Cancelled", icon: <CircleDot size={16} style={{ color: "#6B7280" }} /> }
+              ]}
+              placeholder="Select status"
+            />
+          </div>
 
           {/* Service Filter */}
-          <select
-            value={serviceFilter}
-            onChange={(e) => setServiceFilter(e.target.value)}
-            style={{
-              padding: "10px 36px 10px 14px",
-              border: "1px solid var(--neuron-ui-border)",
-              borderRadius: "8px",
-              fontSize: "14px",
-              color: "var(--neuron-ink-secondary)",
-              backgroundColor: "white",
-              cursor: "pointer",
-              outline: "none",
-              appearance: "none",
-              backgroundImage: `url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1.5L6 6.5L11 1.5' stroke='%236B7280' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")`,
-              backgroundRepeat: "no-repeat",
-              backgroundPosition: "right 12px center",
-              minWidth: "150px"
-            }}
-          >
-            {uniqueServices.map((service, index) => (
-              <option key={`service-${index}-${service}`}>{service}</option>
-            ))}
-          </select>
-        </div>
+          <div style={{ minWidth: "140px" }}>
+            <CustomDropdown
+              value={serviceFilter}
+              onChange={setServiceFilter}
+              options={uniqueServices.map(service => {
+                if (service === "All Services") return { value: service, label: service, icon: <Briefcase size={16} /> };
+                if (service === "Brokerage") return { value: service, label: service, icon: <Briefcase size={16} style={{ color: "#0F766E" }} /> };
+                if (service === "Forwarding") return { value: service, label: service, icon: <Ship size={16} style={{ color: "#0F766E" }} /> };
+                if (service === "Marine Insurance") return { value: service, label: service, icon: <Shield size={16} style={{ color: "#0F766E" }} /> };
+                if (service === "Trucking") return { value: service, label: service, icon: <Truck size={16} style={{ color: "#0F766E" }} /> };
+                return { value: service, label: service, icon: <FileText size={16} style={{ color: "#0F766E" }} /> };
+              })}
+              placeholder="Select service"
+            />
+          </div>
 
-        {/* Filters Row 2: Customer Filter */}
-        <div style={{ marginBottom: "20px" }}>
-          <select
-            value={customerFilter}
-            onChange={(e) => setCustomerFilter(e.target.value)}
-            style={{
-              padding: "10px 36px 10px 14px",
-              border: "1px solid var(--neuron-ui-border)",
-              borderRadius: "8px",
-              fontSize: "14px",
-              color: "var(--neuron-ink-secondary)",
-              backgroundColor: "white",
-              cursor: "pointer",
-              outline: "none",
-              appearance: "none",
-              backgroundImage: `url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1.5L6 6.5L11 1.5' stroke='%236B7280' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")`,
-              backgroundRepeat: "no-repeat",
-              backgroundPosition: "right 12px center",
-              minWidth: "200px"
-            }}
-          >
-            {uniqueCustomers.map((customer, index) => (
-              <option key={`customer-${index}-${customer}`}>{customer}</option>
-            ))}
-          </select>
+          {/* Customer Filter */}
+          <div style={{ minWidth: "150px" }}>
+            <CustomDropdown
+              value={customerFilter}
+              onChange={setCustomerFilter}
+              options={uniqueCustomers.map(customer => ({
+                value: customer,
+                label: customer,
+                icon: customer === "All Customers" ? <Building2 size={16} /> : <Building2 size={16} style={{ color: "#0F766E" }} />
+              }))}
+              placeholder="Select customer"
+            />
+          </div>
         </div>
 
         {/* Workflow Tabs */}

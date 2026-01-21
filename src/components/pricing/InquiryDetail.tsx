@@ -1,5 +1,7 @@
 import { ArrowLeft, Building2, User, Mail, Phone, MapPin, Package, FileText, ArrowRight, Calendar } from "lucide-react";
+import { useState } from "react";
 import type { Inquiry } from "../../types/pricing";
+import { CommentsTab } from "../shared/CommentsTab";
 
 interface InquiryDetailProps {
   inquiry: Inquiry;
@@ -7,7 +9,16 @@ interface InquiryDetailProps {
   onConvertToQuotation: (inquiry: Inquiry) => void;
 }
 
+type TabType = "details" | "comments";
+
 export function InquiryDetail({ inquiry, onBack, onConvertToQuotation }: InquiryDetailProps) {
+  const [activeTab, setActiveTab] = useState<TabType>("details");
+
+  // TODO: Replace with actual user data from context/auth
+  const currentUserId = "user-123";
+  const currentUserName = "John Doe";
+  const currentUserDepartment = "BD";
+  
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleDateString('en-US', { 
@@ -110,8 +121,35 @@ export function InquiryDetail({ inquiry, onBack, onConvertToQuotation }: Inquiry
         </div>
       </div>
 
+      {/* Tab Navigation */}
+      <div style={{ padding: "0 48px", borderBottom: "1px solid var(--neuron-ui-border)" }}>
+        <div className="flex gap-6">
+          <button
+            onClick={() => setActiveTab("details")}
+            className="px-4 py-3 text-sm font-medium transition-colors relative"
+            style={{
+              color: activeTab === "details" ? "#0F766E" : "var(--neuron-ink-muted)",
+              borderBottom: activeTab === "details" ? "2px solid #0F766E" : "2px solid transparent",
+            }}
+          >
+            Details
+          </button>
+          <button
+            onClick={() => setActiveTab("comments")}
+            className="px-4 py-3 text-sm font-medium transition-colors relative"
+            style={{
+              color: activeTab === "comments" ? "#0F766E" : "var(--neuron-ink-muted)",
+              borderBottom: activeTab === "comments" ? "2px solid #0F766E" : "2px solid transparent",
+            }}
+          >
+            Comments
+          </button>
+        </div>
+      </div>
+
       {/* Content Section */}
-      <div style={{ padding: "0 48px 48px 48px" }}>
+      <div style={{ padding: "0 48px 48px 48px", flex: 1, overflow: "auto" }}>
+        {activeTab === "details" ? (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left Column - Customer Info */}
           <div className="lg:col-span-1 space-y-6">
@@ -497,6 +535,14 @@ export function InquiryDetail({ inquiry, onBack, onConvertToQuotation }: Inquiry
             </div>
           </div>
         </div>
+        ) : (
+          <CommentsTab 
+            inquiryId={inquiry.id} 
+            currentUserId={currentUserId}
+            currentUserName={currentUserName}
+            currentUserDepartment={currentUserDepartment}
+          />
+        )}
       </div>
     </div>
   );

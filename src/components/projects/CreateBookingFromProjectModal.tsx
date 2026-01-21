@@ -55,6 +55,25 @@ export function CreateBookingFromProjectModal({
     
     try {
       const serviceType = service.service_type;
+      
+      // ==================== VALIDATION: Check for existing booking ====================
+      // Prevent duplicate bookings for the same service type per project
+      if (project.linkedBookings && project.linkedBookings.length > 0) {
+        const existingBooking = project.linkedBookings.find(
+          (b: any) => b.serviceType === serviceType
+        );
+        
+        if (existingBooking) {
+          toast.error(
+            "Booking already exists",
+            `A ${serviceType} booking (${existingBooking.bookingNumber}) has already been created for this project. Only one booking per service type is allowed.`
+          );
+          setIsSubmitting(false);
+          return;
+        }
+      }
+      // ==================== END VALIDATION ====================
+      
       let bookingData: any = {};
       let endpoint = "";
       let bookingIdPrefix = "";
@@ -201,7 +220,7 @@ export function CreateBookingFromProjectModal({
       console.log(`Linking booking to project...`);
       const linkResult = await linkBookingToProject(
         project.id,
-        createdBooking.id,
+        createdBooking.bookingId, // Use bookingId as the ID (all bookings use bookingId as primary key)
         createdBooking.bookingId,
         serviceType,
         createdBooking.status,

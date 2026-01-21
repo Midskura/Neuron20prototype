@@ -21,7 +21,7 @@ export type BrokerageMode = "Standard" | "All Inclusive" | "Non-regular";
 export type BrokerageSubtype = "Import Air" | "Import Ocean" | "Export Air" | "Export Ocean";
 export type Incoterm = "EXW" | "FOB" | "CIF" | "FCA" | "CPT" | "CIP" | "DAP" | "DPU" | "DDP";
 export type TruckType = "10W" | "Closed Van" | "Open Truck" | "Refrigerated" | "Flatbed" | "Wing Van" | "AW" | "DW" | "2W" | "3W" | "4Br";
-export type ChargeCategory = "Freight" | "Origin Local Charges" | "Destination Local Charges" | "Reimbursable Charges" | "Brokerage Charges" | "Other Charges";
+export type ChargeCategory = "Freight Charges" | "Origin Local Charges" | "Destination Local Charges" | "Reimbursable Charges" | "Brokerage Charges" | "Customs Duty & VAT" | "Other Charges";
 export type VendorType = "Overseas Agent" | "Local Agent" | "Subcontractor";
 export type ShipmentType = "FCL" | "LCL" | "Consolidation" | "Break Bulk";
 export type CargoType = "General" | "Perishable" | "Hazardous" | "Fragile" | "High Value";
@@ -84,6 +84,7 @@ export interface OthersDetails {
 export interface InquiryService {
   service_type: ServiceType;
   service_details: BrokerageDetails | ForwardingDetails | TruckingDetails | MarineInsuranceDetails | OthersDetails | Record<string, any>;
+  total_quoted_price?: number; // Optional: Total quoted price for this service
 }
 
 // ============================================
@@ -164,45 +165,55 @@ export interface Quotation {
 // ============================================
 
 export const CHARGE_TYPES: Record<ChargeCategory, string[]> = {
-  "Freight": [
-    "Air Freight",
+  "Freight Charges": [
     "Ocean Freight",
-    "Freight Surcharge",
-    "Fuel Surcharge"
+    "Air Freight",
   ],
   "Origin Local Charges": [
-    "Pick Up",
-    "Handling",
-    "Documentation",
-    "VGM",
-    "Palletization",
-    "Strapping",
-    "Fumigation",
-    "Cold Storage"
+    "Pick up fee",
+    "CFS",
+    "CUS",
+    "DOCS",
+    "Handling Fee",
+    "FE Fee",
+    "THC",
+    "BL Fee",
+    "MBL Surrender Fee",
+    "Seal",
+    "IRF",
+    "Customs Clearance",
+    "Export Customs Fee",
+    "Add Broker",
+    "Gate Permission Receipt",
+    "Special Form A/I, C/O",
   ],
   "Destination Local Charges": [
-    "Brokerage Fee",
-    "Handling",
-    "Arrastre",
-    "Wharfage",
-    "Container Deposit",
-    "Documentation",
-    "Delivery"
+    "Turn Over Fee",
+    "LCL Charges",
+    "Documentation Fee",
+    "THC",
+    "CIC",
+    "CRS",
+    "BL Fee",
+    "Breakbulk Fee (BBF)",
+    "Equipment Examination Charge (EEC)",
+    "Import Release Fee (IRF)",
+    "Empty Control Charge (ECC)",
+    "Peak Season Surcharge (PSS)",
+    "Container Handling Charge (CHC)",
   ],
   "Reimbursable Charges": [
-    "Airway Bill",
-    "Bill of Lading",
-    "Handling Fee",
-    "TEUS",
-    "Porterage",
-    "Container Yard Charges"
+    "Warehouse Charges",
+    "Arrastre & Wharfage Due",
   ],
   "Brokerage Charges": [
-    "Entry",
-    "Clearance",
-    "Permit",
+    "Documentation Fee",
     "Processing Fee",
-    "VAT"
+    "Brokerage Fee",
+    "Handling",
+  ],
+  "Customs Duty & VAT": [
+    "Duties & Taxes",
   ],
   "Other Charges": [
     "Insurance Premium",
@@ -244,6 +255,7 @@ export interface Project {
   quotation_id: string;
   quotation_number: string;
   quotation_name?: string; // ✨ NEW - Inherited from quotation
+  quotation?: QuotationNew; // Full quotation object for reference
   
   // Customer information
   customer_id: string;
@@ -301,6 +313,7 @@ export interface Project {
     status: string;
     createdAt: string;
     createdBy?: string;
+    totalExpenses?: number; // Sum of all expenses for this booking
   }>;
   
   // Ownership

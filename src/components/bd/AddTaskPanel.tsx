@@ -1,7 +1,7 @@
-import { X, Upload } from "lucide-react";
+import { X, Upload, CheckSquare, Phone, Mail, Users, Send, MessageCircle, Linkedin, MessageSquare, Flag, UserCircle } from "lucide-react";
 import { useState, useEffect } from "react";
 import type { Task, TaskType, TaskPriority } from "../../types/bd";
-import { SimpleDropdown } from "./SimpleDropdown";
+import { CustomDropdown } from "./CustomDropdown";
 import { projectId, publicAnonKey } from "../../utils/supabase/info";
 
 const API_URL = `https://${projectId}.supabase.co/functions/v1/make-server-c142e950`;
@@ -19,6 +19,8 @@ interface BackendContact {
   customer_id: string;
   email: string;
   phone: string;
+  first_name: string;
+  last_name: string;
 }
 
 interface BackendCustomer {
@@ -217,8 +219,19 @@ export function AddTaskPanel({ isOpen, onClose, onSave }: AddTaskPanelProps) {
               <label className="block text-[11px] font-medium uppercase tracking-wide mb-2" style={{ color: "#667085" }}>
                 Type *
               </label>
-              <SimpleDropdown
-                options={["To-do", "Call", "Email", "Meeting", "SMS", "Viber", "WhatsApp", "WeChat", "LinkedIn", "Marketing Email"]}
+              <CustomDropdown
+                options={[
+                  { value: "To-do", label: "To-do", icon: <CheckSquare size={16} /> },
+                  { value: "Call", label: "Call", icon: <Phone size={16} /> },
+                  { value: "Email", label: "Email", icon: <Mail size={16} /> },
+                  { value: "Meeting", label: "Meeting", icon: <Users size={16} /> },
+                  { value: "SMS", label: "SMS", icon: <Send size={16} /> },
+                  { value: "Viber", label: "Viber", icon: <MessageCircle size={16} /> },
+                  { value: "WhatsApp", label: "WhatsApp", icon: <MessageSquare size={16} /> },
+                  { value: "WeChat", label: "WeChat", icon: <MessageSquare size={16} /> },
+                  { value: "LinkedIn", label: "LinkedIn", icon: <Linkedin size={16} /> },
+                  { value: "Marketing Email", label: "Marketing Email", icon: <MessageSquare size={16} /> }
+                ]}
                 value={taskData.type || "Call"}
                 onChange={(value) => setTaskData({ ...taskData, type: value as TaskType })}
               />
@@ -248,8 +261,12 @@ export function AddTaskPanel({ isOpen, onClose, onSave }: AddTaskPanelProps) {
               <label className="block text-[11px] font-medium uppercase tracking-wide mb-2" style={{ color: "#667085" }}>
                 Priority *
               </label>
-              <SimpleDropdown
-                options={["Low", "Medium", "High"]}
+              <CustomDropdown
+                options={[
+                  { value: "Low", label: "Low", icon: <Flag size={16} style={{ color: "#10B981" }} /> },
+                  { value: "Medium", label: "Medium", icon: <Flag size={16} style={{ color: "#F59E0B" }} /> },
+                  { value: "High", label: "High", icon: <Flag size={16} style={{ color: "#EF4444" }} /> }
+                ]}
                 value={taskData.priority || "Medium"}
                 onChange={(value) => setTaskData({ ...taskData, priority: value as TaskPriority })}
               />
@@ -260,7 +277,7 @@ export function AddTaskPanel({ isOpen, onClose, onSave }: AddTaskPanelProps) {
               <label className="block text-[11px] font-medium uppercase tracking-wide mb-2" style={{ color: "#667085" }}>
                 Related Customer (Optional)
               </label>
-              <SimpleDropdown
+              <CustomDropdown
                 value={taskData.customer_id || ""}
                 onChange={(value) => setTaskData({ ...taskData, customer_id: value || null, contact_id: null })}
                 options={[
@@ -279,15 +296,16 @@ export function AddTaskPanel({ isOpen, onClose, onSave }: AddTaskPanelProps) {
                 Related Contact (Optional)
               </label>
               <div style={{ opacity: taskData.customer_id ? 1 : 0.6, pointerEvents: taskData.customer_id ? 'auto' : 'none' }}>
-                <SimpleDropdown
+                <CustomDropdown
                   value={taskData.contact_id || ""}
                   onChange={(value) => setTaskData({ ...taskData, contact_id: value || null })}
+                  disabled={!taskData.customer_id}
                   options={[
                     { value: "", label: "Select a contact..." },
                     ...(taskData.customer_id && contactsByCustomer[taskData.customer_id]
                       ? contactsByCustomer[taskData.customer_id].map(contact => ({
                           value: contact.id,
-                          label: `${contact.name} - ${contact.title}`
+                          label: `${contact.first_name || ''} ${contact.last_name || ''}`.trim() + (contact.title ? ` - ${contact.title}` : '')
                         }))
                       : [])
                   ]}
@@ -305,14 +323,15 @@ export function AddTaskPanel({ isOpen, onClose, onSave }: AddTaskPanelProps) {
               <label className="block text-[11px] font-medium uppercase tracking-wide mb-2" style={{ color: "#667085" }}>
                 Assign To (Optional)
               </label>
-              <SimpleDropdown
+              <CustomDropdown
                 value={taskData.assigned_to || ""}
                 onChange={(value) => setTaskData({ ...taskData, assigned_to: value || undefined })}
                 options={[
                   { value: "", label: "Assign to someone..." },
                   ...users.map(user => ({
                     value: user.id,
-                    label: `${user.name} - ${user.role}`
+                    label: `${user.name} - ${user.role}`,
+                    icon: <UserCircle size={16} />
                   }))
                 ]}
               />
