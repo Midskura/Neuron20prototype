@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { X, Upload } from "lucide-react";
 import type { PaymentMethod } from "../../types/evoucher";
 
@@ -14,23 +14,76 @@ interface CreateEVoucherModalProps {
     customer_id?: string;
     customer_name?: string;
   };
+  invoiceData?: {
+    invoice_number: string;
+    amount_due: number;
+    customer_id: string;
+    customer_name: string;
+    project_number: string;
+  };
   context?: "bd" | "accounting"; // Context for UI labels
 }
 
-export function CreateEVoucherModal({ open, onClose, onSubmit, budgetRequestData, context = "accounting" }: CreateEVoucherModalProps) {
+export function CreateEVoucherModal({ open, onClose, onSubmit, budgetRequestData, invoiceData, context = "accounting" }: CreateEVoucherModalProps) {
   const [formData, setFormData] = useState({
-    amount: budgetRequestData?.amount || 0,
-    purpose: budgetRequestData?.purpose || "",
+    transaction_type: "expense",
+    amount: 0,
+    purpose: "",
     description: "",
     vendor_name: "",
     vendor_contact: "",
     project_number: "",
-    customer_id: budgetRequestData?.customer_id || "",
-    customer_name: budgetRequestData?.customer_name || "",
+    customer_id: "",
+    customer_name: "",
+    invoice_number: "",
     credit_terms: "",
     due_date: "",
     payment_method: "" as PaymentMethod | "",
   });
+
+  // Initialize form data when props change
+  useEffect(() => {
+    if (open) {
+      if (budgetRequestData) {
+        setFormData(prev => ({
+          ...prev,
+          transaction_type: "budget_request",
+          amount: budgetRequestData.amount,
+          purpose: budgetRequestData.purpose,
+          customer_id: budgetRequestData.customer_id || "",
+          customer_name: budgetRequestData.customer_name || "",
+        }));
+      } else if (invoiceData) {
+        setFormData(prev => ({
+          ...prev,
+          transaction_type: "collection",
+          amount: invoiceData.amount_due,
+          purpose: `Payment for Invoice ${invoiceData.invoice_number}`,
+          project_number: invoiceData.project_number,
+          customer_id: invoiceData.customer_id,
+          customer_name: invoiceData.customer_name,
+          invoice_number: invoiceData.invoice_number,
+        }));
+      } else {
+        // Reset to default
+        setFormData({
+          transaction_type: "expense",
+          amount: 0,
+          purpose: "",
+          description: "",
+          vendor_name: "",
+          vendor_contact: "",
+          project_number: "",
+          customer_id: "",
+          customer_name: "",
+          invoice_number: "",
+          credit_terms: "",
+          due_date: "",
+          payment_method: "" as PaymentMethod | "",
+        });
+      }
+    }
+  }, [open, budgetRequestData, invoiceData]);
 
   if (!open) return null;
 
@@ -40,23 +93,13 @@ export function CreateEVoucherModal({ open, onClose, onSubmit, budgetRequestData
       ...formData,
       budget_request_id: budgetRequestData?.id,
       budget_request_number: budgetRequestData?.number,
-    });
-    // Reset form
-    setFormData({
-      amount: 0,
-      purpose: "",
-      description: "",
-      vendor_name: "",
-      vendor_contact: "",
-      project_number: "",
-      customer_id: "",
-      customer_name: "",
-      credit_terms: "",
-      due_date: "",
-      payment_method: "" as PaymentMethod | "",
+      // If collection, we pass the invoice number as reference
+      linked_billings: invoiceData ? [{ id: invoiceData.invoice_number, amount: formData.amount }] : undefined
     });
     onClose();
   };
+
+  const isCollection = formData.transaction_type === "collection";
 
   return (
     <div
@@ -97,12 +140,12 @@ export function CreateEVoucherModal({ open, onClose, onSubmit, budgetRequestData
         >
           <div>
             <h2 style={{ fontSize: "24px", fontWeight: 600, color: "#12332B", marginBottom: "4px" }}>
-              {context === "bd" ? "New Budget Request" : "Create New E-Voucher"}
+              {isCollection ? "Record Collection" : context === "bd" ? "New Budget Request" : "Create New E-Voucher"}
             </h2>
             <p style={{ fontSize: "14px", color: "#667085" }}>
-              {context === "bd" 
-                ? "Fill in the request details for approval and payment"
-                : "Fill in the voucher details for approval and payment"}
+              {isCollection 
+                ? "Record payment received for an invoice" 
+                : "Fill in the details for approval and payment"}
             </p>
           </div>
           <button
@@ -135,10 +178,35 @@ export function CreateEVoucherModal({ open, onClose, onSubmit, budgetRequestData
           <div style={{ padding: "32px" }}>
             <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
               
-              {/* Expense Information Section */}
+              {/* Type Selection (Hidden if context is fixed) */}
+              {!invoiceData && !budgetRequestData && (
+                 <div>
+                    <label style={{ display: "block", fontSize: "14px", fontWeight: 500, color: "#374151", marginBottom: "6px" }}>
+                      Transaction Type
+                    </label>
+                    <select
+                      value={formData.transaction_type}
+                      onChange={(e) => setFormData({ ...formData, transaction_type: e.target.value })}
+                      style={{
+                        width: "100%",
+                        padding: "10px 12px",
+                        border: "1px solid var(--neuron-ui-border)",
+                        borderRadius: "8px",
+                        fontSize: "14px",
+                        outline: "none",
+                      }}
+                    >
+                      <option value="expense">Expense</option>
+                      <option value="collection">Collection</option>
+                      <option value="budget_request">Budget Request</option>
+                    </select>
+                 </div>
+              )}
+
+              {/* Amount & Purpose */}
               <div>
                 <h3 style={{ fontSize: "16px", fontWeight: 600, color: "#12332B", marginBottom: "16px" }}>
-                  Expense Information
+                  {isCollection ? "Payment Details" : "Transaction Details"}
                 </h3>
                 <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
                   {/* Amount */}
@@ -174,7 +242,7 @@ export function CreateEVoucherModal({ open, onClose, onSubmit, budgetRequestData
                       required
                       value={formData.purpose}
                       onChange={(e) => setFormData({ ...formData, purpose: e.target.value })}
-                      placeholder="Brief description of expense purpose"
+                      placeholder="Brief description"
                       style={{
                         width: "100%",
                         padding: "10px 12px",
@@ -183,36 +251,14 @@ export function CreateEVoucherModal({ open, onClose, onSubmit, budgetRequestData
                         fontSize: "14px",
                         outline: "none",
                         color: "var(--neuron-ink-primary)",
-                      }}
-                    />
-                  </div>
-
-                  {/* Description */}
-                  <div>
-                    <label style={{ display: "block", fontSize: "14px", fontWeight: 500, color: "#374151", marginBottom: "6px" }}>
-                      Description
-                    </label>
-                    <textarea
-                      value={formData.description}
-                      onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                      placeholder="Additional details..."
-                      rows={3}
-                      style={{
-                        width: "100%",
-                        padding: "10px 12px",
-                        border: "1px solid var(--neuron-ui-border)",
-                        borderRadius: "8px",
-                        fontSize: "14px",
-                        outline: "none",
-                        color: "var(--neuron-ink-primary)",
-                        resize: "vertical",
                       }}
                     />
                   </div>
                 </div>
               </div>
 
-              {/* Vendor Information Section */}
+              {/* Vendor/Payer Information Section */}
+              {!isCollection && (
               <div>
                 <h3 style={{ fontSize: "16px", fontWeight: 600, color: "#12332B", marginBottom: "16px" }}>
                   Vendor/Payee Information
@@ -225,7 +271,7 @@ export function CreateEVoucherModal({ open, onClose, onSubmit, budgetRequestData
                     </label>
                     <input
                       type="text"
-                      required
+                      required={!isCollection}
                       value={formData.vendor_name}
                       onChange={(e) => setFormData({ ...formData, vendor_name: e.target.value })}
                       placeholder="Enter vendor name"
@@ -240,30 +286,9 @@ export function CreateEVoucherModal({ open, onClose, onSubmit, budgetRequestData
                       }}
                     />
                   </div>
-
-                  {/* Vendor Contact */}
-                  <div>
-                    <label style={{ display: "block", fontSize: "14px", fontWeight: 500, color: "#374151", marginBottom: "6px" }}>
-                      Contact Information
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.vendor_contact}
-                      onChange={(e) => setFormData({ ...formData, vendor_contact: e.target.value })}
-                      placeholder="Phone or email"
-                      style={{
-                        width: "100%",
-                        padding: "10px 12px",
-                        border: "1px solid var(--neuron-ui-border)",
-                        borderRadius: "8px",
-                        fontSize: "14px",
-                        outline: "none",
-                        color: "var(--neuron-ink-primary)",
-                      }}
-                    />
-                  </div>
                 </div>
               </div>
+              )}
 
               {/* Linking & Payment Terms Section */}
               <div>
@@ -271,6 +296,7 @@ export function CreateEVoucherModal({ open, onClose, onSubmit, budgetRequestData
                   Linking & Payment Terms
                 </h3>
                 <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                  
                   {/* Project Number */}
                   <div>
                     <label style={{ display: "block", fontSize: "14px", fontWeight: 500, color: "#374151", marginBottom: "6px" }}>
@@ -281,6 +307,7 @@ export function CreateEVoucherModal({ open, onClose, onSubmit, budgetRequestData
                       value={formData.project_number}
                       onChange={(e) => setFormData({ ...formData, project_number: e.target.value })}
                       placeholder="e.g., BK-2024-1234"
+                      disabled={!!invoiceData}
                       style={{
                         width: "100%",
                         padding: "10px 12px",
@@ -289,6 +316,7 @@ export function CreateEVoucherModal({ open, onClose, onSubmit, budgetRequestData
                         fontSize: "14px",
                         outline: "none",
                         color: "var(--neuron-ink-primary)",
+                        backgroundColor: invoiceData ? "#F3F4F6" : "white"
                       }}
                     />
                   </div>
@@ -302,7 +330,8 @@ export function CreateEVoucherModal({ open, onClose, onSubmit, budgetRequestData
                       type="text"
                       value={formData.customer_name}
                       onChange={(e) => setFormData({ ...formData, customer_name: e.target.value })}
-                      placeholder="Customer name (if applicable)"
+                      placeholder="Customer name"
+                      disabled={!!budgetRequestData || !!invoiceData}
                       style={{
                         width: "100%",
                         padding: "10px 12px",
@@ -311,58 +340,39 @@ export function CreateEVoucherModal({ open, onClose, onSubmit, budgetRequestData
                         fontSize: "14px",
                         outline: "none",
                         color: "var(--neuron-ink-primary)",
+                        backgroundColor: (budgetRequestData || invoiceData) ? "#F3F4F6" : "white"
                       }}
-                      disabled={!!budgetRequestData}
                     />
                   </div>
 
-                  {/* Credit Terms & Due Date */}
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-                    <div>
-                      <label style={{ display: "block", fontSize: "14px", fontWeight: 500, color: "#374151", marginBottom: "6px" }}>
-                        Credit Terms
-                      </label>
-                      <input
-                        type="text"
-                        value={formData.credit_terms}
-                        onChange={(e) => setFormData({ ...formData, credit_terms: e.target.value })}
-                        placeholder="e.g., Net 30"
-                        style={{
-                          width: "100%",
-                          padding: "10px 12px",
-                          border: "1px solid var(--neuron-ui-border)",
-                          borderRadius: "8px",
-                          fontSize: "14px",
-                          outline: "none",
-                          color: "var(--neuron-ink-primary)",
-                        }}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ display: "block", fontSize: "14px", fontWeight: 500, color: "#374151", marginBottom: "6px" }}>
-                        Due Date
-                      </label>
-                      <input
-                        type="date"
-                        value={formData.due_date}
-                        onChange={(e) => setFormData({ ...formData, due_date: e.target.value })}
-                        style={{
-                          width: "100%",
-                          padding: "10px 12px",
-                          border: "1px solid var(--neuron-ui-border)",
-                          borderRadius: "8px",
-                          fontSize: "14px",
-                          outline: "none",
-                          color: "var(--neuron-ink-primary)",
-                        }}
-                      />
-                    </div>
-                  </div>
+                  {/* Invoice Number (If Collection) */}
+                  {isCollection && (
+                      <div>
+                        <label style={{ display: "block", fontSize: "14px", fontWeight: 500, color: "#374151", marginBottom: "6px" }}>
+                          Invoice Number
+                        </label>
+                        <input
+                          type="text"
+                          value={formData.invoice_number}
+                          readOnly
+                          style={{
+                            width: "100%",
+                            padding: "10px 12px",
+                            border: "1px solid var(--neuron-ui-border)",
+                            borderRadius: "8px",
+                            fontSize: "14px",
+                            outline: "none",
+                            color: "var(--neuron-ink-primary)",
+                            backgroundColor: "#F3F4F6"
+                          }}
+                        />
+                      </div>
+                  )}
 
                   {/* Payment Method */}
                   <div>
                     <label style={{ display: "block", fontSize: "14px", fontWeight: 500, color: "#374151", marginBottom: "6px" }}>
-                      Preferred Payment Method
+                      Payment Method
                     </label>
                     <select
                       value={formData.payment_method}

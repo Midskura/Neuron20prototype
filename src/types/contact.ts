@@ -2,6 +2,7 @@ export interface Contact {
   id: string;
   first_name: string | null;
   last_name: string | null;
+  title?: string | null;       // Job title (backend field name)
   email: string;
   phone: string;
   company: string;
@@ -12,6 +13,7 @@ export interface Contact {
   status: "Customer" | "MQL" | "Lead" | "Prospect";
   last_activity: string;
   created_date: string;
+  created_at?: string;
   updated_at: string;
   notes?: string;
   quotations?: any[]; // For detail view

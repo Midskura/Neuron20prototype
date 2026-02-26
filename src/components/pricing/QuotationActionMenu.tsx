@@ -37,18 +37,6 @@ export function QuotationActionMenu({
     }
   }, [showMenu]);
 
-  const handleDownloadPDF = () => {
-    console.log("Downloading PDF:", quotation.quote_number);
-    alert(`📄 PDF download for ${quotation.quote_number} will be available soon!`);
-    setShowMenu(false);
-  };
-
-  const handleDownloadWord = () => {
-    console.log("Downloading Word document:", quotation.quote_number);
-    alert(`📝 Word download for ${quotation.quote_number} will be available soon!`);
-    setShowMenu(false);
-  };
-
   const confirmDelete = () => {
     console.log("Deleting quotation:", quotation.quote_number);
     onDelete();
@@ -58,34 +46,36 @@ export function QuotationActionMenu({
 
   return (
     <div style={{ position: "relative" }} ref={menuRef}>
-      {/* Actions Button */}
+      {/* Actions Button - Kebab Icon Only */}
       <button
         onClick={() => setShowMenu(!showMenu)}
         style={{
           display: "flex",
           alignItems: "center",
-          gap: "8px",
-          padding: "10px 16px",
+          justifyContent: "center",
+          width: "36px",
+          height: "36px",
+          padding: 0,
           backgroundColor: "white",
           border: "1px solid var(--neuron-ui-border)",
           borderRadius: "8px",
-          fontSize: "14px",
-          fontWeight: 600,
-          color: "#12332B",
+          color: "#667085",
           cursor: "pointer",
           transition: "all 0.2s ease"
         }}
         onMouseEnter={(e) => {
           e.currentTarget.style.borderColor = "#0F766E";
           e.currentTarget.style.backgroundColor = "#F8FBFB";
+          e.currentTarget.style.color = "#0F766E";
         }}
         onMouseLeave={(e) => {
           e.currentTarget.style.borderColor = "var(--neuron-ui-border)";
           e.currentTarget.style.backgroundColor = "white";
+          e.currentTarget.style.color = "#667085";
         }}
+        title="Actions"
       >
-        <MoreVertical size={16} />
-        Actions
+        <MoreVertical size={18} />
       </button>
 
       {/* Dropdown Menu */}
@@ -102,37 +92,6 @@ export function QuotationActionMenu({
           zIndex: 100,
           overflow: "hidden"
         }}>
-          {/* Edit */}
-          <button
-            onClick={() => {
-              onEdit();
-              setShowMenu(false);
-            }}
-            style={{
-              width: "100%",
-              display: "flex",
-              alignItems: "center",
-              gap: "12px",
-              padding: "12px 16px",
-              backgroundColor: "transparent",
-              border: "none",
-              cursor: "pointer",
-              fontSize: "14px",
-              color: "#12332B",
-              textAlign: "left",
-              transition: "background-color 0.15s ease"
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = "#F9FAFB";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = "transparent";
-            }}
-          >
-            <Edit size={16} style={{ color: "#667085" }} />
-            <span>Edit Quotation</span>
-          </button>
-
           {/* Duplicate */}
           <button
             onClick={() => {
@@ -233,95 +192,6 @@ export function QuotationActionMenu({
               <span>Create Ticket</span>
             </button>
           )}
-
-          {/* Download - Submenu */}
-          <div style={{ position: "relative" }}>
-            <button
-              style={{
-                width: "100%",
-                display: "flex",
-                alignItems: "center",
-                gap: "12px",
-                padding: "12px 16px",
-                backgroundColor: "transparent",
-                border: "none",
-                cursor: "pointer",
-                fontSize: "14px",
-                color: "#12332B",
-                textAlign: "left",
-                transition: "background-color 0.15s ease",
-                borderTop: "1px solid #F3F4F6"
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = "#F9FAFB";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = "transparent";
-              }}
-            >
-              <Download size={16} style={{ color: "#667085" }} />
-              <span>Download</span>
-            </button>
-            
-            {/* Download Options */}
-            <div style={{
-              paddingLeft: "44px",
-              backgroundColor: "#F9FAFB",
-              borderBottom: "1px solid #F3F4F6"
-            }}>
-              <button
-                onClick={handleDownloadPDF}
-                style={{
-                  width: "100%",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "8px",
-                  padding: "10px 0",
-                  backgroundColor: "transparent",
-                  border: "none",
-                  cursor: "pointer",
-                  fontSize: "13px",
-                  color: "#12332B",
-                  textAlign: "left"
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.color = "#0F766E";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.color = "#12332B";
-                }}
-              >
-                <FileText size={14} style={{ color: "#DC2626" }} />
-                <span>PDF</span>
-              </button>
-              
-              <button
-                onClick={handleDownloadWord}
-                style={{
-                  width: "100%",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "8px",
-                  padding: "10px 0 12px 0",
-                  backgroundColor: "transparent",
-                  border: "none",
-                  cursor: "pointer",
-                  fontSize: "13px",
-                  color: "#12332B",
-                  textAlign: "left"
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.color = "#0F766E";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.color = "#12332B";
-                }}
-              >
-                <FileText size={14} style={{ color: "#2563EB" }} />
-                <span>Word</span>
-              </button>
-            </div>
-          </div>
 
           {/* Delete */}
           <button

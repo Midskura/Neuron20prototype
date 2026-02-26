@@ -1,10 +1,10 @@
-import { X, Printer, Download, CheckCircle2, XCircle, Clock, AlertCircle } from "lucide-react";
-import logoImage from "figma:asset/28c84ed117b026fbf800de0882eb478561f37f4f.png";
-import { PhilippinePeso } from "../icons/PhilippinePeso";
-import type { EVoucher } from "../../types/evoucher";
 import { useState } from "react";
+import { CheckCircle2, FileText } from "lucide-react";
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { toast } from "../ui/toast-utils";
+import { AddRequestForPaymentPanel } from "../accounting/AddRequestForPaymentPanel";
+import { PostToLedgerPanel } from "../accounting/PostToLedgerPanel";
+import type { EVoucher } from "../../types/evoucher";
 
 const API_URL = `https://${projectId}.supabase.co/functions/v1/make-server-c142e950`;
 
@@ -27,48 +27,43 @@ export function BudgetRequestDetailPanel({
 }: BudgetRequestDetailPanelProps) {
   const [isApproving, setIsApproving] = useState(false);
   const [isPosting, setIsPosting] = useState(false);
+  const [showBillingPrompt, setShowBillingPrompt] = useState(false);
+  const [showBillingCreation, setShowBillingCreation] = useState(false);
+  const [showPostToLedger, setShowPostToLedger] = useState(false);
 
   if (!isOpen || !request) return null;
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "Approved":
-        return { bg: "#E8F5F3", color: "#0F766E", icon: CheckCircle2 };
-      case "Rejected":
-        return { bg: "#FFE5E5", color: "#C94F3D", icon: XCircle };
-      case "Under Review":
-        return { bg: "#FEF3E7", color: "#C88A2B", icon: AlertCircle };
-      case "Submitted":
-        return { bg: "#E0E7FF", color: "#4F46E5", icon: Clock };
-      case "Draft":
-        return { bg: "#F3F4F6", color: "#6B7280", icon: Clock };
-      default:
-        return { bg: "#F3F4F6", color: "#6B7A76", icon: Clock };
-    }
-  };
-
-  const statusStyle = getStatusColor(request.status);
-  const StatusIcon = statusStyle.icon;
-
-  // Get approved by information
-  const approvedBy = request.approvers && request.approvers.length > 0 
-    ? request.approvers[request.approvers.length - 1]
-    : null;
-
   // Check if user is accounting staff and can approve/post
-  // Matches approval access logic: Accounting department OR Executive department OR Finance Manager role
   const isAccountingStaff = 
     currentUser?.department === "Accounting" || 
     currentUser?.department === "Executive" ||
     currentUser?.role === "Finance Manager" || 
     currentUser?.role === "Accountant";
-  const canApprove = showAccountingControls && isAccountingStaff && (request.status === "Submitted" || request.status === "Draft" || request.status === "pending");
+    
+  const canApprove = showAccountingControls && isAccountingStaff && (
+    request.status === "Submitted" || 
+    request.status === "Draft" || 
+    request.status === "pending" || 
+    request.status === "Under Review" ||
+    request.status === "Processing"
+  );
+  
   const canPostToLedger = showAccountingControls && isAccountingStaff && request.status === "Approved" && !request.posted_to_ledger;
 
   const handleApprove = async () => {
     if (!canApprove) return;
     
     setIsApproving(true);
+
+    // Optimistic: close panel and notify parent immediately
+    const hasBillingPrompt = request.project_number && 
+      (request.transaction_type === 'expense' || request.transaction_type === 'budget_request');
+
+    if (!hasBillingPrompt) {
+      onStatusChange?.();
+      onClose();
+    }
+
     try {
       const response = await fetch(`${API_URL}/evouchers/${request.id}/approve`, {
         method: 'POST',
@@ -88,11 +83,16 @@ export function BudgetRequestDetailPanel({
       }
 
       toast.success('E-Voucher approved successfully');
-      onStatusChange?.();
-      onClose();
+      
+      // Show billing prompt if applicable (panel stayed open for this path)
+      if (hasBillingPrompt) {
+        setShowBillingPrompt(true);
+      }
     } catch (error) {
       console.error('Error approving E-Voucher:', error);
       toast.error('Failed to approve E-Voucher');
+      // Refresh to revert optimistic close
+      onStatusChange?.();
     } finally {
       setIsApproving(false);
     }
@@ -100,844 +100,173 @@ export function BudgetRequestDetailPanel({
 
   const handlePostToLedger = async () => {
     if (!canPostToLedger) return;
-    
-    setIsPosting(true);
-    try {
-      const response = await fetch(`${API_URL}/evouchers/${request.id}/post-to-ledger`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          user_id: currentUser?.id,
-          user_name: currentUser?.name,
-          user_role: currentUser?.role,
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to post to ledger');
-      }
-
-      toast.success('E-Voucher posted to ledger successfully');
-      onStatusChange?.();
-      onClose();
-    } catch (error) {
-      console.error('Error posting to ledger:', error);
-      toast.error('Failed to post to ledger');
-    } finally {
-      setIsPosting(false);
-    }
+    setShowPostToLedger(true);
   };
+
+  const footerActions = (
+    <>
+      {canApprove && (
+        <button
+          onClick={handleApprove}
+          disabled={isApproving}
+          style={{
+            padding: "10px 20px",
+            borderRadius: "6px",
+            border: "none",
+            backgroundColor: isApproving ? "#9CA3AF" : "#0F766E",
+            color: "#FFFFFF",
+            fontSize: "13px",
+            fontWeight: 500,
+            cursor: isApproving ? "not-allowed" : "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            transition: "all 0.2s",
+          }}
+          onMouseEnter={(e) => {
+            if (!isApproving) e.currentTarget.style.backgroundColor = "#0D6560";
+          }}
+          onMouseLeave={(e) => {
+            if (!isApproving) e.currentTarget.style.backgroundColor = "#0F766E";
+          }}
+        >
+          <CheckCircle2 size={16} />
+          {isApproving ? "Approving..." : "Approve"}
+        </button>
+      )}
+      
+      {canPostToLedger && (
+        <button
+          onClick={handlePostToLedger}
+          disabled={isPosting}
+          style={{
+            padding: "10px 20px",
+            borderRadius: "6px",
+            border: "none",
+            backgroundColor: isPosting ? "#9CA3AF" : "#0F766E",
+            color: "#FFFFFF",
+            fontSize: "13px",
+            fontWeight: 500,
+            cursor: isPosting ? "not-allowed" : "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            transition: "all 0.2s",
+          }}
+          onMouseEnter={(e) => {
+            if (!isPosting) e.currentTarget.style.backgroundColor = "#0D6560";
+          }}
+          onMouseLeave={(e) => {
+            if (!isPosting) e.currentTarget.style.backgroundColor = "#0F766E";
+          }}
+        >
+          <CheckCircle2 size={16} />
+          Post to Ledger
+        </button>
+      )}
+    </>
+  );
 
   return (
     <>
-      {/* Backdrop */}
-      <div
-        className="fixed inset-0 bg-black z-40"
-        onClick={onClose}
-        style={{ 
-          backdropFilter: "blur(2px)",
-          backgroundColor: "rgba(18, 51, 43, 0.15)"
-        }}
-      />
-
-      {/* Slide-out Panel */}
-      <div
-        className="fixed right-0 top-0 h-full w-[920px] bg-white shadow-2xl z-50 flex flex-col animate-slide-in"
-        style={{
-          borderLeft: "1px solid var(--neuron-ui-border)",
-        }}
-      >
-        {/* Header */}
-        <div 
-          style={{
-            padding: "24px 48px",
-            borderBottom: "1px solid var(--neuron-ui-border)",
-            backgroundColor: "#FFFFFF",
+      {/* Post to Ledger Panel */}
+      {showPostToLedger && (
+        <PostToLedgerPanel
+          evoucher={request}
+          isOpen={showPostToLedger}
+          onClose={() => setShowPostToLedger(false)}
+          onSuccess={() => {
+            setShowPostToLedger(false);
+            onStatusChange?.();
+            onClose();
           }}
-        >
-          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
-            <div>
-              <h2 style={{ fontSize: "20px", fontWeight: 600, color: "#12332B", marginBottom: "4px" }}>
-                {request.description}
-              </h2>
-              <p style={{ fontSize: "13px", color: "#667085" }}>
-                {request.voucher_number} • {request.purpose}
+          currentUser={currentUser}
+        />
+      )}
+
+      {/* Billing Prompt Modal */}
+      {showBillingPrompt && (
+        <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4" style={{ backdropFilter: "blur(2px)" }}>
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full overflow-hidden animate-scale-in">
+            <div className="p-6">
+              <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mb-4 text-blue-600">
+                <FileText size={24} />
+              </div>
+              <h3 className="text-lg font-bold text-gray-900 mb-2">Create Invoice?</h3>
+              <p className="text-sm text-gray-600 mb-6">
+                This expense is linked to Project <span className="font-semibold text-[#0F766E]">{request.project_number}</span>. 
+                Would you like to create a Client Invoice for this amount now?
               </p>
-            </div>
-            <button
-              onClick={onClose}
-              style={{
-                width: "40px",
-                height: "40px",
-                borderRadius: "8px",
-                border: "none",
-                backgroundColor: "transparent",
-                color: "#667085",
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                transition: "all 0.2s",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = "#F3F4F6";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = "transparent";
-              }}
-            >
-              <X size={20} />
-            </button>
-          </div>
-        </div>
-
-        {/* Action Control Bar for Accounting Staff */}
-        {showAccountingControls && (canApprove || canPostToLedger) && (
-          <div
-            style={{
-              padding: "16px 48px",
-              borderBottom: "1px solid var(--neuron-ui-border)",
-              backgroundColor: "#F9FAFB",
-              display: "flex",
-              gap: "12px",
-              alignItems: "center",
-            }}
-          >
-            <div style={{ flex: 1 }}>
-              <p style={{ fontSize: "13px", fontWeight: 500, color: "#374151" }}>
-                Accounting Controls
-              </p>
-              <p style={{ fontSize: "12px", color: "#667085" }}>
-                {canApprove && "Review and approve this E-Voucher"}
-                {canPostToLedger && "Post this approved E-Voucher to the general ledger"}
-              </p>
-            </div>
-            {canApprove && (
-              <button
-                onClick={handleApprove}
-                disabled={isApproving}
-                style={{
-                  padding: "10px 20px",
-                  borderRadius: "8px",
-                  border: "none",
-                  backgroundColor: isApproving ? "#9CA3AF" : "#0F766E",
-                  color: "#FFFFFF",
-                  fontSize: "14px",
-                  fontWeight: 500,
-                  cursor: isApproving ? "not-allowed" : "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "8px",
-                  transition: "all 0.2s",
-                }}
-                onMouseEnter={(e) => {
-                  if (!isApproving) e.currentTarget.style.backgroundColor = "#0D6560";
-                }}
-                onMouseLeave={(e) => {
-                  if (!isApproving) e.currentTarget.style.backgroundColor = "#0F766E";
-                }}
-              >
-                <CheckCircle2 size={16} />
-                {isApproving ? "Approving..." : "Approve E-Voucher"}
-              </button>
-            )}
-            {canPostToLedger && (
-              <button
-                onClick={handlePostToLedger}
-                disabled={isPosting}
-                style={{
-                  padding: "10px 20px",
-                  borderRadius: "8px",
-                  border: "none",
-                  backgroundColor: isPosting ? "#9CA3AF" : "#0F766E",
-                  color: "#FFFFFF",
-                  fontSize: "14px",
-                  fontWeight: 500,
-                  cursor: isPosting ? "not-allowed" : "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "8px",
-                  transition: "all 0.2s",
-                }}
-                onMouseEnter={(e) => {
-                  if (!isPosting) e.currentTarget.style.backgroundColor = "#0D6560";
-                }}
-                onMouseLeave={(e) => {
-                  if (!isPosting) e.currentTarget.style.backgroundColor = "#0F766E";
-                }}
-              >
-                <CheckCircle2 size={16} />
-                {isPosting ? "Posting..." : "Post to Ledger"}
-              </button>
-            )}
-          </div>
-        )}
-
-        {/* Form Content - Scrollable */}
-        <div style={{ flex: 1, overflowY: "auto", padding: "32px 48px" }}>
-          {/* Header Section with Logo */}
-          <div style={{ 
-            display: "flex", 
-            alignItems: "flex-start", 
-            justifyContent: "space-between",
-            marginBottom: "32px",
-            paddingBottom: "24px",
-            borderBottom: "1px solid #E5E7EB"
-          }}>
-            <div>
-              <img 
-                src={logoImage} 
-                alt="Neuron" 
-                style={{ height: "32px", marginBottom: "12px" }}
-              />
-            </div>
-            
-            <div style={{ textAlign: "right" }}>
-              <h1 style={{ 
-                fontSize: "20px", 
-                fontWeight: 700, 
-                color: "#12332B",
-                letterSpacing: "0.5px",
-                marginBottom: "16px"
-              }}>
-                REQUEST FOR PAYMENT
-              </h1>
-              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                <div>
-                  <span style={{ 
-                    fontSize: "11px", 
-                    fontWeight: 500, 
-                    color: "#667085",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.5px",
-                    display: "block",
-                    marginBottom: "4px"
-                  }}>
-                    DATE
-                  </span>
-                  <span style={{ fontSize: "15px", fontWeight: 500, color: "#12332B" }}>
-                    {new Date(request.request_date).toLocaleDateString('en-US', { 
-                      month: '2-digit', 
-                      day: '2-digit', 
-                      year: 'numeric' 
-                    })}
-                  </span>
-                </div>
-                <div>
-                  <span style={{ 
-                    fontSize: "11px", 
-                    fontWeight: 500, 
-                    color: "#667085",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.5px",
-                    display: "block",
-                    marginBottom: "4px"
-                  }}>
-                    E-VOUCHER REF NO.
-                  </span>
-                  <span style={{ fontSize: "15px", fontWeight: 600, color: "#0F766E" }}>
-                    {request.voucher_number}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Request Name / Title */}
-          <div style={{ marginBottom: "20px" }}>
-            <label style={{ 
-              display: "block", 
-              fontSize: "13px", 
-              fontWeight: 500, 
-              color: "#374151",
-              marginBottom: "8px"
-            }}>
-              Request Name / Title
-            </label>
-            <div style={{
-              padding: "10px 14px",
-              border: "1px solid #E5E7EB",
-              borderRadius: "6px",
-              backgroundColor: "#F9FAFB",
-              fontSize: "14px",
-              color: "#6B7280",
-            }}>
-              {request.description}
-            </div>
-          </div>
-
-          {/* Expense Category and Sub-Category */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "20px" }}>
-            <div>
-              <label style={{ 
-                display: "block", 
-                fontSize: "13px", 
-                fontWeight: 500, 
-                color: "#374151",
-                marginBottom: "8px"
-              }}>
-                Expense Category <span style={{ color: "#DC2626" }}>*</span>
-              </label>
-              <div style={{
-                padding: "10px 14px",
-                border: "1px solid #E5E7EB",
-                borderRadius: "6px",
-                backgroundColor: "#F9FAFB",
-                fontSize: "14px",
-                color: "#6B7280",
-              }}>
-                {request.expense_category}
-              </div>
-            </div>
-            <div>
-              <label style={{ 
-                display: "block", 
-                fontSize: "13px", 
-                fontWeight: 500, 
-                color: "#374151",
-                marginBottom: "8px"
-              }}>
-                Sub-Category <span style={{ color: "#DC2626" }}>*</span>
-              </label>
-              <div style={{
-                padding: "10px 14px",
-                border: "1px solid #E5E7EB",
-                borderRadius: "6px",
-                backgroundColor: "#F9FAFB",
-                fontSize: "14px",
-                color: "#6B7280",
-              }}>
-                {request.sub_category}
-              </div>
-            </div>
-          </div>
-
-          {/* Project/Booking Number */}
-          <div style={{ marginBottom: "32px" }}>
-            <label style={{ 
-              display: "block", 
-              fontSize: "13px", 
-              fontWeight: 500, 
-              color: "#374151",
-              marginBottom: "8px"
-            }}>
-              Project / Booking Number <span style={{ fontSize: "12px", color: "#9CA3AF" }}>(Optional)</span>
-            </label>
-            <div style={{
-              padding: "10px 14px",
-              border: "1px solid #E5E7EB",
-              borderRadius: "6px",
-              backgroundColor: "#F9FAFB",
-              fontSize: "14px",
-              color: "#6B7280",
-            }}>
-              {request.project_number || "—"}
-            </div>
-          </div>
-
-          {/* EXPENSE DETAILS */}
-          <div style={{ marginBottom: "32px" }}>
-            <h3 style={{ 
-              fontSize: "13px", 
-              fontWeight: 600, 
-              color: "#12332B",
-              textTransform: "uppercase",
-              letterSpacing: "0.5px",
-              marginBottom: "16px"
-            }}>
-              EXPENSE DETAILS
-            </h3>
-
-            <div style={{ marginBottom: "16px" }}>
-              <div style={{ 
-                display: "grid", 
-                gridTemplateColumns: "2fr 3fr 1.5fr",
-                gap: "12px",
-                marginBottom: "8px"
-              }}>
-                <div style={{ 
-                  fontSize: "11px", 
-                  fontWeight: 600, 
-                  color: "#6B7280",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.5px"
-                }}>
-                  PARTICULAR
-                </div>
-                <div style={{ 
-                  fontSize: "11px", 
-                  fontWeight: 600, 
-                  color: "#6B7280",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.5px"
-                }}>
-                  DESCRIPTION
-                </div>
-                <div style={{ 
-                  fontSize: "11px", 
-                  fontWeight: 600, 
-                  color: "#6B7280",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.5px",
-                  textAlign: "right"
-                }}>
-                  AMOUNT (₱)
-                </div>
-              </div>
-
-              {request.line_items && request.line_items.map((item, index) => (
-                <div 
-                  key={item.id || index}
-                  style={{ 
-                    display: "grid", 
-                    gridTemplateColumns: "2fr 3fr 1.5fr",
-                    gap: "12px",
-                    marginBottom: "12px"
+              
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    setShowBillingPrompt(false);
+                    onStatusChange?.();
+                    onClose();
                   }}
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
                 >
-                  <div style={{
-                    padding: "10px 14px",
-                    border: "1px solid #E5E7EB",
-                    borderRadius: "6px",
-                    backgroundColor: "#F9FAFB",
-                    fontSize: "14px",
-                    color: "#6B7280",
-                  }}>
-                    {item.particular}
-                  </div>
-                  <div style={{
-                    padding: "10px 14px",
-                    border: "1px solid #E5E7EB",
-                    borderRadius: "6px",
-                    backgroundColor: "#F9FAFB",
-                    fontSize: "14px",
-                    color: "#6B7280",
-                  }}>
-                    {item.description || "—"}
-                  </div>
-                  <div style={{
-                    padding: "10px 14px",
-                    border: "1px solid #E5E7EB",
-                    borderRadius: "6px",
-                    backgroundColor: "#F9FAFB",
-                    fontSize: "14px",
-                    color: "#6B7280",
-                    textAlign: "right"
-                  }}>
-                    {item.amount.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div style={{ 
-              display: "flex", 
-              justifyContent: "flex-end",
-              alignItems: "center",
-              paddingTop: "16px",
-              borderTop: "2px solid #E5E7EB"
-            }}>
-              <div style={{ 
-                fontSize: "14px", 
-                fontWeight: 500, 
-                color: "#6B7280",
-                marginRight: "40px"
-              }}>
-                Total Amount
-              </div>
-              <div style={{ 
-                fontSize: "18px", 
-                fontWeight: 600, 
-                color: "#12332B",
-                display: "flex",
-                alignItems: "center"
-              }}>
-                <PhilippinePeso size={18} style={{ marginRight: "4px" }} />
-                {request.amount.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  No, Skip
+                </button>
+                <button
+                  onClick={() => {
+                    setShowBillingPrompt(false);
+                    setShowBillingCreation(true);
+                  }}
+                  className="flex-1 px-4 py-2 bg-[#0F766E] hover:bg-[#0D6560] text-white rounded-lg text-sm font-medium transition-colors"
+                >
+                  Yes, Create Invoice
+                </button>
               </div>
             </div>
           </div>
-
-          {/* PAYMENT DETAILS */}
-          <div style={{ marginBottom: "32px" }}>
-            <h3 style={{ 
-              fontSize: "13px", 
-              fontWeight: 600, 
-              color: "#12332B",
-              textTransform: "uppercase",
-              letterSpacing: "0.5px",
-              marginBottom: "20px"
-            }}>
-              PAYMENT DETAILS
-            </h3>
-
-            {/* Preferred Payment Method */}
-            <div style={{ marginBottom: "20px" }}>
-              <label style={{ 
-                display: "block", 
-                fontSize: "13px", 
-                fontWeight: 500, 
-                color: "#374151",
-                marginBottom: "8px"
-              }}>
-                Preferred Payment Method <span style={{ color: "#DC2626" }}>*</span>
-              </label>
-              <div style={{
-                padding: "10px 14px",
-                border: "1px solid #E5E7EB",
-                borderRadius: "6px",
-                backgroundColor: "#F9FAFB",
-                fontSize: "14px",
-                color: "#6B7280",
-              }}>
-                {request.payment_method || "—"}
-              </div>
-            </div>
-
-            {/* Credit Terms */}
-            <div style={{ marginBottom: "20px" }}>
-              <label style={{ 
-                display: "block", 
-                fontSize: "13px", 
-                fontWeight: 500, 
-                color: "#374151",
-                marginBottom: "8px"
-              }}>
-                Credit Terms
-              </label>
-              <div style={{
-                padding: "10px 14px",
-                border: "1px solid #E5E7EB",
-                borderRadius: "6px",
-                backgroundColor: "#F9FAFB",
-                fontSize: "14px",
-                color: "#6B7280",
-              }}>
-                {request.credit_terms || "—"}
-              </div>
-            </div>
-
-            {/* Payment Schedule */}
-            <div style={{ marginBottom: "20px" }}>
-              <label style={{ 
-                display: "block", 
-                fontSize: "13px", 
-                fontWeight: 500, 
-                color: "#374151",
-                marginBottom: "8px"
-              }}>
-                Payment Schedule <span style={{ fontSize: "12px", color: "#9CA3AF" }}>(Optional)</span>
-              </label>
-              <div style={{
-                padding: "10px 14px",
-                border: "1px solid #E5E7EB",
-                borderRadius: "6px",
-                backgroundColor: "#F9FAFB",
-                fontSize: "14px",
-                color: "#6B7280",
-              }}>
-                {request.payment_schedule || "—"}
-              </div>
-            </div>
-
-            {/* Vendor/Payee */}
-            <div style={{ marginBottom: "20px" }}>
-              <label style={{ 
-                display: "block", 
-                fontSize: "13px", 
-                fontWeight: 500, 
-                color: "#374151",
-                marginBottom: "8px"
-              }}>
-                Vendor / Payee
-              </label>
-              <div style={{
-                padding: "10px 14px",
-                border: "1px solid #E5E7EB",
-                borderRadius: "6px",
-                backgroundColor: "#F9FAFB",
-                fontSize: "14px",
-                color: "#6B7280",
-              }}>
-                {request.vendor_name || "—"}
-              </div>
-            </div>
-
-            {/* Requestor */}
-            <div style={{ marginBottom: "20px" }}>
-              <label style={{ 
-                display: "block", 
-                fontSize: "13px", 
-                fontWeight: 500, 
-                color: "#374151",
-                marginBottom: "8px"
-              }}>
-                Requestor
-              </label>
-              <div style={{
-                padding: "10px 14px",
-                border: "1px solid #E5E7EB",
-                borderRadius: "6px",
-                backgroundColor: "#F9FAFB",
-                fontSize: "14px",
-                color: "#6B7280",
-              }}>
-                {request.requestor_name}
-              </div>
-            </div>
-
-            {/* Notes/Remarks */}
-            <div style={{ marginBottom: "20px" }}>
-              <label style={{ 
-                display: "block", 
-                fontSize: "13px", 
-                fontWeight: 500, 
-                color: "#374151",
-                marginBottom: "8px"
-              }}>
-                Notes / Remarks <span style={{ fontSize: "12px", color: "#9CA3AF" }}>(Optional)</span>
-              </label>
-              <div style={{
-                padding: "10px 14px",
-                border: "1px solid #E5E7EB",
-                borderRadius: "6px",
-                backgroundColor: "#F9FAFB",
-                fontSize: "14px",
-                color: "#6B7280",
-                minHeight: "80px",
-                whiteSpace: "pre-wrap"
-              }}>
-                {request.notes || "—"}
-              </div>
-            </div>
-          </div>
-
-          {/* CURRENT STATUS */}
-          <div style={{ marginBottom: "32px" }}>
-            <h3 style={{ 
-              fontSize: "13px", 
-              fontWeight: 600, 
-              color: "#12332B",
-              textTransform: "uppercase",
-              letterSpacing: "0.5px",
-              marginBottom: "20px"
-            }}>
-              CURRENT STATUS
-            </h3>
-            
-            <div style={{ 
-              border: "1px solid #E5E7EB", 
-              borderRadius: "8px",
-              backgroundColor: "#FAFAFA",
-              padding: "20px"
-            }}>
-              <div style={{ 
-                display: "flex", 
-                alignItems: "center", 
-                gap: "12px",
-                marginBottom: "12px"
-              }}>
-                <StatusIcon size={20} style={{ color: statusStyle.color }} />
-                <span style={{ 
-                  fontSize: "16px", 
-                  fontWeight: 600, 
-                  color: statusStyle.color 
-                }}>
-                  {request.status}
-                </span>
-              </div>
-              
-              {request.status === "Approved" && approvedBy && (
-                <div style={{ fontSize: "14px", color: "#667085", lineHeight: "1.6" }}>
-                  Approved by <span style={{ fontWeight: 500, color: "#12332B" }}>{approvedBy.name}</span>
-                  {approvedBy.approved_at && (
-                    <span> on {new Date(approvedBy.approved_at).toLocaleDateString('en-PH', { 
-                      month: 'short', 
-                      day: 'numeric', 
-                      year: 'numeric' 
-                    })}</span>
-                  )}
-                </div>
-              )}
-              
-              {request.status === "Under Review" && request.current_approver_name && (
-                <div style={{ fontSize: "14px", color: "#667085", lineHeight: "1.6" }}>
-                  Currently with <span style={{ fontWeight: 500, color: "#12332B" }}>{request.current_approver_name}</span> for review
-                </div>
-              )}
-              
-              {request.status === "Submitted" && (
-                <div style={{ fontSize: "14px", color: "#667085", lineHeight: "1.6" }}>
-                  Waiting for review
-                </div>
-              )}
-              
-              {request.status === "Rejected" && (
-                <div style={{ fontSize: "14px", color: "#667085", lineHeight: "1.6" }}>
-                  This request has been rejected
-                </div>
-              )}
-              
-              {request.status === "Draft" && (
-                <div style={{ fontSize: "14px", color: "#667085", lineHeight: "1.6" }}>
-                  This request has not been submitted yet
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* WORKFLOW HISTORY */}
-          {request.workflow_history && request.workflow_history.length > 0 && (
-            <div style={{ marginBottom: "32px" }}>
-              <h3 style={{ 
-                fontSize: "13px", 
-                fontWeight: 600, 
-                color: "#12332B",
-                textTransform: "uppercase",
-                letterSpacing: "0.5px",
-                marginBottom: "20px"
-              }}>
-                ACTION LOG
-              </h3>
-              
-              <div style={{ 
-                border: "1px solid #E5E7EB", 
-                borderRadius: "8px",
-                backgroundColor: "#FAFAFA",
-                padding: "20px"
-              }}>
-                <div style={{ position: "relative", paddingLeft: "24px" }}>
-                  {/* Timeline line */}
-                  <div
-                    style={{
-                      position: "absolute",
-                      left: "7px",
-                      top: "8px",
-                      bottom: "8px",
-                      width: "2px",
-                      backgroundColor: "#E5E7EB",
-                    }}
-                  />
-                  
-                  {request.workflow_history.map((item, index) => (
-                    <div
-                      key={item.id}
-                      style={{
-                        position: "relative",
-                        paddingBottom: index < request.workflow_history!.length - 1 ? "20px" : "0",
-                      }}
-                    >
-                      {/* Timeline dot */}
-                      <div
-                        style={{
-                          position: "absolute",
-                          left: "-20px",
-                          top: "6px",
-                          width: "12px",
-                          height: "12px",
-                          borderRadius: "50%",
-                          backgroundColor: index === 0 ? "#0F766E" : "#E5E7EB",
-                          border: "2px solid #FFFFFF",
-                        }}
-                      />
-                      
-                      <div>
-                        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
-                          <span style={{ fontSize: "14px", fontWeight: 600, color: "#12332B" }}>
-                            {item.status}
-                          </span>
-                          <span style={{ fontSize: "12px", color: "#667085" }}>
-                            •
-                          </span>
-                          <span style={{ fontSize: "12px", color: "#667085" }}>
-                            {new Date(item.timestamp).toLocaleDateString('en-PH', { 
-                              month: 'short', 
-                              day: 'numeric', 
-                              year: 'numeric',
-                              hour: '2-digit',
-                              minute: '2-digit'
-                            })}
-                          </span>
-                        </div>
-                        <p style={{ fontSize: "13px", color: "#667085", margin: "0 0 4px 0" }}>
-                          {item.action}
-                        </p>
-                        <p style={{ fontSize: "12px", color: "#98A2B3", margin: 0 }}>
-                          {item.user_name} ({item.user_role})
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
         </div>
+      )}
 
-        {/* Footer Actions */}
-        <div
-          style={{
-            padding: "20px 48px",
-            borderTop: "1px solid var(--neuron-ui-border)",
-            backgroundColor: "#FFFFFF",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "flex-end",
-            gap: "12px"
+      {/* Auto-Billing Creation Panel */}
+      {showBillingCreation && (
+        <AddRequestForPaymentPanel
+          context="billing"
+          isOpen={showBillingCreation}
+          onClose={() => {
+            setShowBillingCreation(false);
+            onStatusChange?.();
+            onClose();
           }}
-        >
-          {request.status === "Under Review" && currentUser?.role === "Approver" && (
-            <button
-              onClick={handleApprove}
-              style={{
-                padding: "10px 24px",
-                backgroundColor: "#0F766E",
-                color: "#FFFFFF",
-                border: "none",
-                borderRadius: "8px",
-                cursor: "pointer",
-                fontSize: "14px",
-                fontWeight: 500,
-                transition: "all 0.2s",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = "#0F766E";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = "#0F766E";
-              }}
-              disabled={isApproving}
-            >
-              {isApproving ? 'Approving...' : 'Approve'}
-            </button>
-          )}
-          <button
-            onClick={onClose}
-            style={{
-              padding: "10px 24px",
-              backgroundColor: "#FFFFFF",
-              color: "#374151",
-              border: "1px solid #D1D5DB",
-              borderRadius: "8px",
-              cursor: "pointer",
-              fontSize: "14px",
-              fontWeight: 500,
-              transition: "all 0.2s",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = "#F9FAFB";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = "#FFFFFF";
-            }}
-          >
-            Close
-          </button>
-        </div>
-      </div>
+          initialValues={{
+            project_number: request.project_number,
+            purpose: `Billing for ${request.purpose || request.description}`,
+            description: request.description,
+            amount: request.amount,
+            vendor_name: request.vendor_name,
+            transaction_type: "billing",
+            source_type: "billable_expense",
+            source_id: request.id,
+            is_billable: true
+          }}
+          onSuccess={() => {
+            setShowBillingCreation(false);
+            onStatusChange?.();
+            onClose();
+          }}
+        />
+      )}
+
+      {/* Main Detail View */}
+      {/* Hide main view if billing creation is open to avoid stacking weirdness */}
+      {!showBillingCreation && (
+        <AddRequestForPaymentPanel 
+          isOpen={isOpen} 
+          onClose={onClose}
+          mode="view"
+          existingData={request}
+          context="bd" 
+          defaultRequestor={request.requestor_name}
+          footerActions={footerActions}
+          onSuccess={onStatusChange}
+        />
+      )}
     </>
   );
 }

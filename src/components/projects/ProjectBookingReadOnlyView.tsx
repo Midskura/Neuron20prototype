@@ -1,9 +1,13 @@
 import { useState, useEffect } from "react";
 import { X } from "lucide-react";
 import { BookingCommentsTab } from "../shared/BookingCommentsTab";
-import { BillingsTab } from "../operations/shared/BillingsTab";
+import { UnifiedBillingsTab } from "../shared/billings/UnifiedBillingsTab";
 import { ExpensesTab } from "../operations/shared/ExpensesTab";
 import { projectId, publicAnonKey } from "../../utils/supabase/info";
+import { useProjectFinancials } from "../../hooks/useProjectFinancials";
+import { StatusSelector } from "../StatusSelector";
+import { ExecutionStatus } from "../../types/operations";
+import { toast } from "../ui/toast-utils";
 
 const API_URL = `https://${projectId}.supabase.co/functions/v1/make-server-c142e950`;
 
@@ -17,6 +21,7 @@ interface ProjectBookingReadOnlyViewProps {
     email: string;
     department: string;
   } | null;
+  onBookingUpdated?: () => void;
 }
 
 type DetailTab = "booking-info" | "billings" | "expenses" | "comments";
@@ -25,11 +30,15 @@ export function ProjectBookingReadOnlyView({
   bookingId,
   bookingType,
   onBack,
-  currentUser
+  currentUser,
+  onBookingUpdated
 }: ProjectBookingReadOnlyViewProps) {
   const [activeTab, setActiveTab] = useState<DetailTab>("booking-info");
   const [booking, setBooking] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
+
+  const financials = useProjectFinancials(booking?.projectNumber || "");
+  const bookingBillingItems = financials.billingItems.filter(item => item.booking_id === bookingId);
 
   useEffect(() => {
     fetchBooking();
@@ -89,13 +98,41 @@ export function ProjectBookingReadOnlyView({
         }
       );
 
-      if (!response.ok) {
-        throw new Error("Failed to fetch booking");
-      }
+      if (response.ok) {
+        const responseData = await response.json();
+        console.log("[ProjectBookingReadOnlyView] Booking data fetched:", responseData);
+        
+        if (responseData.success && responseData.data) {
+          setBooking(responseData.data);
+        } else {
+          setBooking(responseData);
+        }
+      } else {
+        // Fallback: try the generic /bookings/:id endpoint
+        // (bookings may be stored under the generic `booking:` KV prefix)
+        console.log("[ProjectBookingReadOnlyView] Type-specific endpoint failed, trying generic /bookings/:id");
+        const fallbackResponse = await fetch(
+          `${API_URL}/bookings/${bookingId}`,
+          {
+            headers: {
+              Authorization: `Bearer ${publicAnonKey}`,
+            },
+          }
+        );
 
-      const data = await response.json();
-      console.log("[ProjectBookingReadOnlyView] Booking data fetched:", data);
-      setBooking(data);
+        if (!fallbackResponse.ok) {
+          throw new Error("Failed to fetch booking from both type-specific and generic endpoints");
+        }
+
+        const fallbackData = await fallbackResponse.json();
+        console.log("[ProjectBookingReadOnlyView] Booking data fetched via fallback:", fallbackData);
+        
+        if (fallbackData.success && fallbackData.data) {
+          setBooking(fallbackData.data);
+        } else {
+          setBooking(fallbackData);
+        }
+      }
     } catch (error) {
       console.error("[ProjectBookingReadOnlyView] Error fetching booking:", error);
     } finally {
@@ -210,32 +247,41 @@ export function ProjectBookingReadOnlyView({
                 </p>
               </div>
 
-              {/* Close Button */}
-              <button
-                onClick={onBack}
-                style={{
-                  background: "none",
-                  border: "none",
-                  padding: "8px",
-                  cursor: "pointer",
-                  color: "var(--neuron-ink-secondary)",
-                  borderRadius: "6px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  transition: "all 0.2s ease"
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = "#F3F4F6";
-                  e.currentTarget.style.color = "var(--neuron-ink-primary)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = "transparent";
-                  e.currentTarget.style.color = "var(--neuron-ink-secondary)";
-                }}
-              >
-                <X size={20} />
-              </button>
+              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                {booking && (
+                  <StatusSelector 
+                    status={booking.status as ExecutionStatus} 
+                    readOnly={true}
+                  />
+                )}
+
+                {/* Close Button */}
+                <button
+                  onClick={onBack}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    padding: "8px",
+                    cursor: "pointer",
+                    color: "var(--neuron-ink-secondary)",
+                    borderRadius: "6px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    transition: "all 0.2s ease"
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = "#F3F4F6";
+                    e.currentTarget.style.color = "var(--neuron-ink-primary)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = "transparent";
+                    e.currentTarget.style.color = "var(--neuron-ink-secondary)";
+                  }}
+                >
+                  <X size={20} />
+                </button>
+              </div>
             </div>
 
             {/* Tabs */}
@@ -327,13 +373,16 @@ export function ProjectBookingReadOnlyView({
                 <BookingInformationReadOnly booking={booking} bookingType={bookingType} />
               )}
               {activeTab === "billings" && (
-                <BillingsTab
-                  bookingId={bookingId}
-                  currentUserId={currentUser?.email || "unknown"}
-                  currentUserName={currentUser?.name || "Unknown User"}
-                  currentUserDepartment={currentUser?.department || "BD"}
-                  readOnly={true}
-                />
+                <div className="flex flex-col bg-white p-12 min-h-[600px]">
+                  <UnifiedBillingsTab
+                    items={bookingBillingItems}
+                    projectId={booking.projectNumber || ""}
+                    bookingId={bookingId}
+                    onRefresh={financials.refresh}
+                    isLoading={financials.isLoading}
+                    readOnly={true}
+                  />
+                </div>
               )}
               {activeTab === "expenses" && (
                 <ExpensesTab

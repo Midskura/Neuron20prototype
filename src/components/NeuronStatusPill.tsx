@@ -35,13 +35,33 @@ export function NeuronStatusPill({ children, status, variant, size = "md" }: Neu
     }
     
     // Project statuses
-    if (statusLower === "handed over") {
+    if (statusLower === "active" || statusLower === "in progress") {
+      return "info"; // Blue/Teal
+    }
+    if (statusLower === "completed" || statusLower === "handed over") {
       return "success";
     }
-    if (statusLower === "pending handover") {
+    if (statusLower === "on hold" || statusLower === "pending handover") {
       return "warning";
     }
+    if (statusLower === "cancelled") {
+      return "danger";
+    }
     
+    // Contract statuses
+    if (statusLower === "expiring") {
+      return "warning";
+    }
+    if (statusLower === "expired") {
+      return "danger";
+    }
+    if (statusLower === "renewed") {
+      return "success";
+    }
+    if (statusLower === "converted to contract") {
+      return "info";
+    }
+
     return "neutral";
   };
   

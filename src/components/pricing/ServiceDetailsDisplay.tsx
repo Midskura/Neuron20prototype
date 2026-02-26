@@ -27,7 +27,7 @@ function FieldDisplay({ label, value, fullWidth = false }: FieldDisplayProps) {
         fontSize: "14px",
         color: value ? "var(--neuron-ink-primary)" : "#9CA3AF"
       }}>
-        {value || "—"}
+        {value || "\u2014"}
       </div>
     </div>
   );
@@ -68,11 +68,67 @@ function CheckboxDisplay({ label, checked }: { label: string; checked: boolean }
   );
 }
 
+// Helper to display containers array
+function ContainersDisplay({ containers }: { containers: any[] }) {
+  if (!containers || containers.length === 0) return null;
+  
+  const summary = containers
+    .filter((c: any) => c.type && c.qty > 0)
+    .map((c: any) => `${c.qty}x ${c.type}`)
+    .join(", ");
+  
+  return (
+    <div style={{ gridColumn: "1 / -1" }}>
+      <label style={{
+        display: "block",
+        fontSize: "13px",
+        fontWeight: 500,
+        color: "var(--neuron-ink-base)",
+        marginBottom: "8px"
+      }}>
+        Container Types & Quantities
+      </label>
+      <div style={{
+        display: "flex",
+        gap: "8px",
+        flexWrap: "wrap"
+      }}>
+        {containers.filter((c: any) => c.type && c.qty > 0).map((c: any, idx: number) => (
+          <div key={c.id || idx} style={{
+            padding: "8px 14px",
+            backgroundColor: "#F0FDFA",
+            border: "1px solid #0F766E",
+            borderRadius: "6px",
+            fontSize: "14px",
+            fontWeight: 500,
+            color: "#0F766E"
+          }}>
+            {c.qty}x {c.type}
+          </div>
+        ))}
+        {summary === "" && (
+          <div style={{
+            padding: "10px 14px",
+            backgroundColor: "#F9FAFB",
+            border: "1px solid var(--neuron-ui-border)",
+            borderRadius: "6px",
+            fontSize: "14px",
+            color: "#9CA3AF"
+          }}>
+            {"\u2014"}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // Comprehensive Brokerage Service Display
 export function BrokerageServiceDisplay({ details }: { details: any }) {
-  const showFCL = details.cargo_type === "FCL";
-  const showLCL = details.cargo_type === "LCL";
-  const showAir = details.mode === "Air";
+  // Mode determines FCL/LCL/AIR display (matches form values: "FCL", "LCL", "AIR")
+  const showFCL = details.mode === "FCL";
+  const showLCL = details.mode === "LCL";
+  const showAir = details.mode === "AIR";
   const isAllInclusive = details.subtype === "All-Inclusive";
 
   return (
@@ -96,12 +152,7 @@ export function BrokerageServiceDisplay({ details }: { details: any }) {
         {/* Brokerage Type */}
         <FieldDisplay label="Brokerage Type" value={details.subtype} fullWidth />
 
-        {/* Type of Entry (for Standard & Non-Regular) */}
-        {details.subtype !== "All-Inclusive" && (
-          <FieldDisplay label="Type of Entry" value={details.type_of_entry} fullWidth />
-        )}
-
-        {/* Checkboxes (for Standard & Non-Regular) */}
+        {/* Type of Entry checkboxes (for Standard & Non-Regular) */}
         {details.subtype !== "All-Inclusive" && (
           <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
             <CheckboxDisplay label="Consumption" checked={details.consumption || false} />
@@ -117,8 +168,12 @@ export function BrokerageServiceDisplay({ details }: { details: any }) {
           <FieldDisplay label="Cargo Type" value={details.cargo_type} />
         </div>
 
-        {/* FCL Container Details */}
-        {showFCL && (
+        {/* FCL Container Details — new containers array */}
+        {showFCL && details.containers && details.containers.length > 0 && (
+          <ContainersDisplay containers={details.containers} />
+        )}
+        {/* FCL legacy fallback */}
+        {showFCL && (!details.containers || details.containers.length === 0) && (details.fcl_container_type || details.fcl_qty) && (
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}>
             <FieldDisplay label="FCL Container Type" value={details.fcl_container_type} />
             <FieldDisplay label="FCL Quantity" value={details.fcl_qty} />
@@ -159,15 +214,16 @@ export function BrokerageServiceDisplay({ details }: { details: any }) {
 
 // Comprehensive Forwarding Service Display
 export function ForwardingServiceDisplay({ details }: { details: any }) {
-  const showFCL = details.mode === "Sea" && details.cargo_type === "FCL";
-  const showLCL = details.mode === "Sea" && details.cargo_type === "LCL";
-  const showAir = details.mode === "Air";
+  // Mode values from the form are "FCL", "LCL", "AIR", "Multi-modal"
+  const showFCL = details.mode === "FCL";
+  const showLCL = details.mode === "LCL";
+  const showAir = details.mode === "AIR";
   const showInctermDetails = ["EXW", "FOB", "FCA"].includes(details.incoterms);
   const showCollectionAddress = details.incoterms === "EXW";
   
   // Reconstruct compound fields for display
-  const aolPol = details.aol && details.pol ? `${details.aol} → ${details.pol}` : "";
-  const aodPod = details.aod && details.pod ? `${details.aod} → ${details.pod}` : "";
+  const aolPol = details.aolPol || (details.aol && details.pol ? `${details.aol} \u2192 ${details.pol}` : (details.aol || details.pol || ""));
+  const aodPod = details.aodPod || (details.aod && details.pod ? `${details.aod} \u2192 ${details.pod}` : (details.aod || details.pod || ""));
 
   return (
     <div style={{
@@ -197,8 +253,12 @@ export function ForwardingServiceDisplay({ details }: { details: any }) {
           <FieldDisplay label="Cargo Nature" value={details.cargo_nature} />
         </div>
 
-        {/* FCL Container Details */}
-        {showFCL && (
+        {/* FCL Container Details — new containers array */}
+        {showFCL && details.containers && details.containers.length > 0 && (
+          <ContainersDisplay containers={details.containers} />
+        )}
+        {/* FCL legacy fallback */}
+        {showFCL && (!details.containers || details.containers.length === 0) && (details.fcl_container_type || details.fcl_qty) && (
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}>
             <FieldDisplay label="FCL Container Type" value={details.fcl_container_type} />
             <FieldDisplay label="FCL Quantity" value={details.fcl_qty} />
@@ -238,7 +298,7 @@ export function ForwardingServiceDisplay({ details }: { details: any }) {
               <FieldDisplay label="Transit Time" value={details.transit_time} />
             </div>
             <FieldDisplay label="Route" value={details.route} fullWidth />
-            <FieldDisplay label="Stackable" value={details.stackable} fullWidth />
+            <FieldDisplay label="Stackable" value={details.stackable ? "Yes" : details.stackable === false ? "No" : undefined} fullWidth />
           </>
         )}
       </div>
@@ -268,7 +328,11 @@ export function TruckingServiceDisplay({ details }: { details: any }) {
       <div style={{ display: "grid", gap: "20px" }}>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}>
           <FieldDisplay label="Truck Type" value={details.truck_type} />
+          <FieldDisplay label="Quantity" value={details.qty} />
           <FieldDisplay label="Pull Out" value={details.pull_out} />
+          {(details.aol_pol || details.aolPol) && (
+            <FieldDisplay label="AOL/POL" value={details.aol_pol || details.aolPol} />
+          )}
         </div>
         <FieldDisplay label="Delivery Address" value={details.delivery_address} fullWidth />
         <FieldDisplay label="Delivery Instructions" value={details.delivery_instructions} fullWidth />
@@ -280,8 +344,8 @@ export function TruckingServiceDisplay({ details }: { details: any }) {
 // Marine Insurance Service Display
 export function MarineInsuranceServiceDisplay({ details }: { details: any }) {
   // Reconstruct compound fields for display
-  const aolPol = details.aol && details.pol ? `${details.aol} → ${details.pol}` : "";
-  const aodPod = details.aod && details.pod ? `${details.aod} → ${details.pod}` : "";
+  const aolPol = details.aol && details.pol ? `${details.aol} \u2192 ${details.pol}` : "";
+  const aodPod = details.aod && details.pod ? `${details.aod} \u2192 ${details.pod}` : "";
 
   return (
     <div style={{

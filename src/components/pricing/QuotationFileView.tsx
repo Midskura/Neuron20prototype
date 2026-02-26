@@ -1,20 +1,16 @@
-import { ArrowLeft, Edit3, FileText, Calendar, Ticket, CheckCircle, FolderPlus } from "lucide-react";
+import { ArrowLeft, Edit3, FileText, FolderPlus, Layout } from "lucide-react";
 import { useState } from "react";
 import type { QuotationNew, Project } from "../../types/pricing";
 import { QuotationActionMenu } from "./QuotationActionMenu";
 import { StatusChangeButton } from "./StatusChangeButton";
 import { CreateProjectModal } from "../bd/CreateProjectModal";
 import { CreateBookingsFromProjectModal } from "./CreateBookingsFromProjectModal";
-import { 
-  BrokerageServiceDisplay, 
-  ForwardingServiceDisplay, 
-  TruckingServiceDisplay, 
-  MarineInsuranceServiceDisplay, 
-  OthersServiceDisplay 
-} from "./ServiceDetailsDisplay";
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { toast } from "../ui/toast-utils";
 import { CommentsTab } from "../shared/CommentsTab";
+import { SegmentedToggle } from "../ui/SegmentedToggle";
+import { QuotationPDFScreen } from "../projects/quotation/screen/QuotationPDFScreen";
+import { QuotationFormView } from "../projects/quotation/QuotationFormView";
 
 interface QuotationFileViewProps {
   quotation: QuotationNew;
@@ -24,8 +20,10 @@ interface QuotationFileViewProps {
   onAcceptQuotation?: (quotation: QuotationNew) => void;
   onDelete?: () => void;
   onUpdate: (quotation: QuotationNew) => void;
+  onDuplicate?: (quotation: QuotationNew) => void;
   onCreateTicket?: (quotation: QuotationNew) => void;
   onConvertToProject?: (projectId: string) => void;
+  onConvertToContract?: (quotationId: string) => void;
   currentUser?: { id: string; name: string; email: string; department: string } | null;
 }
 
@@ -33,18 +31,77 @@ const API_URL = `https://${projectId}.supabase.co/functions/v1/make-server-c142e
 
 type TabType = "details" | "comments";
 
-export function QuotationFileView({ quotation, onBack, onEdit, userDepartment, onAcceptQuotation, onDelete, onUpdate, onCreateTicket, onConvertToProject, currentUser }: QuotationFileViewProps) {
+export function QuotationFileView({ quotation, onBack, onEdit, userDepartment, onAcceptQuotation, onDelete, onUpdate, onDuplicate, onCreateTicket, onConvertToProject, onConvertToContract, currentUser }: QuotationFileViewProps) {
   const [activeTab, setActiveTab] = useState<TabType>("details");
+  const [viewMode, setViewMode] = useState<"form" | "pdf">("form");
   const [showCreateProjectModal, setShowCreateProjectModal] = useState(false);
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [showCreateBookingsModal, setShowCreateBookingsModal] = useState(false);
   const [createdProject, setCreatedProject] = useState<Project | null>(null);
+  const [isActivatingContract, setIsActivatingContract] = useState(false);
   
   // TODO: Replace with actual user data from context/auth
   const currentUserId = currentUser?.id || "user-123";
   const currentUserName = currentUser?.name || "John Doe";
   const currentUserDepartment = currentUser?.department || userDepartment || "BD";
   
+  // Adapter function to convert QuotationNew to Project for compatibility with Project components
+  const adaptQuotationToProject = (quotation: QuotationNew): Project => {
+    return {
+      id: quotation.project_id || "temp-project-id", // Use project ID if exists, otherwise placeholder
+      project_number: quotation.project_number || quotation.quote_number, // Fallback to quote number
+      quotation_id: quotation.id,
+      quotation_number: quotation.quote_number,
+      quotation_name: quotation.quotation_name,
+      
+      // Customer
+      customer_id: quotation.customer_id,
+      customer_name: quotation.customer_name,
+      customer_department: quotation.customer_department,
+      customer_role: quotation.customer_role,
+      contact_person_id: quotation.contact_person_id,
+      contact_person_name: quotation.contact_person_name,
+      
+      // Shipment
+      movement: quotation.movement,
+      services: quotation.services,
+      service_mode: quotation.service_mode,
+      services_metadata: quotation.services_metadata || [],
+      charge_categories: quotation.charge_categories,
+      currency: quotation.currency,
+      total: quotation.financial_summary?.grand_total,
+      
+      category: quotation.category,
+      pol_aol: quotation.pol_aol,
+      pod_aod: quotation.pod_aod,
+      commodity: quotation.commodity,
+      packaging_type: quotation.packaging_type,
+      incoterm: quotation.incoterm,
+      carrier: quotation.carrier,
+      volume: quotation.volume,
+      gross_weight: quotation.gross_weight,
+      chargeable_weight: quotation.chargeable_weight,
+      dimensions: quotation.dimensions,
+      transit_time: quotation.transit_time,
+      routing_info: quotation.routing_info,
+      collection_address: quotation.collection_address,
+      pickup_address: quotation.pickup_address,
+      
+      // Status & Meta
+      status: quotation.status === "Converted to Project" ? "Active" : "Active", // Placeholder
+      booking_status: "No Bookings Yet",
+      created_at: quotation.created_at,
+      updated_at: quotation.updated_at,
+      
+      // Owner
+      bd_owner_user_name: quotation.prepared_by, // Best guess for display
+      
+      quotation: quotation // Important: Nest the original quotation
+    } as Project;
+  };
+
+  const adaptedProject = adaptQuotationToProject(quotation);
+
   // Check if pricing information should be visible
   // Visible if: user is PD, OR status indicates quotation has been priced
   const showPricing = userDepartment === "PD" || 
@@ -55,7 +112,8 @@ export function QuotationFileView({ quotation, onBack, onEdit, userDepartment, o
     quotation.status === "Needs Revision" ||
     quotation.status === "Disapproved" ||
     quotation.status === "Cancelled" ||
-    quotation.status === "Converted to Project";
+    quotation.status === "Converted to Project" ||
+    quotation.status === "Converted to Contract";
 
   // Calculate financial totals
   const subtotalTaxable = quotation.charge_categories?.reduce((total, category) => {
@@ -95,7 +153,11 @@ export function QuotationFileView({ quotation, onBack, onEdit, userDepartment, o
 
   const handleDuplicate = () => {
     console.log("Duplicating quotation:", quotation.quote_number);
-    alert(`📋 Quotation ${quotation.quote_number} has been duplicated!`);
+    if (onDuplicate) {
+      onDuplicate(quotation);
+    } else {
+      alert(`📋 Quotation ${quotation.quote_number} has been duplicated! (Preview only)`);
+    }
   };
 
   const handleDelete = () => {
@@ -210,6 +272,71 @@ export function QuotationFileView({ quotation, onBack, onEdit, userDepartment, o
     }
   };
 
+  // Activate contract quotation — parallel to handleAcceptAndCreateProject for contracts
+  const handleActivateContract = async () => {
+    if (!currentUser) {
+      toast.error("User information not available");
+      return;
+    }
+
+    setIsActivatingContract(true);
+
+    try {
+      const response = await fetch(`${API_URL}/quotations/${quotation.id}/activate-contract`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${publicAnonKey}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Failed to activate contract');
+      }
+
+      const { quotation: updatedQuotation } = result.data;
+
+      // Update local quotation state
+      onUpdate(updatedQuotation);
+
+      // Show success message
+      toast.success(`✓ Contract ${quotation.quote_number} activated! View in Contracts module.`);
+
+      // Notify parent
+      if (onConvertToContract) {
+        onConvertToContract(quotation.id);
+      }
+
+    } catch (error) {
+      console.error('Error activating contract:', error);
+      toast.error(`Failed to activate contract: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setIsActivatingContract(false);
+    }
+  };
+
+  // Handle saving from PDF View
+  const handlePDFSave = async (data: any) => {
+    // TODO: Implement update logic if needed
+    // For now, we might just toast or update local state
+    // But since QuotationNew structure might be different from what PDF saves...
+    // PDF saves signatory names and notes.
+    
+    // We can map this back to QuotationNew update
+    const updatedQuotation = {
+      ...quotation,
+      prepared_by: data.prepared_by,
+      prepared_by_title: data.prepared_by_title,
+      approved_by: data.approved_by,
+      notes: data.notes
+    };
+    
+    onUpdate(updatedQuotation);
+    toast.success("Quotation updated");
+  };
+
   return (
     <div style={{ 
       backgroundColor: "white",
@@ -217,11 +344,11 @@ export function QuotationFileView({ quotation, onBack, onEdit, userDepartment, o
       flexDirection: "column",
       height: "100vh"
     }}>
-      {/* Header Bar */}
+      {/* Header Bar - Cleaned Up (Concept 2) */}
       <div style={{
         padding: "20px 48px",
         borderBottom: "1px solid var(--neuron-ui-border)",
-        backgroundColor: "#F8FBFB",
+        backgroundColor: "white",
         display: "flex",
         justifyContent: "space-between",
         alignItems: "center"
@@ -264,9 +391,101 @@ export function QuotationFileView({ quotation, onBack, onEdit, userDepartment, o
             {quotation.quote_number}
           </p>
         </div>
+        
+        {/* No action buttons here anymore - moved to toolbar */}
+      </div>
 
-        {/* Action Buttons */}
+      {/* Merged Toolbar: Tabs + Actions */}
+      <div style={{ 
+        padding: "0 48px", 
+        borderBottom: "1px solid var(--neuron-ui-border)",
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        height: "56px"
+      }}>
+        {/* Tabs - Left Side */}
+        <div style={{ display: "flex", gap: "24px", height: "100%" }}>
+          <button
+            onClick={() => setActiveTab("details")}
+            style={{
+              padding: "0 4px",
+              fontSize: "14px",
+              fontWeight: 500,
+              color: activeTab === "details" ? "#0F766E" : "var(--neuron-ink-muted)",
+              background: "none",
+              borderTop: "none",
+              borderLeft: "none",
+              borderRight: "none",
+              borderBottom: activeTab === "details" ? "2px solid #0F766E" : "2px solid transparent",
+              cursor: "pointer",
+              transition: "all 0.2s",
+              height: "100%"
+            }}
+          >
+            Details
+          </button>
+          <button
+            onClick={() => setActiveTab("comments")}
+            style={{
+              padding: "0 4px",
+              fontSize: "14px",
+              fontWeight: 500,
+              color: activeTab === "comments" ? "#0F766E" : "var(--neuron-ink-muted)",
+              background: "none",
+              borderTop: "none",
+              borderLeft: "none",
+              borderRight: "none",
+              borderBottom: activeTab === "comments" ? "2px solid #0F766E" : "2px solid transparent",
+              cursor: "pointer",
+              transition: "all 0.2s",
+              height: "100%"
+            }}
+          >
+            Comments
+          </button>
+        </div>
+
+        {/* Action Controls - Right Side */}
         <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+          {/* Edit Button (Ghost Style) — hidden when locked (converted to project or contract) */}
+          {!quotation.project_id && quotation.status !== "Converted to Contract" && (
+            <button
+              onClick={onEdit}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                padding: "8px 16px",
+                backgroundColor: "transparent",
+                border: "1px solid #F2F4F7", // Very faint outline
+                borderRadius: "6px",
+                fontSize: "13px",
+                fontWeight: 500,
+                color: "var(--neuron-ink-secondary)",
+                cursor: "pointer",
+                transition: "all 0.2s ease"
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = "#F9FAFB";
+                e.currentTarget.style.borderColor = "#E5E7EB";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = "transparent";
+                e.currentTarget.style.borderColor = "#F2F4F7";
+              }}
+            >
+              <Edit3 size={14} />
+              Edit
+            </button>
+          )}
+
+          <StatusChangeButton
+            quotation={quotation}
+            onStatusChange={handleStatusChange}
+            userDepartment={userDepartment}
+          />
+          
           {/* Edit Pricing - PD Only, Pending Pricing Status */}
           {userDepartment === "PD" && quotation.status === "Pending Pricing" && (
             <button
@@ -275,11 +494,11 @@ export function QuotationFileView({ quotation, onBack, onEdit, userDepartment, o
                 display: "flex",
                 alignItems: "center",
                 gap: "8px",
-                padding: "10px 20px",
+                padding: "8px 16px",
                 backgroundColor: "var(--neuron-brand-green)",
                 border: "none",
-                borderRadius: "8px",
-                fontSize: "14px",
+                borderRadius: "6px",
+                fontSize: "13px",
                 fontWeight: 600,
                 color: "white",
                 cursor: "pointer",
@@ -292,13 +511,13 @@ export function QuotationFileView({ quotation, onBack, onEdit, userDepartment, o
                 e.currentTarget.style.backgroundColor = "var(--neuron-brand-green)";
               }}
             >
-              <Edit3 size={16} />
+              <Edit3 size={14} />
               Add Pricing
             </button>
           )}
 
-          {/* Create Project - BD and PD, Accepted by Client Status */}
-          {(userDepartment === "BD" || userDepartment === "PD") && quotation.status === "Accepted by Client" && !quotation.project_id && (
+          {/* Create Project - BD and PD, Accepted by Client Status (Project quotations only) */}
+          {(userDepartment === "BD" || userDepartment === "PD") && quotation.status === "Accepted by Client" && !quotation.project_id && quotation.quotation_type !== "contract" && (
             <button
               onClick={handleAcceptAndCreateProject}
               disabled={isCreatingProject}
@@ -306,11 +525,11 @@ export function QuotationFileView({ quotation, onBack, onEdit, userDepartment, o
                 display: "flex",
                 alignItems: "center",
                 gap: "8px",
-                padding: "10px 20px",
+                padding: "8px 16px",
                 backgroundColor: isCreatingProject ? "#E0E0E0" : "var(--neuron-brand-green)",
                 border: "none",
-                borderRadius: "8px",
-                fontSize: "14px",
+                borderRadius: "6px",
+                fontSize: "13px",
                 fontWeight: 600,
                 color: "white",
                 cursor: isCreatingProject ? "not-allowed" : "pointer",
@@ -328,66 +547,65 @@ export function QuotationFileView({ quotation, onBack, onEdit, userDepartment, o
                 }
               }}
             >
-              <FolderPlus size={16} />
-              {isCreatingProject ? "Creating Project..." : "Create Project"}
+              <FolderPlus size={14} />
+              {isCreatingProject ? "Creating..." : "Create Project"}
             </button>
           )}
-          
-          <StatusChangeButton
-            quotation={quotation}
-            onStatusChange={handleStatusChange}
-            userDepartment={userDepartment}
-          />
-          
-          {/* Hide Edit button if quotation is locked (converted to project) */}
-          {!quotation.project_id && (
+
+          {/* Activate Contract - BD and PD, Accepted by Client Status (Contract quotations only) */}
+          {(userDepartment === "BD" || userDepartment === "PD") && quotation.status === "Accepted by Client" && quotation.quotation_type === "contract" && quotation.contract_status !== "Active" && (
             <button
-              onClick={onEdit}
+              onClick={handleActivateContract}
+              disabled={isActivatingContract}
               style={{
                 display: "flex",
                 alignItems: "center",
                 gap: "8px",
-                padding: "10px 20px",
-                backgroundColor: "white",
-                border: "1.5px solid var(--neuron-brand-green)",
-                borderRadius: "8px",
-                fontSize: "14px",
+                padding: "8px 16px",
+                backgroundColor: isActivatingContract ? "#E0E0E0" : "var(--neuron-brand-green)",
+                border: "none",
+                borderRadius: "6px",
+                fontSize: "13px",
                 fontWeight: 600,
-                color: "var(--neuron-brand-green)",
-                cursor: "pointer",
-                transition: "all 0.2s ease"
+                color: "white",
+                cursor: isActivatingContract ? "not-allowed" : "pointer",
+                transition: "all 0.2s ease",
+                opacity: isActivatingContract ? 0.7 : 1
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = "var(--neuron-brand-green)";
-                e.currentTarget.style.color = "white";
+                if (!isActivatingContract) {
+                  e.currentTarget.style.backgroundColor = "#0D5F58";
+                }
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = "white";
-                e.currentTarget.style.color = "var(--neuron-brand-green)";
+                if (!isActivatingContract) {
+                  e.currentTarget.style.backgroundColor = "var(--neuron-brand-green)";
+                }
               }}
             >
-              <Edit3 size={16} />
-              Edit
+              <FolderPlus size={14} />
+              {isActivatingContract ? "Activating..." : "Activate Contract"}
             </button>
           )}
           
-          {/* Show "Locked" indicator if converted to project */}
-          {quotation.project_id && (
+          {/* Locked Indicator — shown for converted projects or activated contracts */}
+          {(quotation.project_id || quotation.status === "Converted to Contract") && (
             <div style={{
               display: "flex",
               alignItems: "center",
               gap: "8px",
-              padding: "10px 20px",
+              padding: "8px 16px",
               backgroundColor: "#FEF3C7",
-              border: "1.5px solid #FCD34D",
-              borderRadius: "8px",
-              fontSize: "14px",
-              fontWeight: 600,
+              border: "1px solid #FCD34D",
+              borderRadius: "6px",
+              fontSize: "13px",
+              fontWeight: 500,
               color: "#92400E"
             }}>
-              🔒 Locked (Converted to Project)
+              🔒 Locked
             </div>
           )}
+          
           <QuotationActionMenu
             quotation={quotation}
             onEdit={onEdit}
@@ -398,760 +616,49 @@ export function QuotationFileView({ quotation, onBack, onEdit, userDepartment, o
         </div>
       </div>
 
-      {/* Tab Navigation */}
-      <div style={{ padding: "0 48px", borderBottom: "1px solid var(--neuron-ui-border)" }}>
-        <div style={{ display: "flex", gap: "24px" }}>
-          <button
-            onClick={() => setActiveTab("details")}
-            style={{
-              padding: "12px 4px",
-              fontSize: "14px",
-              fontWeight: 500,
-              color: activeTab === "details" ? "#0F766E" : "var(--neuron-ink-muted)",
-              background: "none",
-              borderTop: "none",
-              borderLeft: "none",
-              borderRight: "none",
-              borderBottom: activeTab === "details" ? "2px solid #0F766E" : "2px solid transparent",
-              cursor: "pointer",
-              transition: "all 0.2s",
-            }}
-          >
-            Details
-          </button>
-          <button
-            onClick={() => setActiveTab("comments")}
-            style={{
-              padding: "12px 4px",
-              fontSize: "14px",
-              fontWeight: 500,
-              color: activeTab === "comments" ? "#0F766E" : "var(--neuron-ink-muted)",
-              background: "none",
-              borderTop: "none",
-              borderLeft: "none",
-              borderRight: "none",
-              borderBottom: activeTab === "comments" ? "2px solid #0F766E" : "2px solid transparent",
-              cursor: "pointer",
-              transition: "all 0.2s",
-            }}
-          >
-            Comments
-          </button>
-        </div>
-      </div>
-
       {/* Main Content Area */}
       <div style={{ 
         flex: 1,
         overflow: "auto"
       }}>
         {activeTab === "details" ? (
-        <div>
-        {/* Form Sections (Scrollable) */}
-        <div style={{ 
-          padding: "32px 48px",
-          maxWidth: "1400px",
-          margin: "0 auto"
-        }}>
-          
-          {/* General Details Section */}
-          <div style={{
-            backgroundColor: "white",
-            border: "1px solid var(--neuron-ui-border)",
-            borderRadius: "8px",
-            padding: "24px",
-            marginBottom: "24px"
-          }}>
-            <h2 style={{
-              fontSize: "16px",
-              fontWeight: 600,
-              color: "var(--neuron-brand-green)",
-              marginBottom: "20px"
-            }}>
-              General Details
-            </h2>
+           <div style={{ padding: "32px 48px", maxWidth: "1400px", margin: "0 auto" }}>
+             
+             {/* View Switcher */}
+             <div className="flex items-center justify-between mb-8">
+               <SegmentedToggle
+                   value={viewMode}
+                   onChange={setViewMode}
+                   options={[
+                       { value: "form", label: "Form View", icon: <Layout size={16} /> },
+                       { value: "pdf", label: "PDF View", icon: <FileText size={16} /> }
+                   ]}
+               />
+             </div>
 
-            <div style={{ display: "grid", gap: "20px" }}>
-              {/* Customer and Contact Person Grid */}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}>
-                {/* Customer */}
-                <div>
-                  <label style={{
-                    display: "block",
-                    fontSize: "13px",
-                    fontWeight: 500,
-                    color: "var(--neuron-ink-base)",
-                    marginBottom: "8px"
-                  }}>
-                    Customer *
-                  </label>
-                  <div style={{
-                    padding: "10px 14px",
-                    backgroundColor: "#F9FAFB",
-                    border: "1px solid var(--neuron-ui-border)",
-                    borderRadius: "6px",
-                    fontSize: "14px",
-                    color: "var(--neuron-ink-primary)"
-                  }}>
-                    {quotation.customer_name || "—"}
-                  </div>
+             {viewMode === "pdf" ? (
+                <div className="h-[800px] border border-gray-200 rounded-xl overflow-hidden bg-white">
+                    <QuotationPDFScreen 
+                        project={adaptedProject}
+                        onClose={() => setViewMode("form")}
+                        onSave={handlePDFSave}
+                        currentUser={currentUser}
+                        isEmbedded={true}
+                    />
                 </div>
-
-                {/* Contact Person */}
-                <div>
-                  <label style={{
-                    display: "block",
-                    fontSize: "13px",
-                    fontWeight: 500,
-                    color: "var(--neuron-ink-base)",
-                    marginBottom: "8px"
-                  }}>
-                    Contact Person
-                  </label>
-                  <div style={{
-                    padding: "10px 14px",
-                    backgroundColor: "#F9FAFB",
-                    border: "1px solid var(--neuron-ui-border)",
-                    borderRadius: "6px",
-                    fontSize: "14px",
-                    color: quotation.contact_person ? "var(--neuron-ink-primary)" : "#9CA3AF"
-                  }}>
-                    {quotation.contact_person || "—"}
-                  </div>
-                </div>
-              </div>
-
-              {/* Services */}
-              <div>
-                <label style={{
-                  display: "block",
-                  fontSize: "13px",
-                  fontWeight: 500,
-                  color: "var(--neuron-ink-base)",
-                  marginBottom: "8px"
-                }}>
-                  Service/s *
-                </label>
-                <div style={{
-                  display: "flex",
-                  flexWrap: "wrap",
-                  gap: "8px"
-                }}>
-                  {quotation.services && quotation.services.length > 0 ? (
-                    quotation.services.map((service, idx) => (
-                      <span
-                        key={idx}
-                        style={{
-                          padding: "8px 16px",
-                          backgroundColor: "#0F766E",
-                          border: "1px solid #0F766E",
-                          borderRadius: "6px",
-                          fontSize: "14px",
-                          fontWeight: 500,
-                          color: "white",
-                          cursor: "default"
-                        }}
-                      >
-                        {service}
-                      </span>
-                    ))
-                  ) : (
-                    <div style={{
-                      padding: "10px 14px",
-                      backgroundColor: "#F9FAFB",
-                      border: "1px solid var(--neuron-ui-border)",
-                      borderRadius: "6px",
-                      fontSize: "14px",
-                      color: "#9CA3AF",
-                      width: "100%"
-                    }}>
-                      No services selected
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Date and Terms Grid */}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "20px" }}>
-                {/* Date */}
-                <div>
-                  <label style={{
-                    display: "block",
-                    fontSize: "13px",
-                    fontWeight: 500,
-                    color: "var(--neuron-ink-base)",
-                    marginBottom: "8px"
-                  }}>
-                    Date *
-                  </label>
-                  <div style={{
-                    padding: "10px 14px",
-                    backgroundColor: "#F9FAFB",
-                    border: "1px solid var(--neuron-ui-border)",
-                    borderRadius: "6px",
-                    fontSize: "14px",
-                    color: "var(--neuron-ink-primary)",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "8px"
-                  }}>
-                    <Calendar size={16} style={{ color: "var(--neuron-ink-muted)" }} />
-                    {formatDate(quotation.created_date)}
-                  </div>
-                </div>
-
-                {/* Credit Terms */}
-                <div>
-                  <label style={{
-                    display: "block",
-                    fontSize: "13px",
-                    fontWeight: 500,
-                    color: "var(--neuron-ink-base)",
-                    marginBottom: "8px"
-                  }}>
-                    Credit Terms
-                  </label>
-                  <div style={{
-                    padding: "10px 14px",
-                    backgroundColor: "#F9FAFB",
-                    border: "1px solid var(--neuron-ui-border)",
-                    borderRadius: "6px",
-                    fontSize: "14px",
-                    color: quotation.credit_terms ? "var(--neuron-ink-primary)" : "#9CA3AF"
-                  }}>
-                    {quotation.credit_terms || "—"}
-                  </div>
-                </div>
-
-                {/* Validity */}
-                <div>
-                  <label style={{
-                    display: "block",
-                    fontSize: "13px",
-                    fontWeight: 500,
-                    color: "var(--neuron-ink-base)",
-                    marginBottom: "8px"
-                  }}>
-                    Validity
-                  </label>
-                  <div style={{
-                    padding: "10px 14px",
-                    backgroundColor: "#F9FAFB",
-                    border: "1px solid var(--neuron-ui-border)",
-                    borderRadius: "6px",
-                    fontSize: "14px",
-                    color: quotation.validity_period ? "var(--neuron-ink-primary)" : "#9CA3AF"
-                  }}>
-                    {quotation.validity_period || "—"}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Service-specific Detail Sections */}
-          {quotation.services_metadata && quotation.services_metadata.map((service, idx) => {
-            const details = service.service_details as any;
-            
-            if (service.service_type === "Brokerage") {
-              return <BrokerageServiceDisplay key={idx} details={details} />;
-            }
-            
-            if (service.service_type === "Forwarding") {
-              return <ForwardingServiceDisplay key={idx} details={details} />;
-            }
-            
-            if (service.service_type === "Trucking") {
-              return <TruckingServiceDisplay key={idx} details={details} />;
-            }
-            
-            if (service.service_type === "Marine Insurance") {
-              return <MarineInsuranceServiceDisplay key={idx} details={details} />;
-            }
-            
-            if (service.service_type === "Others") {
-              return <OthersServiceDisplay key={idx} details={details} />;
-            }
-            
-            return null;
-          })}
-
-          {/* Vendors Section */}
-          {quotation.vendors && (
-            <div style={{
-              backgroundColor: "white",
-              border: "1px solid var(--neuron-ui-border)",
-              borderRadius: "8px",
-              padding: "24px",
-              marginBottom: "24px"
-            }}>
-              <h2 style={{
-                fontSize: "16px",
-                fontWeight: 600,
-                color: "var(--neuron-brand-green)",
-                marginBottom: "20px"
-              }}>
-                Vendors
-              </h2>
-
-              <div style={{ display: "grid", gap: "20px" }}>
-                {/* Overseas Agents */}
-                <div>
-                  <label style={{
-                    display: "block",
-                    fontSize: "13px",
-                    fontWeight: 500,
-                    color: "var(--neuron-ink-base)",
-                    marginBottom: "8px"
-                  }}>
-                    Overseas Agents
-                  </label>
-                  <div style={{
-                    padding: "10px 14px",
-                    backgroundColor: "#F9FAFB",
-                    border: "1px solid var(--neuron-ui-border)",
-                    borderRadius: "6px",
-                    fontSize: "14px",
-                    color: quotation.vendors.overseas_agents && quotation.vendors.overseas_agents.length > 0 ? "var(--neuron-ink-primary)" : "#9CA3AF"
-                  }}>
-                    {quotation.vendors.overseas_agents && quotation.vendors.overseas_agents.length > 0
-                      ? quotation.vendors.overseas_agents.join(", ")
-                      : "—"}
-                  </div>
-                </div>
-
-                {/* Local Agents */}
-                <div>
-                  <label style={{
-                    display: "block",
-                    fontSize: "13px",
-                    fontWeight: 500,
-                    color: "var(--neuron-ink-base)",
-                    marginBottom: "8px"
-                  }}>
-                    Local Agents
-                  </label>
-                  <div style={{
-                    padding: "10px 14px",
-                    backgroundColor: "#F9FAFB",
-                    border: "1px solid var(--neuron-ui-border)",
-                    borderRadius: "6px",
-                    fontSize: "14px",
-                    color: quotation.vendors.local_agents && quotation.vendors.local_agents.length > 0 ? "var(--neuron-ink-primary)" : "#9CA3AF"
-                  }}>
-                    {quotation.vendors.local_agents && quotation.vendors.local_agents.length > 0
-                      ? quotation.vendors.local_agents.join(", ")
-                      : "—"}
-                  </div>
-                </div>
-
-                {/* Subcontractors */}
-                <div>
-                  <label style={{
-                    display: "block",
-                    fontSize: "13px",
-                    fontWeight: 500,
-                    color: "var(--neuron-ink-base)",
-                    marginBottom: "8px"
-                  }}>
-                    Subcontractors
-                  </label>
-                  <div style={{
-                    padding: "10px 14px",
-                    backgroundColor: "#F9FAFB",
-                    border: "1px solid var(--neuron-ui-border)",
-                    borderRadius: "6px",
-                    fontSize: "14px",
-                    color: quotation.vendors.subcontractors && quotation.vendors.subcontractors.length > 0 ? "var(--neuron-ink-primary)" : "#9CA3AF"
-                  }}>
-                    {quotation.vendors.subcontractors && quotation.vendors.subcontractors.length > 0
-                      ? quotation.vendors.subcontractors.join(", ")
-                      : "—"}
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Charge Categories Section - Conditional visibility based on userDepartment and status */}
-          {showPricing && quotation.charge_categories && quotation.charge_categories.length > 0 && (
-            <div style={{
-              backgroundColor: "white",
-              border: "1px solid var(--neuron-ui-border)",
-              borderRadius: "8px",
-              padding: "24px",
-              marginBottom: "24px"
-            }}>
-              <div style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: "20px"
-              }}>
-                <h2 style={{
-                  fontSize: "16px",
-                  fontWeight: 600,
-                  color: "var(--neuron-brand-green)",
-                  margin: 0
-                }}>
-                  Charge Categories
-                </h2>
-                
-                <div style={{
-                  fontSize: "13px",
-                  fontWeight: 500,
-                  color: "var(--neuron-ink-muted)"
-                }}>
-                  Currency: <span style={{ 
-                    padding: "4px 12px",
-                    backgroundColor: "#E8F4F3",
-                    border: "1px solid var(--neuron-brand-green)",
-                    borderRadius: "4px",
-                    color: "var(--neuron-brand-green)",
-                    fontWeight: 600,
-                    marginLeft: "8px"
-                  }}>{quotation.currency}</span>
-                </div>
-              </div>
-
-              <div style={{ padding: "20px 0" }}>
-                <div style={{ display: "grid", gap: "16px" }}>
-                  {quotation.charge_categories.map((category, catIdx) => (
-                    <div
-                      key={catIdx}
-                      style={{
-                        border: "1px solid var(--neuron-ui-border)",
-                        borderRadius: "6px",
-                        overflow: "hidden"
-                      }}
-                    >
-                      {/* Category Header */}
-                      <div style={{
-                        padding: "12px 16px",
-                        backgroundColor: "#F9FAFB",
-                        borderBottom: "1px solid var(--neuron-ui-border)",
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center"
-                      }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: "8px", flex: 1 }}>
-                          <span style={{
-                            fontSize: "13px",
-                            fontWeight: 600,
-                            color: "var(--neuron-ink-primary)",
-                            textTransform: "uppercase",
-                            letterSpacing: "0.3px"
-                          }}>
-                            {category.name}
-                          </span>
-
-                          <span style={{
-                            fontSize: "11px",
-                            color: "var(--neuron-ink-muted)",
-                            marginLeft: "8px"
-                          }}>
-                            ({category.line_items?.length || 0} {(category.line_items?.length || 0) === 1 ? 'item' : 'items'})
-                          </span>
-                        </div>
-
-                        <span style={{
-                          fontSize: "14px",
-                          fontWeight: 600,
-                          color: "var(--neuron-brand-green)"
-                        }}>
-                          {quotation.currency} {(category.subtotal || 0).toFixed(2)}
-                        </span>
-                      </div>
-
-                      {/* Line Items */}
-                      {category.line_items && category.line_items.length > 0 && (
-                        <div>
-                          {/* Table Header */}
-                          <div style={{
-                            display: "grid",
-                            gridTemplateColumns: "2fr 1fr 0.8fr 0.8fr 1fr 0.6fr 1.2fr 1.2fr",
-                            gap: "12px",
-                            padding: "8px 12px",
-                            backgroundColor: "#F9FAFB",
-                            borderBottom: "1px solid var(--neuron-ui-border)",
-                            fontSize: "11px",
-                            fontWeight: 600,
-                            color: "var(--neuron-ink-muted)",
-                            textTransform: "uppercase",
-                            letterSpacing: "0.3px"
-                          }}>
-                            <div>Description</div>
-                            <div>Vendor</div>
-                            <div>Qty</div>
-                            <div>Unit</div>
-                            <div>Cost Type</div>
-                            <div>Buy</div>
-                            <div>Sell</div>
-                            <div>Total</div>
-                          </div>
-
-                          {/* Line Item Rows */}
-                          {category.line_items.map((item, itemIdx) => (
-                            <div
-                              key={itemIdx}
-                              style={{
-                                display: "grid",
-                                gridTemplateColumns: "2fr 1fr 0.8fr 0.8fr 1fr 0.6fr 1.2fr 1.2fr",
-                                gap: "12px",
-                                padding: "10px 12px",
-                                borderBottom: itemIdx < category.line_items.length - 1 ? "1px solid var(--neuron-ui-border)" : "none",
-                                fontSize: "13px",
-                                alignItems: "center"
-                              }}
-                            >
-                              <div style={{ color: "var(--neuron-ink-primary)" }}>{item.description}</div>
-                              <div style={{ color: "var(--neuron-ink-secondary)", fontSize: "12px" }}>{item.vendor || "—"}</div>
-                              <div style={{ color: "var(--neuron-ink-primary)" }}>{item.quantity}</div>
-                              <div style={{ color: "var(--neuron-ink-secondary)", fontSize: "12px" }}>{item.unit}</div>
-                              <div>
-                                <span style={{
-                                  padding: "2px 8px",
-                                  backgroundColor: item.cost_type === "Billable" ? "#E8F4F3" : "#FEF3F2",
-                                  border: `1px solid ${item.cost_type === "Billable" ? "var(--neuron-brand-green)" : "#FCA5A5"}`,
-                                  borderRadius: "4px",
-                                  fontSize: "11px",
-                                  fontWeight: 600,
-                                  color: item.cost_type === "Billable" ? "var(--neuron-brand-green)" : "#DC2626"
-                                }}>
-                                  {item.cost_type}
-                                </span>
-                              </div>
-                              <div style={{ color: "var(--neuron-ink-secondary)", fontSize: "12px" }}>{item.buy_price?.toFixed(2) || "—"}</div>
-                              <div style={{ color: "var(--neuron-ink-primary)", fontWeight: 500 }}>{item.sell_price?.toFixed(2) || "—"}</div>
-                              <div style={{ color: "var(--neuron-brand-green)", fontWeight: 600 }}>{item.total?.toFixed(2) || "0.00"}</div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Financial Summary Section - Conditional visibility */}
-          {showPricing && quotation.financial_summary && (
-            <div style={{
-              backgroundColor: "white",
-              border: "1px solid var(--neuron-ui-border)",
-              borderRadius: "8px",
-              padding: "24px",
-              marginBottom: "24px"
-            }}>
-              <h2 style={{
-                fontSize: "16px",
-                fontWeight: 600,
-                color: "var(--neuron-brand-green)",
-                marginBottom: "20px"
-              }}>
-                Financial Summary
-              </h2>
-
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "16px" }}>
-                {/* Subtotal Non-Taxed */}
-                <div>
-                  <label style={{
-                    display: "block",
-                    fontSize: "11px",
-                    fontWeight: 600,
-                    color: "var(--neuron-ink-muted)",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.5px",
-                    marginBottom: "8px"
-                  }}>
-                    Subtotal (Non-Taxed)
-                  </label>
-                  <div style={{
-                    padding: "10px 12px",
-                    backgroundColor: "#F9FAFB",
-                    border: "1px solid #E5E7EB",
-                    borderRadius: "6px",
-                    fontSize: "14px",
-                    color: "var(--neuron-ink-primary)"
-                  }}>
-                    {financialSummary.subtotal_non_taxed.toFixed(2)}
-                  </div>
-                </div>
-
-                {/* Subtotal Taxable */}
-                <div>
-                  <label style={{
-                    display: "block",
-                    fontSize: "11px",
-                    fontWeight: 600,
-                    color: "var(--neuron-ink-muted)",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.5px",
-                    marginBottom: "8px"
-                  }}>
-                    Subtotal (Taxable)
-                  </label>
-                  <div style={{
-                    padding: "10px 12px",
-                    backgroundColor: "#F9FAFB",
-                    border: "1px solid #E5E7EB",
-                    borderRadius: "6px",
-                    fontSize: "14px",
-                    color: "var(--neuron-ink-primary)"
-                  }}>
-                    {financialSummary.subtotal_taxable.toFixed(2)}
-                  </div>
-                </div>
-
-                {/* Tax Rate */}
-                <div>
-                  <label style={{
-                    display: "block",
-                    fontSize: "11px",
-                    fontWeight: 600,
-                    color: "var(--neuron-ink-muted)",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.5px",
-                    marginBottom: "8px"
-                  }}>
-                    Tax Rate
-                  </label>
-                  <div style={{
-                    padding: "10px 12px",
-                    backgroundColor: "#F9FAFB",
-                    border: "1px solid #E5E7EB",
-                    borderRadius: "6px",
-                    fontSize: "14px",
-                    color: "var(--neuron-ink-primary)"
-                  }}>
-                    {(financialSummary.tax_rate * 100).toFixed(0)}%
-                  </div>
-                </div>
-
-                {/* Tax Amount */}
-                <div>
-                  <label style={{
-                    display: "block",
-                    fontSize: "11px",
-                    fontWeight: 600,
-                    color: "var(--neuron-ink-muted)",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.5px",
-                    marginBottom: "8px"
-                  }}>
-                    Tax Amount
-                  </label>
-                  <div style={{
-                    padding: "10px 12px",
-                    backgroundColor: "#F9FAFB",
-                    border: "1px solid #E5E7EB",
-                    borderRadius: "6px",
-                    fontSize: "14px",
-                    color: "var(--neuron-ink-primary)"
-                  }}>
-                    {financialSummary.tax_amount.toFixed(2)}
-                  </div>
-                </div>
-
-                {/* Other Charges */}
-                <div>
-                  <label style={{
-                    display: "block",
-                    fontSize: "11px",
-                    fontWeight: 600,
-                    color: "var(--neuron-ink-muted)",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.5px",
-                    marginBottom: "8px"
-                  }}>
-                    Other Charges
-                  </label>
-                  <div style={{
-                    padding: "10px 12px",
-                    backgroundColor: "#F9FAFB",
-                    border: "1px solid #E5E7EB",
-                    borderRadius: "6px",
-                    fontSize: "14px",
-                    color: "var(--neuron-ink-primary)"
-                  }}>
-                    {financialSummary.other_charges.toFixed(2)}
-                  </div>
-                </div>
-
-                {/* Grand Total */}
-                <div style={{
-                  backgroundColor: "#E8F4F3",
-                  border: "2px solid var(--neuron-brand-green)",
-                  borderRadius: "8px",
-                  padding: "20px",
-                  textAlign: "center",
-                  gridColumn: "1 / -1"
-                }}>
-                  <div style={{
-                    fontSize: "12px",
-                    fontWeight: 600,
-                    color: "var(--neuron-brand-green)",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.5px",
-                    marginBottom: "8px"
-                  }}>
-                    Grand Total
-                  </div>
-                  <div style={{
-                    fontSize: "32px",
-                    fontWeight: 700,
-                    color: "var(--neuron-brand-green)"
-                  }}>
-                    {quotation.currency} {financialSummary.grand_total.toFixed(2)}
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Terms & Conditions Section */}
-          {quotation.terms_and_conditions && (
-            <div style={{
-              backgroundColor: "white",
-              border: "1px solid var(--neuron-ui-border)",
-              borderRadius: "8px",
-              padding: "24px",
-              marginBottom: "24px"
-            }}>
-              <h2 style={{
-                fontSize: "16px",
-                fontWeight: 600,
-                color: "var(--neuron-brand-green)",
-                marginBottom: "20px"
-              }}>
-                Terms & Conditions
-              </h2>
-              <div style={{
-                padding: "16px",
-                backgroundColor: "#F9FAFB",
-                border: "1px solid var(--neuron-ui-border)",
-                borderRadius: "6px",
-                fontSize: "14px",
-                color: "var(--neuron-ink-primary)",
-                lineHeight: "1.6",
-                whiteSpace: "pre-wrap"
-              }}>
-                {quotation.terms_and_conditions}
-              </div>
-            </div>
-          )}
-        </div>
-        </div>
+             ) : (
+                <QuotationFormView project={adaptedProject} />
+             )}
+           </div>
         ) : (
-        <div style={{ height: "100%" }}>
-          <CommentsTab
-            inquiryId={quotation.id}
-            currentUserId={currentUserId}
-            currentUserName={currentUserName}
-            currentUserDepartment={currentUserDepartment}
-          />
-        </div>
+          <div style={{ height: "100%" }}>
+            <CommentsTab
+              inquiryId={quotation.id}
+              currentUserId={currentUserId}
+              currentUserName={currentUserName}
+              currentUserDepartment={currentUserDepartment}
+            />
+          </div>
         )}
       </div>
 

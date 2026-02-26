@@ -150,10 +150,16 @@ export function CreateBookingsFromProjectModal({
         return {
           ...commonFields,
           service: serviceData.service || "Trucking",
-          truckType: serviceData.truckType || "",
+          truckType: serviceData.truckType || "",  // @deprecated — synced from first truckingLineItem; kept for backward compat
           mode: serviceData.mode || "Domestic",
           preferredDeliveryDate: project.shipment_ready_date || "",
           
+          // ✨ Multi-line trucking: pass through line items if available
+          ...(serviceData.trucking_line_items && { trucking_line_items: serviceData.trucking_line_items }),
+          // Sync legacy deliveryAddress from first line item when available
+          deliveryAddress: serviceData.trucking_line_items?.[0]?.destination
+            || serviceData.deliveryLocation || "",
+
           // Shipment Information
           pickupLocation: serviceData.pickupLocation || project.collection_address || "",
           deliveryLocation: serviceData.deliveryLocation || "",

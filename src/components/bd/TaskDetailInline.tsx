@@ -365,7 +365,7 @@ export function TaskDetailInline({ task, onBack, onUpdate, onDelete, customers, 
                 </label>
                 <input
                   type="date"
-                  value={editedTask.due_date}
+                  value={editedTask.due_date || ""}
                   onChange={(e) => {
                     setEditedTask({ ...editedTask, due_date: e.target.value });
                     handleSave();

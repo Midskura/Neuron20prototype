@@ -37,16 +37,20 @@ export function CustomersListWithFilters({ userDepartment, onViewCustomer }: Cus
   // Fetch users from backend
   const fetchUsers = async () => {
     try {
-      const response = await fetch(`${API_URL}/users?department=BD`, {
+      const response = await fetch(`${API_URL}/users?department=Business%20Development`, {
         headers: { Authorization: `Bearer ${publicAnonKey}` },
-        cache: 'no-store',
       });
-      const result = await response.json();
-      if (result.success) {
-        setUsers(result.data);
-        console.log('[CustomersListWithFilters] Fetched users:', result.data.length);
+      if (response.ok) {
+        const result = await response.json();
+        if (result.success) {
+          setUsers(result.data);
+          console.log('[CustomersListWithFilters] Fetched users:', result.data.length);
+        } else {
+          console.warn("Failed to fetch users:", result.error);
+          setUsers([]);
+        }
       } else {
-        console.error("Failed to fetch users:", result.error);
+        console.warn(`Error fetching users: ${response.status}`);
         setUsers([]);
       }
     } catch (error) {

@@ -14,7 +14,7 @@ interface GroupedDropdownProps {
   disabled?: boolean;
 }
 
-export function GroupedDropdown({ options, value, onChange, placeholder = "Select option", disabled = false }: GroupedDropdownProps) {
+export function GroupedDropdown({ options = [], value, onChange, placeholder = "Select option", disabled = false }: GroupedDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -113,7 +113,7 @@ export function GroupedDropdown({ options, value, onChange, placeholder = "Selec
             animation: "slideDown 0.2s ease-out",
           }}
         >
-          {options.map((group, groupIndex) => (
+          {(options || []).map((group, groupIndex) => (
             <div key={groupIndex}>
               {/* Group Header */}
               <div
@@ -132,7 +132,7 @@ export function GroupedDropdown({ options, value, onChange, placeholder = "Selec
               </div>
               
               {/* Group Items */}
-              {group.items.map((item, itemIndex) => (
+              {(group.items || []).map((item, itemIndex) => (
                 <button
                   key={itemIndex}
                   type="button"

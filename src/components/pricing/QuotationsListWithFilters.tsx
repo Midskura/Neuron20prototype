@@ -1,7 +1,9 @@
-import { Search, Plus, FileText, Briefcase, Ship, Shield, Truck, ChevronDown, SlidersHorizontal, Calendar, CircleDot, Building2 } from "lucide-react";
+import { Search, Briefcase, Ship, Shield, Truck, SlidersHorizontal, Calendar, CircleDot, Building2, FileText } from "lucide-react";
 import { useState, useRef, useMemo, useEffect } from "react";
-import type { QuotationNew } from "../../types/pricing";
+import type { QuotationNew, QuotationType } from "../../types/pricing";
 import { CustomDropdown } from "../bd/CustomDropdown";
+import { CreateQuotationMenu } from "./CreateQuotationMenu";
+import { QuotationTypeIcon, QuotationTypeSubLabel, getQuotationTypeAccentStyle } from "./QuotationTypeIcons";
 
 // Default column widths
 const DEFAULT_COLUMN_WIDTHS = {
@@ -27,7 +29,7 @@ const MIN_COLUMN_WIDTHS = {
 
 interface QuotationsListWithFiltersProps {
   onViewItem: (item: QuotationNew) => void;
-  onCreateQuotation: () => void;
+  onCreateQuotation: (quotationType: QuotationType) => void;
   quotations?: QuotationNew[];
   isLoading?: boolean;
   userDepartment?: "BD" | "PD";
@@ -58,6 +60,12 @@ const getStatusColor = (status: string): string => {
     case "Approved": return "#10B981";
     case "Disapproved": return "#EF4444";
     case "Cancelled": return "#6B7280";
+    // Contract-specific statuses
+    case "Active": return "#10B981";
+    case "Sent": return "#3B82F6";
+    case "Expiring": return "#F59E0B";
+    case "Expired": return "#6B7280";
+    case "Renewed": return "#8B5CF6";
     default: return "#6B7280";
   }
 };
@@ -71,6 +79,12 @@ const getStatusBgColor = (status: string): string => {
     case "Approved": return "#D1FAE5";
     case "Disapproved": return "#FEE2E2";
     case "Cancelled": return "#F3F4F6";
+    // Contract-specific statuses
+    case "Active": return "#D1FAE5";
+    case "Sent": return "#DBEAFE";
+    case "Expiring": return "#FEF3C7";
+    case "Expired": return "#F3F4F6";
+    case "Renewed": return "#EDE9FE";
     default: return "#F3F4F6";
   }
 };
@@ -91,6 +105,10 @@ function QuotationTableRow({ item, index, totalItems, onItemClick, gridTemplateC
   const iconRef = useRef<HTMLDivElement>(null);
   const nameRef = useRef<HTMLDivElement>(null);
   const hasMultipleServices = item.services.length > 1;
+
+  // ✨ CONTRACT: Detect contract quotations
+  const isContract = item.quotation_type === "contract";
+  const contractStatus = isContract ? (item.contract_status || item.status) : null;
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -140,7 +158,8 @@ function QuotationTableRow({ item, index, totalItems, onItemClick, gridTemplateC
         padding: "10px 16px",
         borderBottom: "none",
         backgroundColor: index % 2 === 0 ? "white" : "#FAFBFC",
-        position: "relative"
+        position: "relative",
+        ...getQuotationTypeAccentStyle(item.quotation_type),
       }}
       onClick={() => onItemClick(item)}
       onMouseEnter={(e) => {
@@ -150,12 +169,12 @@ function QuotationTableRow({ item, index, totalItems, onItemClick, gridTemplateC
         e.currentTarget.style.backgroundColor = index % 2 === 0 ? "white" : "#FAFBFC";
       }}
     >
-      {/* Icon */}
+      {/* Icon — type-aware (Project vs Contract) */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <FileText size={16} style={{ color: "#0F766E" }} />
+        <QuotationTypeIcon type={item.quotation_type} size={16} />
       </div>
 
-      {/* Quotation Name with Hover Tooltip and Ellipsis */}
+      {/* Quotation Name with type sub-label */}
       <div 
         ref={nameRef}
         style={{ display: "flex", flexDirection: "column", justifyContent: "center", overflow: "hidden" }}
@@ -172,16 +191,7 @@ function QuotationTableRow({ item, index, totalItems, onItemClick, gridTemplateC
         }}>
           {item.quotation_name || "Untitled"}
         </span>
-        <span style={{ 
-          fontSize: "12px", 
-          color: "#9CA3AF",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-          marginTop: "2px"
-        }}>
-          {item.quote_number}
-        </span>
+        <QuotationTypeSubLabel quoteNumber={item.quote_number} type={item.quotation_type} />
       </div>
 
       {/* Tooltip for Quote Name */}
@@ -223,14 +233,26 @@ function QuotationTableRow({ item, index, totalItems, onItemClick, gridTemplateC
         ))}
       </div>
 
-      {/* Total */}
+      {/* Total / Validity Period */}
       <div style={{ display: "flex", alignItems: "center" }}>
-        <span style={{
-          fontSize: "13px",
-          color: total > 0 ? "#111827" : "#9CA3AF"
-        }}>
-          {item.currency} {total > 0 ? total.toLocaleString() : "0"}
-        </span>
+        {isContract ? (
+          <span style={{
+            fontSize: "12px",
+            color: "#6B7280",
+          }}>
+            {item.contract_validity_start && item.contract_validity_end
+              ? `${formatDate(item.contract_validity_start)} - ${formatDate(item.contract_validity_end)}`
+              : "No validity set"
+            }
+          </span>
+        ) : (
+          <span style={{
+            fontSize: "13px",
+            color: total > 0 ? "#111827" : "#9CA3AF"
+          }}>
+            {item.currency} {total > 0 ? total.toLocaleString() : "0"}
+          </span>
+        )}
       </div>
 
       {/* Date */}
@@ -240,20 +262,20 @@ function QuotationTableRow({ item, index, totalItems, onItemClick, gridTemplateC
         </span>
       </div>
 
-      {/* Status */}
+      {/* Status (uses contract_status for contracts) */}
       {showStatus && (
         <div style={{ display: "flex", alignItems: "center" }}>
           <span
             style={{
               fontSize: "13px",
-              color: getStatusColor(item.status),
-              backgroundColor: getStatusBgColor(item.status),
+              color: getStatusColor(isContract ? (contractStatus || "Draft") : item.status),
+              backgroundColor: getStatusBgColor(isContract ? (contractStatus || "Draft") : item.status),
               padding: "4px 8px",
               borderRadius: "4px",
               fontWeight: 500
             }}
           >
-            {item.status}
+            {isContract ? (contractStatus || "Draft") : item.status}
           </span>
         </div>
       )}
@@ -268,6 +290,9 @@ export function QuotationsListWithFilters({ onViewItem, onCreateQuotation, quota
   const [serviceFilter, setServiceFilter] = useState("All Services");
   const [customerFilter, setCustomerFilter] = useState("All Customers");
   const [workflowTab, setWorkflowTab] = useState<"Inquiries" | "Quotations" | "Completed">("Inquiries");
+  
+  // ✨ CONTRACT: Quotation type filter
+  const [typeFilter, setTypeFilter] = useState<"All" | "Project" | "Contract">("All");
   
   // Column width state
   const [columnWidths, setColumnWidths] = useState(DEFAULT_COLUMN_WIDTHS);
@@ -356,6 +381,13 @@ export function QuotationsListWithFilters({ onViewItem, onCreateQuotation, quota
   const filteredQuotations = useMemo(() => {
     let filtered = quotations || [];
 
+    // ✨ CONTRACT: Type filter (All / Project / Contract)
+    if (typeFilter === "Contract") {
+      filtered = filtered.filter(item => item.quotation_type === "contract");
+    } else if (typeFilter === "Project") {
+      filtered = filtered.filter(item => !item.quotation_type || item.quotation_type === "project");
+    }
+
     // Search filter
     if (searchQuery) {
       filtered = filtered.filter(item =>
@@ -406,7 +438,7 @@ export function QuotationsListWithFilters({ onViewItem, onCreateQuotation, quota
     }
 
     return filtered;
-  }, [quotations, searchQuery, statusFilter, serviceFilter, customerFilter, workflowTab]);
+  }, [quotations, searchQuery, statusFilter, serviceFilter, customerFilter, workflowTab, typeFilter]);
 
   // Calculate tab counts
   const tabCounts = useMemo(() => {
@@ -438,6 +470,9 @@ export function QuotationsListWithFilters({ onViewItem, onCreateQuotation, quota
     : "Manage quotations from BD";
   const buttonText = showStatus ? "Create Inquiry" : "Create Quotation";
   const searchPlaceholder = showStatus ? "Search inquiries..." : "Search quotations...";
+
+  // ✨ Add entity word for project/contract
+  const entityWord = showStatus ? "Inquiry" : "Quotation";
 
   return (
     <div style={{ 
@@ -477,32 +512,11 @@ export function QuotationsListWithFilters({ onViewItem, onCreateQuotation, quota
             </p>
           </div>
           
-          <button
-            onClick={onCreateQuotation}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "8px",
-              padding: "10px 20px",
-              backgroundColor: "var(--neuron-brand-green)",
-              border: "none",
-              borderRadius: "8px",
-              fontSize: "14px",
-              fontWeight: 600,
-              color: "white",
-              cursor: "pointer",
-              transition: "all 0.2s ease"
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = "#0F544A";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = "var(--neuron-brand-green)";
-            }}
-          >
-            <Plus size={18} />
-            {buttonText}
-          </button>
+          <CreateQuotationMenu
+            onSelect={onCreateQuotation}
+            buttonText={buttonText}
+            entityWord={entityWord}
+          />
         </div>
 
         {/* Search Bar - Full Width */}
@@ -554,6 +568,23 @@ export function QuotationsListWithFilters({ onViewItem, onCreateQuotation, quota
                 { value: "This Quarter", label: "This Quarter", icon: <Calendar size={16} /> }
               ]}
               placeholder="Select time period"
+            />
+          </div>
+
+          {/* ✨ CONTRACT: Type Filter (dropdown, matching other filters) */}
+          <div style={{ minWidth: "130px" }}>
+            <CustomDropdown
+              value={typeFilter === "All" ? "All Types" : typeFilter}
+              onChange={(val) => {
+                if (val === "All Types") setTypeFilter("All");
+                else setTypeFilter(val as "Project" | "Contract");
+              }}
+              options={[
+                { value: "All Types", label: "All Types", icon: <FileText size={16} /> },
+                { value: "Project", label: "Project", icon: <FileText size={16} style={{ color: "#0F766E" }} /> },
+                { value: "Contract", label: "Contract", icon: <FileText size={16} style={{ color: "#12332B" }} /> },
+              ]}
+              placeholder="Select type"
             />
           </div>
 

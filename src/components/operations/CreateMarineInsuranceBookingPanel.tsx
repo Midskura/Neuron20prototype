@@ -1,8 +1,13 @@
-import { X, Shield, Package, FileText } from "lucide-react";
+import { Shield, Package, FileText } from "lucide-react";
 import { useState } from "react";
 import { projectId, publicAnonKey } from "../../utils/supabase/info";
 import { toast } from "../ui/toast-utils";
 import { CustomDropdown } from "../bd/CustomDropdown";
+import { SearchableDropdown } from "../shared/SearchableDropdown";
+import { MovementToggle } from "./shared/MovementToggle";
+import { ContractDetectionBanner } from "./shared/ContractDetectionBanner";
+import { BookingCreationPanel } from "./shared/BookingCreationPanel";
+import { useCustomerOptions } from "./shared/useCustomerOptions";
 
 interface CreateMarineInsuranceBookingPanelProps {
   isOpen: boolean;
@@ -16,8 +21,12 @@ export function CreateMarineInsuranceBookingPanel({
   onSuccess,
 }: CreateMarineInsuranceBookingPanelProps) {
   const [loading, setLoading] = useState(false);
+  // ✨ CONTRACT: Detected contract ID for auto-linking
+  const [detectedContractId, setDetectedContractId] = useState<string | null>(null);
+  const customerOptions = useCustomerOptions(isOpen);
   const [formData, setFormData] = useState({
     customerName: "",
+    movement: "IMPORT",
     accountOwner: "",
     accountHandler: "",
     policyNumber: "",
@@ -68,7 +77,10 @@ export function CreateMarineInsuranceBookingPanel({
             "Content-Type": "application/json",
             Authorization: `Bearer ${publicAnonKey}`,
           },
-          body: JSON.stringify(formData),
+          body: JSON.stringify({
+            ...formData,
+            ...(detectedContractId && { contract_id: detectedContractId }),
+          }),
         }
       );
 
@@ -97,69 +109,19 @@ export function CreateMarineInsuranceBookingPanel({
   const isFormValid = formData.customerName.trim() !== "";
 
   return (
-    <>
-      {/* Backdrop */}
-      <div
-        className="fixed inset-0 bg-black z-40"
-        onClick={onClose}
-        style={{
-          backdropFilter: "blur(2px)",
-          backgroundColor: "rgba(18, 51, 43, 0.15)"
-        }}
-      />
-
-      {/* Side Panel */}
-      <div
-        className="fixed right-0 top-0 h-full w-[680px] bg-white shadow-2xl z-50 flex flex-col animate-slide-in"
-        style={{
-          borderLeft: "1px solid var(--neuron-ui-border)",
-        }}
-      >
-        {/* Header */}
-        <div
-          className="px-12 py-8 border-b"
-          style={{
-            borderColor: "var(--neuron-ui-border)",
-            backgroundColor: "#FFFFFF",
-          }}
-        >
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-3">
-              <div
-                className="w-10 h-10 rounded-lg flex items-center justify-center"
-                style={{ backgroundColor: "#E8F2EE" }}
-              >
-                <Shield size={20} style={{ color: "#0F766E" }} />
-              </div>
-              <h2 style={{ fontSize: "24px", fontWeight: 600, color: "#12332B" }}>
-                New Marine Insurance Booking
-              </h2>
-            </div>
-            <button
-              onClick={onClose}
-              className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors"
-              style={{
-                color: "var(--neuron-ink-muted)",
-                backgroundColor: "transparent",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = "var(--neuron-state-hover)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = "transparent";
-              }}
-            >
-              <X size={20} />
-            </button>
-          </div>
-          <p style={{ fontSize: "14px", color: "#667085" }}>
-            Create a new marine insurance policy for cargo coverage
-          </p>
-        </div>
-
-        {/* Form Content */}
-        <div className="flex-1 overflow-auto px-12 py-8">
-          <form onSubmit={handleSubmit} id="create-marine-insurance-form">
+    <BookingCreationPanel
+      isOpen={isOpen}
+      onClose={onClose}
+      icon={<Shield size={20} />}
+      title="New Marine Insurance Booking"
+      subtitle="Create a new marine insurance policy for cargo coverage"
+      formId="create-marine-insurance-form"
+      onSubmit={handleSubmit}
+      isSubmitting={loading}
+      isFormValid={isFormValid}
+      submitLabel="Create Booking"
+      submitIcon={<Shield size={16} />}
+    >
             {/* General Information */}
             <div className="mb-8">
               <div className="flex items-center gap-2 mb-4">
@@ -170,26 +132,33 @@ export function CreateMarineInsuranceBookingPanel({
               </div>
 
               <div className="space-y-4">
+                {/* Movement Toggle */}
                 <div>
-                  <label
-                    className="block mb-1.5"
-                    style={{ fontSize: "13px", fontWeight: 500, color: "#12332B" }}
-                  >
-                    Customer Name <span style={{ color: "#C94F3D" }}>*</span>
+                  <label className="block mb-1.5" style={{ fontSize: "13px", fontWeight: 500, color: "#12332B" }}>
+                    Movement <span style={{ color: "#C94F3D" }}>*</span>
                   </label>
-                  <input
-                    type="text"
-                    name="customerName"
+                  <MovementToggle
+                    value={formData.movement as "IMPORT" | "EXPORT"}
+                    onChange={(value) => handleChange({ target: { name: "movement", value } } as any)}
+                    layoutIdPrefix="marine-movement-pill"
+                  />
+                </div>
+
+                <div>
+                  <SearchableDropdown
+                    label="Customer Name"
                     required
                     value={formData.customerName}
-                    onChange={handleChange}
-                    placeholder="Enter customer name"
-                    className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
-                    style={{
-                      border: "1px solid var(--neuron-ui-border)",
-                      backgroundColor: "#FFFFFF",
-                      color: "var(--neuron-ink-primary)",
-                    }}
+                    onChange={(value) => setFormData(prev => ({ ...prev, customerName: value }))}
+                    options={customerOptions}
+                    placeholder="Search customer..."
+                    fullWidth
+                  />
+                  {/* ✨ CONTRACT: Detection banner */}
+                  <ContractDetectionBanner
+                    customerName={formData.customerName}
+                    serviceType="Marine Insurance"
+                    onContractDetected={setDetectedContractId}
                   />
                 </div>
 
@@ -204,7 +173,7 @@ export function CreateMarineInsuranceBookingPanel({
                       value={formData.accountOwner}
                       onChange={handleChange}
                       placeholder="Account owner"
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                      className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
                         backgroundColor: "#FFFFFF",
@@ -223,7 +192,7 @@ export function CreateMarineInsuranceBookingPanel({
                       value={formData.accountHandler}
                       onChange={handleChange}
                       placeholder="Account handler"
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                      className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
                         backgroundColor: "#FFFFFF",
@@ -244,7 +213,7 @@ export function CreateMarineInsuranceBookingPanel({
                       value={formData.quotationReferenceNumber}
                       onChange={handleChange}
                       placeholder="Quotation reference"
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                      className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
                         backgroundColor: "#FFFFFF",
@@ -294,7 +263,7 @@ export function CreateMarineInsuranceBookingPanel({
                       value={formData.policyNumber}
                       onChange={handleChange}
                       placeholder="Policy number"
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                      className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
                         backgroundColor: "#FFFFFF",
@@ -313,7 +282,7 @@ export function CreateMarineInsuranceBookingPanel({
                       value={formData.insuranceProvider}
                       onChange={handleChange}
                       placeholder="Insurance provider"
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                      className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
                         backgroundColor: "#FFFFFF",
@@ -334,7 +303,7 @@ export function CreateMarineInsuranceBookingPanel({
                       value={formData.coverageType}
                       onChange={handleChange}
                       placeholder="e.g., All Risks, WA, FPA"
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                      className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
                         backgroundColor: "#FFFFFF",
@@ -353,7 +322,7 @@ export function CreateMarineInsuranceBookingPanel({
                       value={formData.insuredParty}
                       onChange={handleChange}
                       placeholder="Insured party name"
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                      className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
                         backgroundColor: "#FFFFFF",
@@ -374,7 +343,7 @@ export function CreateMarineInsuranceBookingPanel({
                       value={formData.sumInsured}
                       onChange={handleChange}
                       placeholder="e.g., USD 100,000"
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                      className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
                         backgroundColor: "#FFFFFF",
@@ -393,7 +362,7 @@ export function CreateMarineInsuranceBookingPanel({
                       value={formData.premium}
                       onChange={handleChange}
                       placeholder="e.g., USD 500"
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                      className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
                         backgroundColor: "#FFFFFF",
@@ -413,7 +382,7 @@ export function CreateMarineInsuranceBookingPanel({
                       name="policyStartDate"
                       value={formData.policyStartDate}
                       onChange={handleChange}
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                      className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
                         backgroundColor: "#FFFFFF",
@@ -431,7 +400,7 @@ export function CreateMarineInsuranceBookingPanel({
                       name="policyEndDate"
                       value={formData.policyEndDate}
                       onChange={handleChange}
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                      className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
                         backgroundColor: "#FFFFFF",
@@ -463,7 +432,7 @@ export function CreateMarineInsuranceBookingPanel({
                     onChange={handleChange}
                     rows={2}
                     placeholder="Describe the insured cargo"
-                    className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px] resize-none"
+                    className="w-full px-3.5 py-2.5 rounded-lg text-[13px] resize-none"
                     style={{
                       border: "1px solid var(--neuron-ui-border)",
                       backgroundColor: "#FFFFFF",
@@ -482,7 +451,7 @@ export function CreateMarineInsuranceBookingPanel({
                     value={formData.invoiceValue}
                     onChange={handleChange}
                     placeholder="e.g., USD 95,000"
-                    className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                    className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                     style={{
                       border: "1px solid var(--neuron-ui-border)",
                       backgroundColor: "#FFFFFF",
@@ -502,7 +471,7 @@ export function CreateMarineInsuranceBookingPanel({
                       value={formData.voyage}
                       onChange={handleChange}
                       placeholder="Voyage number/name"
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                      className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
                         backgroundColor: "#FFFFFF",
@@ -521,7 +490,7 @@ export function CreateMarineInsuranceBookingPanel({
                       value={formData.vesselName}
                       onChange={handleChange}
                       placeholder="Vessel name"
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                      className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
                         backgroundColor: "#FFFFFF",
@@ -542,7 +511,7 @@ export function CreateMarineInsuranceBookingPanel({
                       value={formData.departurePort}
                       onChange={handleChange}
                       placeholder="Port of departure"
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                      className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
                         backgroundColor: "#FFFFFF",
@@ -561,7 +530,7 @@ export function CreateMarineInsuranceBookingPanel({
                       value={formData.arrivalPort}
                       onChange={handleChange}
                       placeholder="Port of arrival"
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                      className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
                         backgroundColor: "#FFFFFF",
@@ -581,7 +550,7 @@ export function CreateMarineInsuranceBookingPanel({
                       name="departureDate"
                       value={formData.departureDate}
                       onChange={handleChange}
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                      className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
                         backgroundColor: "#FFFFFF",
@@ -599,7 +568,7 @@ export function CreateMarineInsuranceBookingPanel({
                       name="arrivalDate"
                       value={formData.arrivalDate}
                       onChange={handleChange}
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                      className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
                         backgroundColor: "#FFFFFF",
@@ -620,7 +589,7 @@ export function CreateMarineInsuranceBookingPanel({
                       value={formData.claimStatus}
                       onChange={handleChange}
                       placeholder="e.g., No Claim, Pending, Settled"
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                      className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
                         backgroundColor: "#FFFFFF",
@@ -640,7 +609,7 @@ export function CreateMarineInsuranceBookingPanel({
                     onChange={handleChange}
                     rows={2}
                     placeholder="Additional notes or remarks"
-                    className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px] resize-none"
+                    className="w-full px-3.5 py-2.5 rounded-lg text-[13px] resize-none"
                     style={{
                       border: "1px solid var(--neuron-ui-border)",
                       backgroundColor: "#FFFFFF",
@@ -650,67 +619,6 @@ export function CreateMarineInsuranceBookingPanel({
                 </div>
               </div>
             </div>
-          </form>
-        </div>
-
-        {/* Footer Actions */}
-        <div
-          className="px-12 py-6 border-t flex items-center justify-end gap-3"
-          style={{
-            borderColor: "var(--neuron-ui-border)",
-            backgroundColor: "#FFFFFF",
-          }}
-        >
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-6 py-2.5 rounded-lg transition-colors"
-            style={{
-              border: "1px solid var(--neuron-ui-border)",
-              backgroundColor: "#FFFFFF",
-              color: "var(--neuron-ink-secondary)",
-              fontSize: "14px",
-              fontWeight: 500,
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = "var(--neuron-state-hover)";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = "#FFFFFF";
-            }}
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            form="create-marine-insurance-form"
-            disabled={!isFormValid || loading}
-            className="px-6 py-2.5 rounded-lg transition-all flex items-center gap-2"
-            style={{
-              backgroundColor: isFormValid && !loading ? "#0F766E" : "#D1D5DB",
-              color: "#FFFFFF",
-              fontSize: "14px",
-              fontWeight: 600,
-              border: "none",
-              cursor: isFormValid && !loading ? "pointer" : "not-allowed",
-              opacity: isFormValid && !loading ? 1 : 0.6,
-            }}
-            onMouseEnter={(e) => {
-              if (isFormValid && !loading) {
-                e.currentTarget.style.backgroundColor = "#0D6560";
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (isFormValid && !loading) {
-                e.currentTarget.style.backgroundColor = "#0F766E";
-              }
-            }}
-          >
-            <Shield size={16} />
-            {loading ? "Creating..." : "Create Booking"}
-          </button>
-        </div>
-      </div>
-    </>
+    </BookingCreationPanel>
   );
 }

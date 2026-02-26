@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import type { Expense } from "../../types/accounting";
 import { projectId, publicAnonKey } from "../../utils/supabase/info";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 
 type QuickFilterTab = "all" | "this-month" | "last-month" | "this-quarter" | "recorded" | "pending-audit";
 type SortOption = "date-newest" | "date-oldest" | "amount-high" | "amount-low" | "category";

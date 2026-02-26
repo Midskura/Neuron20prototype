@@ -2,8 +2,11 @@ import { Hono } from "npm:hono";
 import { cors } from "npm:hono/cors";
 import { logger } from "npm:hono/logger";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import * as kv from "./kv_store.tsx";
+import * as kv from "./kv_store_robust.tsx";
 import * as accountingHandlers from "./accounting-handlers.tsx";
+import * as newAccounting from "./accounting-new-api.ts";
+import * as coaSeeder from "./seed_coa_balance_sheet.tsx";
+import * as coaSeederIS from "./seed_coa_income_statement.tsx";
 
 const app = new Hono();
 
@@ -39,7 +42,12 @@ if (supabase) {
         });
         
         if (error) {
-          console.error("Error creating comment attachments bucket:", error);
+          // Ignore "already exists" error (409)
+          if ((error as any).statusCode === "409" || error.message?.includes("already exists")) {
+            console.log("✅ Comment attachments bucket already exists (caught error):", COMMENT_ATTACHMENTS_BUCKET);
+          } else {
+            console.error("Error creating comment attachments bucket:", error);
+          }
         } else {
           console.log("✅ Created comment attachments bucket:", COMMENT_ATTACHMENTS_BUCKET);
         }
@@ -191,6 +199,37 @@ app.get("/make-server-c142e950/users", async (c) => {
     return c.json({ success: true, data: usersWithoutPasswords });
   } catch (error) {
     console.error("Error fetching users:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// ==================== NEW ACCOUNTING API ====================
+
+app.get("/make-server-c142e950/accounts", (c) => newAccounting.getAccounts(c));
+app.post("/make-server-c142e950/accounts", (c) => newAccounting.saveAccount(c));
+app.delete("/make-server-c142e950/accounts/:id", (c) => newAccounting.deleteAccount(c));
+
+app.get("/make-server-c142e950/transactions", (c) => newAccounting.getTransactions(c));
+app.post("/make-server-c142e950/transactions", (c) => newAccounting.saveTransaction(c));
+
+// Seed Chart of Accounts (Balance Sheet)
+app.post("/make-server-c142e950/seed/coa-balance-sheet", async (c) => {
+  try {
+    const result = await coaSeeder.seedBalanceSheet();
+    return c.json(result);
+  } catch (error) {
+    console.error("Error seeding COA:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Seed Chart of Accounts (Income Statement)
+app.post("/make-server-c142e950/seed/coa-income-statement", async (c) => {
+  try {
+    const result = await coaSeederIS.seedIncomeStatement();
+    return c.json(result);
+  } catch (error) {
+    console.error("Error seeding Income Statement COA:", error);
     return c.json({ success: false, error: String(error) }, 500);
   }
 });
@@ -1735,7 +1774,13 @@ app.post("/make-server-c142e950/quotations", async (c) => {
     // Save to KV store with key: quotation:{id}
     await kv.set(`quotation:${quotation.id}`, quotation);
     
+    // ✨ Enhanced logging for dual-pricing
+    const hasBuyingPrice = quotation.buying_price && quotation.buying_price.length > 0;
+    const hasSellingPrice = quotation.selling_price && quotation.selling_price.length > 0;
     console.log(`Created quotation: ${quotation.id} with status: ${quotation.status}`);
+    if (hasBuyingPrice || hasSellingPrice) {
+      console.log(`  💰 Dual-Pricing: ${hasBuyingPrice ? `${quotation.buying_price.length} buying categories` : 'no buying'}, ${hasSellingPrice ? `${quotation.selling_price.length} selling categories` : 'no selling'}`);
+    }
     
     return c.json({ success: true, data: quotation });
   } catch (error) {
@@ -1775,11 +1820,37 @@ app.get("/make-server-c142e950/quotations", async (c) => {
       return statusMigrationMap[oldStatus] || oldStatus;
     };
     
-    // Apply status migration to all quotations
-    let filtered = quotations.map((q: any) => ({
-      ...q,
-      status: migrateStatus(q.status)
-    }));
+    // ✨ MIGRATION: Auto-migrate quotations to dual-pricing structure
+    const migrateToDualPricing = (q: any): any => {
+      // If has charge_categories but no buying_price, migrate
+      if (q.charge_categories && q.charge_categories.length > 0 && 
+          (!q.buying_price || q.buying_price.length === 0)) {
+        return {
+          ...q,
+          buying_price: q.charge_categories,
+          selling_price: q.charge_categories.map((cat: any) => ({
+            ...cat,
+            line_items: cat.line_items.map((item: any) => ({
+              ...item,
+              base_cost: item.price,
+              amount_added: 0,
+              percentage_added: 0,
+              final_price: item.price
+            }))
+          }))
+        };
+      }
+      return q;
+    };
+    
+    // Apply status migration and dual-pricing migration to all quotations
+    let filtered = quotations.map((q: any) => {
+      const migrated = migrateToDualPricing(q);
+      return {
+        ...migrated,
+        status: migrateStatus(migrated.status)
+      };
+    });
     
     // Filter by customer_id if provided
     if (customer_id) {
@@ -1905,6 +1976,33 @@ app.get("/make-server-c142e950/quotations/:id", async (c) => {
       quotation.status = statusMigrationMap[quotation.status];
     }
     
+    // ✨ MIGRATION: Auto-migrate old quotations without buying_price/selling_price
+    // If quotation has charge_categories but no buying_price, auto-migrate
+    if (quotation.charge_categories && quotation.charge_categories.length > 0) {
+      if (!quotation.buying_price || quotation.buying_price.length === 0) {
+        console.log(`📦 Auto-migrating quotation ${id} to dual-pricing structure`);
+        
+        // Copy charge_categories to buying_price (as-is)
+        quotation.buying_price = quotation.charge_categories;
+        
+        // Convert to selling_price with zero markup
+        quotation.selling_price = quotation.charge_categories.map((cat: any) => ({
+          ...cat,
+          line_items: cat.line_items.map((item: any) => ({
+            ...item,
+            base_cost: item.price,
+            amount_added: 0,
+            percentage_added: 0,
+            final_price: item.price
+          }))
+        }));
+        
+        // Save migrated version back to KV store
+        await kv.set(`quotation:${id}`, quotation);
+        console.log(`✅ Quotation ${id} migrated to dual-pricing structure`);
+      }
+    }
+    
     return c.json({ success: true, data: quotation });
   } catch (error) {
     console.error("Error fetching quotation:", error);
@@ -1937,7 +2035,68 @@ app.put("/make-server-c142e950/quotations/:id", async (c) => {
     // Save back
     await kv.set(`quotation:${id}`, updated);
     
+    // ✨ Enhanced logging for dual-pricing
+    const hasBuyingPrice = updated.buying_price && updated.buying_price.length > 0;
+    const hasSellingPrice = updated.selling_price && updated.selling_price.length > 0;
     console.log(`Updated quotation: ${id}, new status: ${updated.status}`);
+    if (hasBuyingPrice || hasSellingPrice) {
+      console.log(`  💰 Dual-Pricing: ${hasBuyingPrice ? `${updated.buying_price.length} buying categories` : 'no buying'}, ${hasSellingPrice ? `${updated.selling_price.length} selling categories` : 'no selling'}`);
+    }
+
+    // =================================================================================
+    // 🔄 WRITE-THROUGH SYNC: Update linked Project if it exists
+    // =================================================================================
+    try {
+      let projectId = updated.project_id;
+
+      // Fallback: If no project_id on quotation, try to find a project that links to this quotation
+      // This covers legacy cases or if the link wasn't bi-directionally set
+      if (!projectId) {
+        // Optimization: We could skip this scan if we trust project_id is always set
+        // But for reliability in this fix, we'll do the scan if the direct link is missing
+        const allProjects = await kv.getByPrefix("project:");
+        const linkedProject = allProjects.find((p: any) => p.quotation_id === id || p.quotation?.id === id);
+        if (linkedProject) {
+          projectId = linkedProject.id;
+        }
+      }
+
+      if (projectId) {
+        const project = await kv.get(`project:${projectId}`);
+        if (project) {
+          console.log(`🔄 Syncing changes to linked Project: ${projectId}`);
+          
+          // Update embedded quotation (SOURCE OF TRUTH)
+          project.quotation = updated;
+          
+          // Update denormalized fields to ensure Project list/details views are consistent
+          project.services = updated.services || project.services;
+          project.services_metadata = updated.services_metadata || project.services_metadata;
+          project.charge_categories = updated.charge_categories || project.charge_categories;
+          project.total = updated.financial_summary?.grand_total ?? project.total; // Use ?? to allow 0
+          project.currency = updated.currency || project.currency;
+          
+          // Update shipment details if changed
+          if (updated.movement) project.movement = updated.movement;
+          if (updated.category) project.category = updated.category;
+          if (updated.incoterm) project.incoterm = updated.incoterm;
+          if (updated.carrier) project.carrier = updated.carrier;
+          if (updated.pol_aol) project.pol_aol = updated.pol_aol;
+          if (updated.pod_aod) project.pod_aod = updated.pod_aod;
+          if (updated.commodity) project.commodity = updated.commodity;
+          
+          // Timestamp
+          project.updated_at = new Date().toISOString();
+          
+          // Save project
+          await kv.set(`project:${projectId}`, project);
+          console.log(`✅ Project ${projectId} synchronized with Quotation ${id}`);
+        }
+      }
+    } catch (syncError) {
+      console.error("⚠️ Error syncing project with quotation update:", syncError);
+      // Don't fail the request, just log the sync error
+    }
     
     return c.json({ success: true, data: updated });
   } catch (error) {
@@ -2187,6 +2346,69 @@ app.post("/make-server-c142e950/quotations/:id/revise", async (c) => {
   }
 });
 
+// ==================== CONTRACT ACTIVATION API ====================
+
+// Activate a contract quotation — mirrors accept-and-create-project but simpler:
+// no separate entity is created; we just flip contract_status to Active.
+app.post("/make-server-c142e950/quotations/:id/activate-contract", async (c) => {
+  try {
+    const quotation_id = c.req.param("id");
+
+    // Get quotation
+    const quotation = await kv.get(`quotation:${quotation_id}`);
+
+    if (!quotation) {
+      return c.json({ success: false, error: "Quotation not found" }, 404);
+    }
+
+    // Verify quotation is a contract type
+    if (quotation.quotation_type !== "contract") {
+      return c.json({ success: false, error: "Only contract quotations can be activated" }, 400);
+    }
+
+    // Verify quotation is in correct status
+    if (quotation.status !== "Accepted by Client") {
+      return c.json({
+        success: false,
+        error: "Can only activate contracts from quotations with 'Accepted by Client' status"
+      }, 400);
+    }
+
+    // Verify not already activated
+    if (quotation.contract_status === "Active") {
+      return c.json({ success: false, error: "Contract is already active" }, 400);
+    }
+
+    // Activate the contract
+    const now = new Date().toISOString();
+    const updatedQuotation = {
+      ...quotation,
+      status: "Converted to Contract",
+      contract_status: "Active",
+      contract_activated_at: now,
+      updated_at: now,
+    };
+
+    await kv.set(`quotation:${quotation_id}`, updatedQuotation);
+
+    // Record activity event
+    await recordContractActivity(
+      quotation_id, "contract_activated", "Contract activated",
+      quotation.created_by || "Unknown"
+    );
+
+    console.log(`Contract ${quotation.quote_number} activated successfully`);
+
+    return c.json({
+      success: true,
+      data: { quotation: updatedQuotation },
+    });
+  } catch (error) {
+    console.log(`Error activating contract: ${error}`);
+    return c.json({ success: false, error: `Failed to activate contract: ${error}` }, 500);
+  }
+});
+
 // ==================== PROJECTS API ====================
 
 // Accept quotation and create project in one atomic operation
@@ -2299,7 +2521,76 @@ app.post("/make-server-c142e950/quotations/:id/accept-and-create-project", async
     
     // Save project
     await kv.set(`project:${project_id}`, project);
+
+    // ==================================================================================
+    // ⚡️ AUTO-GENERATE BILLINGS (UNASSIGNED)
+    // ==================================================================================
+    // Filter charge categories to exclude Reimbursable/Disbursement
+    const filteredCategories = (quotation.charge_categories || []).filter((cat: any) => {
+      const name = (cat.category_name || cat.name || "").toLowerCase();
+      return !name.includes("reimbursable") && !name.includes("disbursement");
+    });
+
+    const generatedVouchers: any[] = [];
+    const creationTimestamp = new Date().toISOString();
     
+    for (const cat of filteredCategories) {
+      for (const item of (cat.line_items || [])) {
+        // Generate unique ID for this specific line item billing
+        const billingId = `BILL-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
+        const itemAmount = item.amount || (item.price * item.quantity);
+        
+        // Tagging: Default to UNASSIGNED (Project Level Only)
+        // Format: PROJECT-{project_number}
+        // When a service booking is created later, it will "claim" these based on service tag
+        const targetedBookingId = `PROJECT-${project_number}`;
+        
+        const newBilling = {
+          id: billingId,
+          billingId, // Legacy support
+          bookingId: targetedBookingId, 
+          bookingType: item.service || item.service_tag || "general", // CRITICAL: Prioritize 'service' from V3 builder
+          
+          // Timestamps
+          createdAt: creationTimestamp,
+          updatedAt: creationTimestamp,
+          created_at: creationTimestamp,
+          
+          // Source tracking
+          source: "project",
+          project_number: project_number,
+          projectNumber: project_number,
+          quotationNumber: quotation.quote_number,
+          
+          // Granular Details
+          purpose: item.description || "Service Charge",
+          description: `${cat.category_name || cat.name} - ${item.description}`,
+          
+          // Financials
+          amount: itemAmount,
+          currency: quotation.currency || "PHP",
+          quantity: item.quantity || 1,
+          unit: item.unit || "",
+          
+          // Status
+          status: "draft",
+          transaction_type: "billing",
+          billing_status: "unbilled",
+          
+          // Notes
+          notes: `Auto-generated from project ${project_number}`
+        };
+        
+        // Save to KV
+        await kv.set(`evoucher:${billingId}`, newBilling);
+        generatedVouchers.push(newBilling);
+        
+        // Small delay
+        await new Promise(r => setTimeout(r, 2)); 
+      }
+    }
+    console.log(`✓ Auto-generated ${generatedVouchers.length} billings for Project ${project_number}`);
+
     // Update quotation: mark as converted and link to project
     quotation.project_id = project_id;
     quotation.project_number = project_number;
@@ -2514,6 +2805,56 @@ app.get("/make-server-c142e950/projects", async (c) => {
       new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     );
     
+    // Hydrate projects with latest quotation data (CRITICAL for financial calculations)
+    // The list view needs selling_price and charge_categories which might be outdated in the project record
+    try {
+      const quotationKeys = new Set<string>();
+      projects.forEach((p: any) => {
+        const qId = p.quotation_id || (p.quotation && p.quotation.id);
+        if (qId) {
+          quotationKeys.add(`quotation:${qId}`);
+        }
+      });
+
+      if (quotationKeys.size > 0) {
+        // Fetch all related quotations in one parallel request
+        const quotations = await kv.mget(Array.from(quotationKeys));
+        const quotationMap = new Map<string, any>();
+        
+        quotations.forEach((q: any) => {
+          if (q && q.id) {
+            quotationMap.set(q.id, q);
+          }
+        });
+        
+        // Update projects with latest quotation data
+        projects = projects.map((p: any) => {
+          const qId = p.quotation_id || (p.quotation && p.quotation.id);
+          if (qId && quotationMap.has(qId)) {
+            const latestQuotation = quotationMap.get(qId);
+            
+            return {
+              ...p,
+              quotation: latestQuotation, // Embed full fresh quotation
+              
+              // Sync critical fields for list display
+              customer_name: latestQuotation.customer_name || p.customer_name,
+              services: latestQuotation.services || p.services,
+              charge_categories: latestQuotation.charge_categories || p.charge_categories,
+              currency: latestQuotation.currency || p.currency,
+              quotation_name: latestQuotation.quotation_name || p.quotation_name,
+              quotation_number: latestQuotation.quote_number || p.quotation_number
+            };
+          }
+          return p;
+        });
+        console.log(`💧 Hydrated ${projects.length} projects with quotation data`);
+      }
+    } catch (err) {
+      console.error("Error hydrating projects with quotations:", err);
+      // Continue without hydration if it fails, better than crashing
+    }
+    
     console.log(`Fetched ${projects.length} projects`);
     
     return c.json({ success: true, data: projects });
@@ -2531,6 +2872,78 @@ app.get("/make-server-c142e950/projects/:id", async (c) => {
     
     if (!project) {
       return c.json({ success: false, error: "Project not found" }, 404);
+    }
+
+    // Hydrate project with latest quotation data if linked
+    if (project.quotation_id || (project.quotation && project.quotation.id)) {
+      const quotationId = project.quotation_id || project.quotation.id;
+      const latestQuotation = await kv.get(`quotation:${quotationId}`);
+      
+      if (latestQuotation) {
+        // Update the embedded quotation object with the latest source of truth
+        project.quotation = latestQuotation;
+        
+        // Also update top-level denormalized fields to match the latest quotation
+        // This ensures consistency across the UI
+        if (latestQuotation.customer_id) project.customer_id = latestQuotation.customer_id;
+        if (latestQuotation.customer_name) project.customer_name = latestQuotation.customer_name;
+        if (latestQuotation.services) project.services = latestQuotation.services;
+        if (latestQuotation.charge_categories) project.charge_categories = latestQuotation.charge_categories;
+        if (latestQuotation.currency) project.currency = latestQuotation.currency;
+        // Fix: Ensure service details and movement are synchronized from the updated quotation
+        if (latestQuotation.services_metadata) project.services_metadata = latestQuotation.services_metadata;
+        if (latestQuotation.movement) project.movement = latestQuotation.movement;
+        
+        if (latestQuotation.financial_summary) {
+           project.total = latestQuotation.financial_summary.grand_total;
+        }
+      }
+    }
+
+    // Hydrate linked bookings with fresh status
+    if (project.linkedBookings && project.linkedBookings.length > 0) {
+      // Create parallel fetch promises
+      const hydrationPromises = project.linkedBookings.map(async (link: any) => {
+        let prefix = "";
+        switch (link.serviceType) {
+          case "Forwarding": 
+            prefix = "forwarding_booking"; 
+            break;
+          case "Trucking": 
+            prefix = "trucking_booking"; 
+            break;
+          case "Brokerage": 
+            prefix = "brokerage_booking"; 
+            break;
+          case "Marine Insurance": 
+            prefix = "marine_insurance_booking"; 
+            break;
+          case "Others": 
+            prefix = "others_booking"; 
+            break;
+        }
+        
+        if (prefix) {
+          try {
+            const freshBooking = await kv.get(`${prefix}:${link.bookingId}`);
+            if (freshBooking) {
+              // Only update status if the record was found
+              // This preserves the link even if the booking was deleted (optional decision)
+              link.status = freshBooking.status;
+            } else {
+               // Mark as 'Deleted' or 'Unknown' if the booking record is missing?
+               // For now, we leave the stale status but maybe flag it?
+               // link.status = "Unknown"; 
+            }
+          } catch (e) {
+            console.error(`Error hydrating status for ${link.bookingId}:`, e);
+          }
+        }
+        return link;
+      });
+
+      // Wait for all hydrations to complete
+      await Promise.all(hydrationPromises);
     }
     
     return c.json({ success: true, data: project });
@@ -2812,11 +3225,11 @@ app.post("/make-server-c142e950/projects/:id/cleanup-orphaned-bookings", async (
   }
 });
 
-// Generate invoice (billing) from project pricing
+// Generate invoice (billing) from project pricing - supports Service-Specific filtering
 app.post("/make-server-c142e950/projects/:id/generate-invoice", async (c) => {
   try {
     const projectId = c.req.param("id");
-    const { bookingId, bookingType } = await c.req.json();
+    const { bookingId, bookingType, filterByService } = await c.req.json();
     
     const project = await kv.get(`project:${projectId}`);
     
@@ -2829,56 +3242,120 @@ app.post("/make-server-c142e950/projects/:id/generate-invoice", async (c) => {
       return c.json({ success: false, error: "Project has no pricing data to generate invoice from" }, 400);
     }
     
-    // Generate billing ID
-    const billingId = `BILL-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-    const timestamp = new Date().toISOString();
-    
-    // Convert project charge_categories to billing format
-    const chargeCategories = project.charge_categories.map((cat: any) => ({
-      categoryName: cat.category_name || cat.name,
-      lineItems: (cat.line_items || []).map((item: any) => ({
-        description: item.description || "",
-        price: item.price || 0,
-        quantity: item.quantity || 1,
-        unit: item.unit || "",
-        amount: item.amount || (item.price * item.quantity),
-        remarks: item.remarks || ""
-      })),
-      subtotal: cat.subtotal || 0
-    }));
-    
-    // Calculate total from charge categories
-    const totalAmount = chargeCategories.reduce((sum: number, cat: any) => sum + cat.subtotal, 0);
-    
-    // Create new billing from project pricing
-    const newBilling = {
-      billingId,
-      bookingId: bookingId || `PROJECT-${project.project_number}`,
-      bookingType: bookingType || "forwarding",
-      createdAt: timestamp,
-      updatedAt: timestamp,
+    // Generate billing ID (Base ID - though we might not use it if generating multiple)
+    // const baseBillingId = `BILL-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    // const timestamp = new Date().toISOString(); // Unused in granular model
+
+    let filteredCategories = project.charge_categories;
+    let billingDescription = `Invoice for ${project.quotation_name || project.project_number}`;
+
+    // FILTER LOGIC: If bookingType is provided and filtering is requested
+    if (bookingType) {
+      console.log(`Filtering charges for service: ${bookingType}`);
       
-      // Source tracking - THIS IS THE KEY!
-      source: "project" as const,
-      projectNumber: project.project_number,
-      quotationNumber: project.quotation_number,
-      
-      // Detailed structure from project
-      chargeCategories,
-      
-      // Legacy fields for compatibility
-      description: `Invoice for ${project.quotation_name || project.project_number}`,
-      amount: totalAmount,
-      currency: project.currency || "PHP",
-      status: "Pending" as const,
-      notes: `Auto-generated from project ${project.project_number}`
-    };
+      // 1. Map through categories and filter line items
+      filteredCategories = project.charge_categories.map((cat: any) => {
+        // Filter line items that match the service tag
+        const filteredItems = (cat.line_items || []).filter((item: any) => {
+          // Normalize strings for comparison
+          const itemService = (item.service_tag || item.service || "").toLowerCase();
+          const targetService = bookingType.toLowerCase();
+          
+          return itemService === targetService;
+        });
+
+        if (filteredItems.length === 0) return null;
+
+        return {
+          ...cat,
+          line_items: filteredItems
+        };
+      }).filter(Boolean); // Remove null categories
+    }
     
-    await kv.set(`billing:${billingId}`, newBilling);
+    if (filteredCategories.length === 0) {
+      return c.json({ success: false, error: `No charges found tagged for service: ${bookingType}` }, 400);
+    }
     
-    console.log(`✓ Generated invoice ${billingId} from project ${project.project_number} (${chargeCategories.length} categories, ${project.currency} ${totalAmount.toFixed(2)})`);
+    // GRANULAR BILLING GENERATION (Explosion Model)
+    // Create one EVoucher per Line Item
+    const generatedVouchers: any[] = [];
+    const creationTimestamp = new Date().toISOString();
     
-    return c.json({ success: true, data: newBilling });
+    for (const cat of filteredCategories) {
+      for (const item of (cat.line_items || [])) {
+        // Generate unique ID for this specific line item billing
+        const billingId = `BILL-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
+        const itemAmount = item.amount || (item.price * item.quantity);
+
+        // SMART ROUTING LOGIC
+        // Default to provided bookingId or Project Fallback
+        let targetedBookingId = bookingId || `PROJECT-${project.project_number}`;
+        
+        // If not explicitly provided, try to find the matching service booking
+        if (!bookingId && project.linkedBookings && project.linkedBookings.length > 0) {
+          const itemServiceTag = (item.service_tag || item.service || "").toLowerCase();
+          
+          if (itemServiceTag) {
+            const matchingBooking = project.linkedBookings.find((b: any) => 
+              (b.serviceType || "").toLowerCase() === itemServiceTag
+            );
+            
+            if (matchingBooking) {
+              targetedBookingId = matchingBooking.bookingId;
+              // console.log(`Smart Routing: Assigned item "${item.description}" (${itemServiceTag}) to booking ${matchingBooking.bookingId}`);
+            }
+          }
+        }
+        
+        const newBilling = {
+          id: billingId,
+          billingId, // Legacy support
+          bookingId: targetedBookingId,
+          bookingType: bookingType || (item.service_tag || "general"), // Use item tag if available
+          
+          // Timestamps
+          createdAt: creationTimestamp,
+          updatedAt: creationTimestamp,
+          created_at: creationTimestamp,
+          
+          // Source tracking
+          source: "project",
+          project_number: project.project_number,
+          projectNumber: project.project_number,
+          quotationNumber: project.quotation_number,
+          
+          // Granular Details
+          purpose: item.description || "Service Charge", // This fixes the "Service Charge" label issue
+          description: `${cat.category_name || cat.name} - ${item.description}`,
+          
+          // Financials
+          amount: itemAmount,
+          currency: project.currency || "PHP",
+          quantity: item.quantity || 1,
+          unit: item.unit || "",
+          
+          // Status
+          status: "draft",
+          transaction_type: "billing",
+          billing_status: "unbilled", // Explicitly unbilled
+          
+          // Notes
+          notes: `Auto-generated from project ${project.project_number}`
+        };
+        
+        // Save to KV
+        await kv.set(`evoucher:${billingId}`, newBilling);
+        generatedVouchers.push(newBilling);
+        
+        // Small delay to ensure unique timestamps/IDs if running very fast
+        await new Promise(r => setTimeout(r, 5)); 
+      }
+    }
+    
+    console.log(`✓ Generated ${generatedVouchers.length} granular invoices for ${bookingType || "Project"}`);
+    
+    return c.json({ success: true, data: generatedVouchers });
   } catch (error) {
     console.error("Error generating invoice from project:", error);
     return c.json({ success: false, error: String(error) }, 500);
@@ -3196,6 +3673,7 @@ app.get("/make-server-c142e950/bookings", async (c) => {
     const search = c.req.query("search");
     const customer_id = c.req.query("customer_id");
     const created_by = c.req.query("created_by");
+    const contract_id = c.req.query("contract_id"); // ✨ CONTRACT: filter by linked contract
     const date_from = c.req.query("date_from");
     const date_to = c.req.query("date_to");
     const sort_by = c.req.query("sort_by") || "updated_at";
@@ -3206,7 +3684,25 @@ app.get("/make-server-c142e950/bookings", async (c) => {
     // Get all bookings with prefix
     const bookings = await kv.getByPrefix("booking:");
     
-    let filtered = bookings;
+    // ✨ CONTRACT: If contract_id is specified, also search across all booking types
+    let allBookings = bookings;
+    if (contract_id) {
+      const [fwdBookings, truckBookings, brokerageBookings, marineBookings, othersBookings] = await Promise.all([
+        kv.getByPrefix("forwarding_booking:").catch(() => []),
+        kv.getByPrefix("trucking_booking:").catch(() => []),
+        kv.getByPrefix("brokerage_booking:").catch(() => []),
+        kv.getByPrefix("marine_insurance_booking:").catch(() => []),
+        kv.getByPrefix("others_booking:").catch(() => []),
+      ]);
+      allBookings = [...bookings, ...fwdBookings, ...truckBookings, ...brokerageBookings, ...marineBookings, ...othersBookings];
+    }
+    
+    let filtered = allBookings;
+    
+    // ✨ CONTRACT: Filter by contract_id if provided
+    if (contract_id) {
+      filtered = filtered.filter((b: any) => b.contract_id === contract_id);
+    }
     
     // Filter by customer_id if provided
     if (customer_id) {
@@ -3294,7 +3790,23 @@ app.get("/make-server-c142e950/bookings", async (c) => {
 app.get("/make-server-c142e950/bookings/:id", async (c) => {
   try {
     const id = c.req.param("id");
-    const booking = await kv.get(`booking:${id}`);
+    
+    // Try generic prefix first, then fall back to type-specific prefixes
+    let booking = await kv.get(`booking:${id}`);
+    
+    if (!booking) {
+      const prefixes = [
+        "forwarding_booking:",
+        "brokerage_booking:",
+        "trucking_booking:",
+        "marine_insurance_booking:",
+        "others_booking:",
+      ];
+      for (const prefix of prefixes) {
+        booking = await kv.get(`${prefix}${id}`);
+        if (booking) break;
+      }
+    }
     
     if (!booking) {
       return c.json({ success: false, error: "Booking not found" }, 404);
@@ -4332,6 +4844,36 @@ app.post("/make-server-c142e950/forwarding-bookings", async (c) => {
     
     await kv.set(`forwarding_booking:${bookingId}`, newBooking);
     
+    // ==================================================================================
+    // ⚡️ SMART ROUTING: CLAIM BILLINGS
+    // ==================================================================================
+    if (bookingData.projectNumber) {
+      try {
+        const allVouchers = await kv.getByPrefix("evoucher:");
+        const projectBillings = allVouchers.filter((v: any) => 
+          v.project_number === bookingData.projectNumber && 
+          v.transaction_type === "billing" &&
+          (v.bookingId === `PROJECT-${bookingData.projectNumber}` || !v.bookingId) // Only claim unassigned
+        );
+
+        let claimedCount = 0;
+        for (const billing of projectBillings) {
+          const tag = (billing.bookingType || "").toLowerCase();
+          
+          // Match logic for Forwarding
+          if (tag.includes("forwarding") || tag.includes("freight") || tag.includes("sea") || tag.includes("air")) {
+            billing.bookingId = bookingId; // Claim it!
+            billing.updatedAt = new Date().toISOString();
+            await kv.set(`evoucher:${billing.id}`, billing);
+            claimedCount++;
+          }
+        }
+        console.log(`✓ Forwarding Booking ${bookingId} claimed ${claimedCount} billings from Project ${bookingData.projectNumber}`);
+      } catch (err) {
+        console.error("Error in Smart Routing (Forwarding):", err);
+      }
+    }
+
     console.log(`Created forwarding booking ${bookingId}`);
     
     return c.json({ success: true, data: newBooking });
@@ -4487,6 +5029,36 @@ app.post("/make-server-c142e950/trucking-bookings", async (c) => {
     
     await kv.set(`trucking_booking:${bookingId}`, newBooking);
     
+    // ==================================================================================
+    // ⚡️ SMART ROUTING: CLAIM BILLINGS
+    // ==================================================================================
+    if (bookingData.projectNumber) {
+      try {
+        const allVouchers = await kv.getByPrefix("evoucher:");
+        const projectBillings = allVouchers.filter((v: any) => 
+          v.project_number === bookingData.projectNumber && 
+          v.transaction_type === "billing" &&
+          (v.bookingId === `PROJECT-${bookingData.projectNumber}` || !v.bookingId)
+        );
+
+        let claimedCount = 0;
+        for (const billing of projectBillings) {
+          const tag = (billing.bookingType || "").toLowerCase();
+          
+          // Match logic for Trucking
+          if (tag.includes("trucking") || tag.includes("transport") || tag.includes("delivery") || tag.includes("pickup") || tag.includes("inland")) {
+            billing.bookingId = bookingId; // Claim it!
+            billing.updatedAt = new Date().toISOString();
+            await kv.set(`evoucher:${billing.id}`, billing);
+            claimedCount++;
+          }
+        }
+        console.log(`✓ Trucking Booking ${bookingId} claimed ${claimedCount} billings from Project ${bookingData.projectNumber}`);
+      } catch (err) {
+        console.error("Error in Smart Routing (Trucking):", err);
+      }
+    }
+
     console.log(`Created trucking booking ${bookingId}`);
     
     return c.json({ success: true, data: newBooking });
@@ -4642,6 +5214,36 @@ app.post("/make-server-c142e950/marine-insurance-bookings", async (c) => {
     
     await kv.set(`marine_insurance_booking:${bookingId}`, newBooking);
     
+    // ==================================================================================
+    // ⚡️ SMART ROUTING: CLAIM BILLINGS
+    // ==================================================================================
+    if (bookingData.projectNumber) {
+      try {
+        const allVouchers = await kv.getByPrefix("evoucher:");
+        const projectBillings = allVouchers.filter((v: any) => 
+          v.project_number === bookingData.projectNumber && 
+          v.transaction_type === "billing" &&
+          (v.bookingId === `PROJECT-${bookingData.projectNumber}` || !v.bookingId)
+        );
+
+        let claimedCount = 0;
+        for (const billing of projectBillings) {
+          const tag = (billing.bookingType || "").toLowerCase();
+          
+          // Match logic for Marine Insurance
+          if (tag.includes("marine") || tag.includes("insurance") || tag.includes("premium") || tag.includes("policy")) {
+            billing.bookingId = bookingId; // Claim it!
+            billing.updatedAt = new Date().toISOString();
+            await kv.set(`evoucher:${billing.id}`, billing);
+            claimedCount++;
+          }
+        }
+        console.log(`✓ Marine Insurance Booking ${bookingId} claimed ${claimedCount} billings from Project ${bookingData.projectNumber}`);
+      } catch (err) {
+        console.error("Error in Smart Routing (Marine Insurance):", err);
+      }
+    }
+
     console.log(`Created marine insurance booking ${bookingId}`);
     
     return c.json({ success: true, data: newBooking });
@@ -4797,6 +5399,36 @@ app.post("/make-server-c142e950/brokerage-bookings", async (c) => {
     
     await kv.set(`brokerage_booking:${bookingId}`, newBooking);
     
+    // ==================================================================================
+    // ⚡️ SMART ROUTING: CLAIM BILLINGS
+    // ==================================================================================
+    if (bookingData.projectNumber) {
+      try {
+        const allVouchers = await kv.getByPrefix("evoucher:");
+        const projectBillings = allVouchers.filter((v: any) => 
+          v.project_number === bookingData.projectNumber && 
+          v.transaction_type === "billing" &&
+          (v.bookingId === `PROJECT-${bookingData.projectNumber}` || !v.bookingId)
+        );
+
+        let claimedCount = 0;
+        for (const billing of projectBillings) {
+          const tag = (billing.bookingType || "").toLowerCase();
+          
+          // Match logic for Brokerage
+          if (tag.includes("brokerage") || tag.includes("customs") || tag.includes("duties") || tag.includes("tax") || tag.includes("processing")) {
+            billing.bookingId = bookingId; // Claim it!
+            billing.updatedAt = new Date().toISOString();
+            await kv.set(`evoucher:${billing.id}`, billing);
+            claimedCount++;
+          }
+        }
+        console.log(`✓ Brokerage Booking ${bookingId} claimed ${claimedCount} billings from Project ${bookingData.projectNumber}`);
+      } catch (err) {
+        console.error("Error in Smart Routing (Brokerage):", err);
+      }
+    }
+
     console.log(`Created brokerage booking ${bookingId}`);
     
     return c.json({ success: true, data: newBooking });
@@ -5029,6 +5661,69 @@ app.delete("/make-server-c142e950/others-bookings/:id", async (c) => {
     return c.json({ success: true });
   } catch (error) {
     console.error("Error deleting others booking:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// ==================== REPAIR TOOLS ====================
+
+// Rescan and claim billings for a booking (Fix for missing billings)
+app.post("/make-server-c142e950/bookings/:id/rescan-billings", async (c) => {
+  try {
+    const bookingId = c.req.param("id");
+    const { projectNumber, bookingType } = await c.req.json();
+    
+    if (!projectNumber) {
+      return c.json({ success: false, error: "projectNumber is required" }, 400);
+    }
+    
+    const type = (bookingType || "").toLowerCase();
+    
+    // Get all EVouchers
+    const allVouchers = await kv.getByPrefix("evoucher:");
+    
+    // Filter for billings that belong to this project
+    // AND are either unassigned (PROJECT-XXX) OR already assigned to this booking
+    const candidates = allVouchers.filter((v: any) => 
+      v.project_number === projectNumber && 
+      v.transaction_type === "billing" &&
+      (v.bookingId === `PROJECT-${projectNumber}` || !v.bookingId || v.bookingId === bookingId)
+    );
+    
+    let claimedCount = 0;
+    
+    for (const billing of candidates) {
+      const tag = (billing.bookingType || "").toLowerCase();
+      let match = false;
+      
+      // Smart Routing Logic (Combined)
+      if (type.includes("forwarding") && (tag.includes("forwarding") || tag.includes("freight") || tag.includes("sea") || tag.includes("air"))) {
+        match = true;
+      } else if (type.includes("brokerage") && (tag.includes("brokerage") || tag.includes("customs") || tag.includes("duties") || tag.includes("tax"))) {
+        match = true;
+      } else if (type.includes("trucking") && (tag.includes("trucking") || tag.includes("transport") || tag.includes("delivery") || tag.includes("pickup"))) {
+        match = true;
+      } else if (type.includes("marine") && (tag.includes("marine") || tag.includes("insurance") || tag.includes("premium") || tag.includes("policy"))) {
+        match = true;
+      } else if (type.includes("others")) {
+        // For others, we assume it claims "others" tags
+        if (tag.includes("others")) match = true;
+      }
+      
+      // Only update if it's not already assigned to this booking
+      if (match && billing.bookingId !== bookingId) {
+        billing.bookingId = bookingId;
+        billing.updatedAt = new Date().toISOString();
+        await kv.set(`evoucher:${billing.id}`, billing);
+        claimedCount++;
+      }
+    }
+    
+    console.log(`✓ Manual Rescan: Booking ${bookingId} claimed ${claimedCount} billings from Project ${projectNumber}`);
+    
+    return c.json({ success: true, claimedCount });
+  } catch (error) {
+    console.error("Error rescanning billings:", error);
     return c.json({ success: false, error: String(error) }, 500);
   }
 });
@@ -5303,6 +5998,40 @@ async function addEVoucherHistory(evoucherId: string, action: string, userId: st
   await kv.set(`evoucher_history:${evoucherId}:${historyId}`, historyEntry);
   return historyEntry;
 }
+
+// Cleanup Billing E-Vouchers (Maintenance tool)
+app.post("/make-server-c142e950/evouchers/cleanup-billings", async (c) => {
+  try {
+    const allEVouchers = await kv.getByPrefix("evoucher:");
+    
+    // Filter for billings (strict check on transaction_type)
+    const billings = allEVouchers.filter((ev: any) => ev.transaction_type === "billing");
+    
+    if (billings.length === 0) {
+      return c.json({ success: true, message: "No billing e-vouchers found to delete", count: 0 });
+    }
+    
+    console.log(`🧹 Found ${billings.length} billing e-vouchers to delete...`);
+    
+    // Delete them
+    let deletedCount = 0;
+    for (const billing of billings) {
+      await kv.del(`evoucher:${billing.id}`);
+      deletedCount++;
+    }
+    
+    console.log(`✅ Successfully cleaned up ${deletedCount} billing e-vouchers`);
+    
+    return c.json({ 
+      success: true, 
+      message: `Successfully deleted ${deletedCount} billing e-vouchers`,
+      count: deletedCount 
+    });
+  } catch (error) {
+    console.error("Error cleaning up billings:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
 
 // Create new E-Voucher (draft)
 app.post("/make-server-c142e950/evouchers", async (c) => {
@@ -5629,6 +6358,19 @@ app.post("/make-server-c142e950/evouchers/:id/submit", async (c) => {
       }, 400);
     }
     
+    // SPECIAL HANDLING FOR COLLECTIONS: Immediate Posting
+    // If this is a collection, we bypass the approval queue and post immediately
+    if (existing.transaction_type === "collection") {
+      console.log(`Processing immediate posting for Collection ${existing.voucher_number}`);
+      try {
+        const result = await accountingHandlers.processCollectionPosting(id, user_id, user_name);
+        return c.json({ success: true, data: result.evoucher });
+      } catch (postError) {
+        console.error("Error auto-posting collection:", postError);
+        return c.json({ success: false, error: `Failed to post collection: ${postError}` }, 500);
+      }
+    }
+    
     const updated = {
       ...existing,
       status: "pending",
@@ -5701,6 +6443,15 @@ app.post("/make-server-c142e950/evouchers/:id/approve", async (c) => {
       "Approved",
       notes
     );
+
+    // Create Draft Transaction for the Gatekeeper Workflow
+    const draftTxn = await accountingHandlers.createDraftTransaction(updated);
+    
+    // Link draft transaction to E-Voucher if created
+    if (draftTxn) {
+      updated.draft_transaction_id = draftTxn.id;
+      await kv.set(`evoucher:${id}`, updated);
+    }
     
     console.log(`E-Voucher ${existing.voucher_number} approved by ${user_name}`);
     
@@ -5719,108 +6470,33 @@ app.post("/make-server-c142e950/evouchers/:id/approve", async (c) => {
 app.post("/make-server-c142e950/evouchers/:id/post-to-ledger", async (c) => {
   try {
     const id = c.req.param("id");
-    const { user_id, user_name, user_role } = await c.req.json();
     
+    // Check for existence without consuming body
     const existing = await kv.get(`evoucher:${id}`);
     
     if (!existing) {
       return c.json({ success: false, error: "E-Voucher not found" }, 404);
     }
     
-    if (existing.status !== "Approved") {
-      return c.json({ 
-        success: false, 
-        error: "Only approved E-Vouchers can be posted to ledger" 
-      }, 400);
-    }
-    
-    if (existing.posted_to_ledger) {
-      return c.json({ 
-        success: false, 
-        error: "E-Voucher has already been posted to ledger" 
-      }, 400);
-    }
-    
     // Route to correct module based on transaction_type
     const transactionType = existing.transaction_type || "expense";
     
-    switch (transactionType) {
-      case "collection":
-        // Delegate to collections handler
-        return accountingHandlers.postEVoucherToCollections(c);
-        
-      case "billing":
-        // Delegate to billings handler
-        return accountingHandlers.postEVoucherToBillings(c);
-        
-      case "expense":
-      case "budget_request":
-      case "adjustment":
-      case "reimbursement":
-      default:
-        // Create expense entry
-        const expenseId = `EXP-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-        const expense = {
-          id: expenseId,
-          evoucher_id: id,
-          evoucher_number: existing.voucher_number,
-          date: existing.request_date || existing.created_at,
-          vendor: existing.vendor_name,
-          category: existing.expense_category || existing.gl_category,
-          sub_category: existing.sub_category || existing.gl_sub_category,
-          amount: existing.amount,
-          currency: existing.currency || "PHP",
-          description: existing.description || existing.purpose,
-          project_number: existing.project_number,
-          customer_name: existing.customer_name,
-          requestor_id: existing.requestor_id,
-          requestor_name: existing.requestor_name,
-          posted_by: user_id,
-          posted_by_name: user_name,
-          posted_at: new Date().toISOString(),
-          status: "posted",
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        };
-        
-        await kv.set(`expense:${expenseId}`, expense);
-        
-        // Update E-Voucher status
-        const updated = {
-          ...existing,
-          status: "Posted",
-          posted_to_ledger: true,
-          ledger_entry_id: expenseId,
-          ledger_entry_type: "expense",
-          posted_at: new Date().toISOString(),
-          posted_by: user_id,
-          posted_by_name: user_name,
-          updated_at: new Date().toISOString()
-        };
-        
-        await kv.set(`evoucher:${id}`, updated);
-        
-        // Add history entry
-        await addEVoucherHistory(
-          id,
-          "Posted to Expenses Ledger",
-          user_id,
-          user_name,
-          user_role,
-          "Approved",
-          "Posted"
-        );
-        
-        console.log(`✅ E-Voucher ${existing.voucher_number} posted to Expenses (${expenseId})`);
-        
-        return c.json({ 
-          success: true, 
-          data: updated,
-          expense_id: expenseId
-        });
+    // Dispatch to appropriate handler
+    // NOTE: We must NOT consume the body here, as the handlers will consume it.
+    
+    if (transactionType === "collection") {
+      return accountingHandlers.postEVoucherToCollections(c);
+    } else if (transactionType === "billing") {
+      // Dead route cleanup (Phase 3 — Invoice Ledger Integration Blueprint):
+      // postEVoucherToBillings handler never existed. Invoices now create JE directly via createInvoice.
+      return c.json({ success: false, error: "Billing E-Voucher posting is not supported. Use the Invoice Builder instead." }, 400);
+    } else {
+      // Default to Ledger (Expenses/Journal Entries)
+      // This handler supports the "Strict Gatekeeper" workflow with Debit/Credit account selection
+      return accountingHandlers.postEVoucherToLedger(c);
     }
   } catch (error) {
-    console.error("Error posting E-Voucher to ledger:", error);
+    console.error("Error dispatching E-Voucher post:", error);
     return c.json({ success: false, error: String(error) }, 500);
   }
 });
@@ -5927,6 +6603,9 @@ app.post("/make-server-c142e950/evouchers/:id/cancel", async (c) => {
   }
 });
 
+// Delete E-Voucher
+app.delete("/make-server-c142e950/evouchers/:id", accountingHandlers.deleteExpense);
+
 // Auto-Approve (Create & Approve in one step - Accounting Staff only)
 app.post("/make-server-c142e950/evouchers/auto-approve", async (c) => {
   try {
@@ -6017,12 +6696,18 @@ app.get("/make-server-c142e950/accounting/collections/:id", accountingHandlers.g
 app.post("/make-server-c142e950/evouchers/:id/post-to-collections", accountingHandlers.postEVoucherToCollections);
 app.delete("/make-server-c142e950/accounting/collections/:id", accountingHandlers.deleteCollection);
 
-// BILLINGS - Read-only, populated from posted E-Vouchers
-app.get("/make-server-c142e950/accounting/billings", accountingHandlers.getBillings);
-app.get("/make-server-c142e950/accounting/billings/:id", accountingHandlers.getBillingById);
-app.post("/make-server-c142e950/evouchers/:id/post-to-billings", accountingHandlers.postEVoucherToBillings);
-app.patch("/make-server-c142e950/accounting/billings/:id/payment", accountingHandlers.updateBillingPayment);
-app.delete("/make-server-c142e950/accounting/billings/:id", accountingHandlers.deleteBilling);
+// INVOICES (Formerly Billings) - Read-only, populated from posted E-Vouchers
+app.get("/make-server-c142e950/accounting/billings", accountingHandlers.getInvoices); // Legacy Route
+app.get("/make-server-c142e950/accounting/billings/:id", accountingHandlers.getInvoiceById); // Legacy Route
+app.get("/make-server-c142e950/accounting/invoices", accountingHandlers.getInvoices); // New Route
+app.get("/make-server-c142e950/accounting/invoices/:id", accountingHandlers.getInvoiceById); // New Route
+app.post("/make-server-c142e950/accounting/invoices", accountingHandlers.createInvoice); // New Route: Create Invoice from Items
+
+// BILLING ITEMS (The Atoms)
+app.get("/make-server-c142e950/accounting/billing-items", accountingHandlers.getBillings);
+app.post("/make-server-c142e950/accounting/billing-items", accountingHandlers.createBillingItem);
+app.post("/make-server-c142e950/accounting/billings/batch", accountingHandlers.batchUpsertBillings);
+app.post("/make-server-c142e950/accounting/import-quotation-charges", accountingHandlers.importQuotationCharges);
 
 // ==================== COMPREHENSIVE SEED DATA ====================
 // This creates realistic data showing the BD → PD → BD → OPS relay race in action
@@ -6884,6 +7569,7 @@ app.post("/make-server-c142e950/activities", async (c) => {
       user_id: data.user_id,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
+      attachments: data.attachments || [],
     };
     
     await kv.set(`activity:${id}`, activity);
@@ -8763,7 +9449,12 @@ if (supabase) {
         });
         
         if (error) {
-          console.error("Error creating project attachments bucket:", error);
+          // Ignore "already exists" error (409)
+          if ((error as any).statusCode === "409" || error.message?.includes("already exists")) {
+            console.log("✅ Project attachments bucket already exists (caught error):", PROJECT_ATTACHMENTS_BUCKET);
+          } else {
+            console.error("Error creating project attachments bucket:", error);
+          }
         } else {
           console.log("✅ Created project attachments bucket:", PROJECT_ATTACHMENTS_BUCKET);
         }
@@ -8906,6 +9597,1374 @@ app.delete("/make-server-c142e950/projects/:id/attachments/:attachmentId", async
   } catch (error) {
     console.error("Error deleting project attachment:", error);
     return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// ==================== CONTRACT ATTACHMENTS API ====================
+// Mirrors the Project Attachments pattern above.
+// Uses the same storage bucket but separate KV prefix: contract_attachment:{id}:{attachmentId}
+
+// Get all attachments for a contract
+app.get("/make-server-c142e950/contracts/:id/attachments", async (c) => {
+  try {
+    const contractId = c.req.param("id");
+    
+    const allAttachments = await kv.getByPrefix(`contract_attachment:${contractId}:`);
+    
+    const sortedAttachments = allAttachments.sort((a: any, b: any) => 
+      new Date(b.uploaded_at).getTime() - new Date(a.uploaded_at).getTime()
+    );
+    
+    return c.json({ success: true, data: sortedAttachments });
+  } catch (error) {
+    console.error("Error fetching contract attachments:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Upload attachment to contract
+app.post("/make-server-c142e950/contracts/:id/attachments", async (c) => {
+  try {
+    const contractId = c.req.param("id");
+    const formData = await c.req.formData();
+    const file = formData.get("file") as File;
+    const uploadedBy = formData.get("uploaded_by") as string;
+    
+    if (!file) {
+      return c.json({ success: false, error: "No file provided" }, 400);
+    }
+    
+    if (!supabase) {
+      return c.json({ success: false, error: "Storage not configured" }, 500);
+    }
+    
+    const timestamp = Date.now();
+    const randomId = Math.random().toString(36).substring(2, 10);
+    const fileExtension = file.name.split(".").pop();
+    const storagePath = `contracts/${contractId}/${timestamp}-${randomId}.${fileExtension}`;
+    
+    const arrayBuffer = await file.arrayBuffer();
+    const uint8Array = new Uint8Array(arrayBuffer);
+    
+    const { error: uploadError } = await supabase.storage
+      .from(PROJECT_ATTACHMENTS_BUCKET)
+      .upload(storagePath, uint8Array, {
+        contentType: file.type,
+        upsert: false,
+      });
+    
+    if (uploadError) {
+      console.error("Error uploading contract attachment to storage:", uploadError);
+      return c.json({ success: false, error: uploadError.message }, 500);
+    }
+    
+    const { data: urlData, error: urlError } = await supabase.storage
+      .from(PROJECT_ATTACHMENTS_BUCKET)
+      .createSignedUrl(storagePath, 31536000);
+    
+    if (urlError || !urlData) {
+      console.error("Error generating signed URL for contract attachment:", urlError);
+      return c.json({ success: false, error: "Failed to generate file URL" }, 500);
+    }
+    
+    const attachmentId = `${timestamp}-${randomId}`;
+    const attachment = {
+      id: attachmentId,
+      contract_id: contractId,
+      file_name: file.name,
+      file_size: file.size,
+      file_type: file.type,
+      file_url: urlData.signedUrl,
+      storage_path: storagePath,
+      uploaded_by: uploadedBy || "Unknown",
+      uploaded_at: new Date().toISOString(),
+    };
+    
+    await kv.set(`contract_attachment:${contractId}:${attachmentId}`, attachment);
+    
+    console.log(`✅ Uploaded attachment ${file.name} to contract ${contractId}`);
+    
+    return c.json({ success: true, data: attachment });
+  } catch (error) {
+    console.error("Error uploading contract attachment:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Delete attachment from contract
+app.delete("/make-server-c142e950/contracts/:id/attachments/:attachmentId", async (c) => {
+  try {
+    const contractId = c.req.param("id");
+    const attachmentId = c.req.param("attachmentId");
+    
+    const attachment = await kv.get(`contract_attachment:${contractId}:${attachmentId}`);
+    
+    if (!attachment) {
+      return c.json({ success: false, error: "Attachment not found" }, 404);
+    }
+    
+    if (!supabase) {
+      return c.json({ success: false, error: "Storage not configured" }, 500);
+    }
+    
+    const { error: deleteError } = await supabase.storage
+      .from(PROJECT_ATTACHMENTS_BUCKET)
+      .remove([attachment.storage_path]);
+    
+    if (deleteError) {
+      console.error("Error deleting contract attachment from storage:", deleteError);
+    }
+    
+    await kv.del(`contract_attachment:${contractId}:${attachmentId}`);
+    
+    console.log(`✅ Deleted attachment ${attachment.file_name} from contract ${contractId}`);
+    
+    return c.json({ success: true, message: "Attachment deleted successfully" });
+  } catch (error) {
+    console.error("Error deleting contract attachment:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// ==================== VENDOR LINE ITEMS API ====================
+
+// Get vendor line items
+app.get("/make-server-c142e950/vendors/:vendorId/line-items", async (c) => {
+  try {
+    const vendorId = c.req.param("vendorId");
+    const key = `vendor_line_items:${vendorId}`;
+    
+    const lineItems = await kv.get(key);
+    
+    if (lineItems) {
+      console.log(`✅ Retrieved ${lineItems.length} line items for vendor ${vendorId}`);
+      return c.json({ success: true, data: lineItems });
+    } else {
+      // No custom line items in DB, return empty array (frontend will use hardcoded fallback)
+      console.log(`⚠️ No line items found for vendor ${vendorId}, returning empty array`);
+      return c.json({ success: true, data: null });
+    }
+  } catch (error) {
+    console.error(`Error retrieving line items for vendor:`, error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Save all vendor line items (bulk replace)
+app.post("/make-server-c142e950/vendors/:vendorId/line-items", async (c) => {
+  try {
+    const vendorId = c.req.param("vendorId");
+    const body = await c.req.json();
+    const lineItems = body.line_items;
+    
+    if (!Array.isArray(lineItems)) {
+      return c.json({ success: false, error: "line_items must be an array" }, 400);
+    }
+    
+    const key = `vendor_line_items:${vendorId}`;
+    await kv.set(key, lineItems);
+    
+    console.log(`✅ Saved ${lineItems.length} line items for vendor ${vendorId}`);
+    return c.json({ success: true, message: "Line items saved successfully", data: lineItems });
+  } catch (error) {
+    console.error(`Error saving line items for vendor:`, error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Update a single line item
+app.put("/make-server-c142e950/vendors/:vendorId/line-items/:itemId", async (c) => {
+  try {
+    const vendorId = c.req.param("vendorId");
+    const itemId = c.req.param("itemId");
+    const body = await c.req.json();
+    const updatedItem = body.line_item;
+    
+    if (!updatedItem) {
+      return c.json({ success: false, error: "line_item is required" }, 400);
+    }
+    
+    const key = `vendor_line_items:${vendorId}`;
+    const lineItems = await kv.get(key) || [];
+    
+    const itemIndex = lineItems.findIndex((item: any) => item.id === itemId);
+    
+    if (itemIndex === -1) {
+      return c.json({ success: false, error: "Line item not found" }, 404);
+    }
+    
+    lineItems[itemIndex] = updatedItem;
+    await kv.set(key, lineItems);
+    
+    console.log(`✅ Updated line item ${itemId} for vendor ${vendorId}`);
+    return c.json({ success: true, message: "Line item updated successfully", data: updatedItem });
+  } catch (error) {
+    console.error(`Error updating line item:`, error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Delete a line item
+app.delete("/make-server-c142e950/vendors/:vendorId/line-items/:itemId", async (c) => {
+  try {
+    const vendorId = c.req.param("vendorId");
+    const itemId = c.req.param("itemId");
+    
+    const key = `vendor_line_items:${vendorId}`;
+    const lineItems = await kv.get(key) || [];
+    
+    const filteredItems = lineItems.filter((item: any) => item.id !== itemId);
+    
+    if (filteredItems.length === lineItems.length) {
+      return c.json({ success: false, error: "Line item not found" }, 404);
+    }
+    
+    await kv.set(key, filteredItems);
+    
+    console.log(`✅ Deleted line item ${itemId} from vendor ${vendorId}`);
+    return c.json({ success: true, message: "Line item deleted successfully" });
+  } catch (error) {
+    console.error(`Error deleting line item:`, error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// ==================== VENDOR CHARGE CATEGORIES API (NEW FORMAT) ====================
+
+// Get vendor charge categories (NEW FORMAT - Phase 3)
+app.get("/make-server-c142e950/vendors/:vendorId/charge-categories", async (c) => {
+  try {
+    const vendorId = c.req.param("vendorId");
+    const key = `vendor_charge_categories:${vendorId}`;
+    
+    const chargeCategories = await kv.get(key);
+    
+    if (chargeCategories) {
+      console.log(`✅ Retrieved ${chargeCategories.length} charge categories for vendor ${vendorId}`);
+      return c.json({ success: true, data: chargeCategories });
+    } else {
+      // No custom charge categories in DB, return null (frontend will use hardcoded fallback)
+      console.log(`⚠️ No charge categories found for vendor ${vendorId}, returning null`);
+      return c.json({ success: true, data: null });
+    }
+  } catch (error) {
+    console.error(`Error retrieving charge categories for vendor:`, error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Save all vendor charge categories (bulk replace)
+app.post("/make-server-c142e950/vendors/:vendorId/charge-categories", async (c) => {
+  try {
+    const vendorId = c.req.param("vendorId");
+    const body = await c.req.json();
+    const chargeCategories = body.charge_categories;
+    
+    if (!Array.isArray(chargeCategories)) {
+      return c.json({ success: false, error: "charge_categories must be an array" }, 400);
+    }
+    
+    const key = `vendor_charge_categories:${vendorId}`;
+    await kv.set(key, chargeCategories);
+    
+    console.log(`✅ Saved ${chargeCategories.length} charge categories for vendor ${vendorId}`);
+    return c.json({ success: true, message: "Charge categories saved successfully", data: chargeCategories });
+  } catch (error) {
+    console.error(`Error saving charge categories for vendor:`, error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// ==================== ACCOUNTING - CHART OF ACCOUNTS API ====================
+
+// DEPRECATED: Use newAccounting.getAccounts() instead
+// app.get("/make-server-c142e950/accounts", async (c) => ...
+
+// Get single account
+app.get("/make-server-c142e950/accounts/:id", async (c) => {
+  try {
+    const id = c.req.param("id");
+    const account = await kv.get(`account:${id}`);
+    
+    if (!account) {
+      return c.json({ success: false, error: "Account not found" }, 404);
+    }
+    
+    return c.json({ success: true, data: account });
+  } catch (error) {
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Create account
+app.post("/make-server-c142e950/accounts", async (c) => {
+  try {
+    const data = await c.req.json();
+    
+    // Check for duplicate code
+    const allAccounts = await kv.getByPrefix("account:");
+    if (allAccounts.some((a: any) => a.code === data.code)) {
+      return c.json({ success: false, error: "Account code already exists" }, 400);
+    }
+
+    const id = `ACC-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
+    const account = {
+      ...data,
+      id,
+      balance: 0, // Initial balance is 0
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    
+    await kv.set(`account:${id}`, account);
+    
+    console.log(`Created account: ${account.code} - ${account.name}`);
+    
+    return c.json({ success: true, data: account });
+  } catch (error) {
+    console.error("Error creating account:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Update account
+app.patch("/make-server-c142e950/accounts/:id", async (c) => {
+  try {
+    const id = c.req.param("id");
+    const updates = await c.req.json();
+    
+    const existing = await kv.get(`account:${id}`);
+    
+    if (!existing) {
+      return c.json({ success: false, error: "Account not found" }, 404);
+    }
+    
+    // Prevent system account modification of critical fields if needed
+    if (existing.is_system && (updates.code !== existing.code || updates.type !== existing.type)) {
+       // Allow it for now but log warning
+       console.warn(`System account ${existing.code} modified`);
+    }
+
+    const updated = {
+      ...existing,
+      ...updates,
+      id, // Ensure ID doesn't change
+      updated_at: new Date().toISOString(),
+    };
+    
+    await kv.set(`account:${id}`, updated);
+    
+    console.log(`Updated account: ${id}`);
+    
+    return c.json({ success: true, data: updated });
+  } catch (error) {
+    console.error("Error updating account:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Delete account
+app.delete("/make-server-c142e950/accounts/:id", async (c) => {
+  try {
+    const id = c.req.param("id");
+    
+    const existing = await kv.get(`account:${id}`);
+    
+    if (!existing) {
+      return c.json({ success: false, error: "Account not found" }, 404);
+    }
+    
+    if (existing.is_system) {
+      return c.json({ success: false, error: "Cannot delete system account" }, 400);
+    }
+    
+    await kv.del(`account:${id}`);
+    
+    console.log(`Deleted account: ${id}`);
+    
+    return c.json({ success: true });
+  } catch (error) {
+    console.error("Error deleting account:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Seed default accounts
+app.post("/make-server-c142e950/accounts/seed", async (c) => {
+  try {
+    // Check if accounts exist
+    const existing = await kv.getByPrefix("account:");
+    if (existing.length > 0) {
+      return c.json({ success: true, message: "Accounts already seeded", count: existing.length });
+    }
+
+    const defaults = [
+      { code: "1000", name: "Cash on Hand", type: "Asset", subtype: "Cash", is_system: true },
+      { code: "1010", name: "Cash in Bank - BDO", type: "Asset", subtype: "Bank", is_system: false },
+      { code: "1020", name: "Cash in Bank - BPI", type: "Asset", subtype: "Bank", is_system: false },
+      { code: "1200", name: "Accounts Receivable", type: "Asset", subtype: "Accounts Receivable", is_system: true },
+      { code: "1210", name: "Undeposited Funds", type: "Asset", subtype: "Other Current Asset", is_system: true },
+      { code: "1500", name: "Inventory Asset", type: "Asset", subtype: "Inventory", is_system: false },
+      
+      { code: "2000", name: "Accounts Payable", type: "Liability", subtype: "Accounts Payable", is_system: true },
+      { code: "2100", name: "VAT Payable", type: "Liability", subtype: "Other Current Liability", is_system: true },
+      
+      { code: "3000", name: "Opening Balance Equity", type: "Equity", subtype: "Equity", is_system: true },
+      { code: "3900", name: "Retained Earnings", type: "Equity", subtype: "Retained Earnings", is_system: true },
+      
+      { code: "4000", name: "Service Income", type: "Income", subtype: "Service Income", is_system: false },
+      { code: "4100", name: "Freight Income", type: "Income", subtype: "Service Income", is_system: false },
+      
+      { code: "5000", name: "Cost of Goods Sold", type: "Expense", subtype: "Cost of Goods Sold", is_system: false },
+      { code: "5100", name: "Freight Expense", type: "Expense", subtype: "Cost of Goods Sold", is_system: false },
+      
+      { code: "6000", name: "Advertising", type: "Expense", subtype: "Expense", is_system: false },
+      { code: "6100", name: "Bank Service Charges", type: "Expense", subtype: "Expense", is_system: false },
+      { code: "6200", name: "Office Supplies", type: "Expense", subtype: "Expense", is_system: false },
+      { code: "6300", name: "Rent Expense", type: "Expense", subtype: "Expense", is_system: false },
+      { code: "6400", name: "Salaries & Wages", type: "Expense", subtype: "Expense", is_system: false },
+    ];
+    
+    const created = [];
+    for (const def of defaults) {
+       const id = `ACC-SEED-${def.code}`;
+       const acc = { 
+         ...def, 
+         id, 
+         balance: 0, 
+         is_active: true, 
+         created_at: new Date().toISOString(), 
+         updated_at: new Date().toISOString() 
+       };
+       await kv.set(`account:${id}`, acc);
+       created.push(acc);
+    }
+    
+    return c.json({ success: true, message: "Seeded default accounts", data: created });
+  } catch (error) {
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Route handling for Accounting Module
+app.get("/make-server-c142e950/expenses", accountingHandlers.getExpenses);
+app.get("/make-server-c142e950/expenses/:id", accountingHandlers.getExpenseById);
+app.delete("/make-server-c142e950/expenses/:id", accountingHandlers.deleteExpense);
+
+app.get("/make-server-c142e950/collections", accountingHandlers.getCollections);
+app.get("/make-server-c142e950/collections/:id", accountingHandlers.getCollectionById);
+app.post("/make-server-c142e950/evouchers/:id/post-to-collections", accountingHandlers.postEVoucherToCollections);
+app.delete("/make-server-c142e950/collections/:id", accountingHandlers.deleteCollection);
+
+app.get("/make-server-c142e950/billings", accountingHandlers.getBillings);
+app.get("/make-server-c142e950/billings/:id", accountingHandlers.getBillingById);
+// Dead route removed: postEVoucherToBillings (handler never existed — see Invoice Ledger Integration Blueprint Phase 3)
+app.patch("/make-server-c142e950/billings/:id/payment", accountingHandlers.updateBillingPayment);
+app.delete("/make-server-c142e950/billings/:id", accountingHandlers.deleteBilling);
+app.post("/make-server-c142e950/statements/:ref/finalize", accountingHandlers.finalizeStatement);
+
+app.post("/make-server-c142e950/journal-entries", accountingHandlers.createJournalEntry);
+app.post("/make-server-c142e950/evouchers/:id/post-to-ledger", accountingHandlers.postEVoucherToLedger);
+
+
+// ==================== NEW ACCOUNTING MODULE API (Refactored) ====================
+// Uses accounting-handlers.tsx for better filtering (Project Number, etc.)
+
+// Billings
+app.get("/make-server-c142e950/accounting/billings", accountingHandlers.getBillings);
+app.get("/make-server-c142e950/accounting/billings/:id", accountingHandlers.getBillingById);
+
+// Expenses
+app.get("/make-server-c142e950/accounting/expenses", accountingHandlers.getExpenses);
+app.get("/make-server-c142e950/accounting/expenses/:id", accountingHandlers.getExpenseById);
+app.delete("/make-server-c142e950/accounting/expenses/:id", accountingHandlers.deleteExpense);
+
+// Collections
+app.get("/make-server-c142e950/accounting/collections", accountingHandlers.getCollections);
+app.get("/make-server-c142e950/accounting/collections/:id", accountingHandlers.getCollectionById);
+app.delete("/make-server-c142e950/accounting/collections/:id", accountingHandlers.deleteCollection);
+
+// Journal Entries
+app.post("/make-server-c142e950/accounting/journal-entries", accountingHandlers.createJournalEntry);
+
+// Posting Actions
+app.post("/make-server-c142e950/accounting/evouchers/:id/post-to-ledger", accountingHandlers.postEVoucherToLedger);
+app.post("/make-server-c142e950/accounting/evouchers/:id/post-to-collections", accountingHandlers.postEVoucherToCollections);
+
+// ==================== NETWORK PARTNERS API ====================
+
+// Get all partners (optionally filter by type, country, service)
+app.get("/make-server-c142e950/partners", async (c) => {
+  try {
+    const type = c.req.query("type");
+    const country = c.req.query("country");
+    const service = c.req.query("service");
+    const search = c.req.query("search");
+    
+    let partners = await kv.getByPrefix("partner:");
+    
+    // Apply filters
+    if (type && type !== "all") {
+      partners = partners.filter((p: any) => p.partner_type === type);
+    }
+    
+    if (country) {
+      partners = partners.filter((p: any) => p.country === country);
+    }
+    
+    if (service) {
+      partners = partners.filter((p: any) => p.services && p.services.includes(service));
+    }
+    
+    if (search) {
+      const searchLower = search.toLowerCase();
+      partners = partners.filter((p: any) => 
+        p.company_name?.toLowerCase().includes(searchLower) ||
+        p.contact_person?.toLowerCase().includes(searchLower) ||
+        p.emails?.some((e: string) => e.toLowerCase().includes(searchLower)) ||
+        p.id?.toLowerCase().includes(searchLower)
+      );
+    }
+    
+    // Sort by company name
+    partners.sort((a: any, b: any) => a.company_name.localeCompare(b.company_name));
+    
+    console.log(`Fetched ${partners.length} partners`);
+    
+    return c.json({ success: true, data: partners });
+  } catch (error) {
+    console.error("Error fetching partners:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Get single partner by ID
+app.get("/make-server-c142e950/partners/:id", async (c) => {
+  try {
+    const id = c.req.param("id");
+    const partner = await kv.get(`partner:${id}`);
+    
+    if (!partner) {
+      return c.json({ success: false, error: "Partner not found" }, 404);
+    }
+    
+    return c.json({ success: true, data: partner });
+  } catch (error) {
+    console.error("Error fetching partner:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Create partner
+app.post("/make-server-c142e950/partners", async (c) => {
+  try {
+    const data = await c.req.json();
+    
+    // Generate partner ID (or use provided one if migrating)
+    const id = data.id || `np-${Date.now()}`;
+    
+    const partner = {
+      ...data,
+      id,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    
+    await kv.set(`partner:${id}`, partner);
+    
+    console.log(`Created partner: ${id} - ${partner.company_name}`);
+    
+    return c.json({ success: true, data: partner });
+  } catch (error) {
+    console.error("Error creating partner:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Update partner
+app.put("/make-server-c142e950/partners/:id", async (c) => {
+  try {
+    const id = c.req.param("id");
+    const data = await c.req.json();
+    
+    const existing = await kv.get(`partner:${id}`);
+    
+    if (!existing) {
+      return c.json({ success: false, error: "Partner not found" }, 404);
+    }
+    
+    const partner = {
+      ...existing,
+      ...data,
+      id, // Ensure ID doesn't change
+      updated_at: new Date().toISOString(),
+    };
+    
+    await kv.set(`partner:${id}`, partner);
+    
+    console.log(`Updated partner: ${id}`);
+    
+    return c.json({ success: true, data: partner });
+  } catch (error) {
+    console.error("Error updating partner:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Delete partner
+app.delete("/make-server-c142e950/partners/:id", async (c) => {
+  try {
+    const id = c.req.param("id");
+    
+    await kv.del(`partner:${id}`);
+    
+    console.log(`Deleted partner: ${id}`);
+    
+    return c.json({ success: true, message: "Partner deleted successfully" });
+  } catch (error) {
+    console.error("Error deleting partner:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Seed partners (bulk create)
+app.post("/make-server-c142e950/partners/seed", async (c) => {
+  try {
+    const partners = await c.req.json();
+    
+    if (!Array.isArray(partners)) {
+      return c.json({ success: false, error: "Expected array of partners" }, 400);
+    }
+    
+    let count = 0;
+    for (const p of partners) {
+      await kv.set(`partner:${p.id}`, p);
+      count++;
+    }
+    
+    console.log(`Seeded ${count} partners`);
+    
+    return c.json({ success: true, count, message: `Successfully seeded ${count} partners` });
+  } catch (error) {
+    console.error("Error seeding partners:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Get charge categories for a partner
+app.get("/make-server-c142e950/vendors/:id/charge-categories", async (c) => {
+  try {
+    const id = c.req.param("id");
+    
+    // Check if vendor exists in partner store (using unified store)
+    const partner = await kv.get(`partner:${id}`);
+    
+    if (partner) {
+      return c.json({ success: true, data: partner.charge_categories || [] });
+    }
+    
+    // Fallback: check legacy vendor store
+    const vendor = await kv.get(`vendor:${id}`);
+    if (vendor) {
+      return c.json({ success: true, data: vendor.charge_categories || [] });
+    }
+    
+    return c.json({ success: false, error: "Partner/Vendor not found" }, 404);
+  } catch (error) {
+    console.error("Error fetching partner charge categories:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Save charge categories for a partner
+app.post("/make-server-c142e950/vendors/:id/charge-categories", async (c) => {
+  try {
+    const id = c.req.param("id");
+    const { charge_categories } = await c.req.json();
+    
+    // Try updating in partner store first
+    const partner = await kv.get(`partner:${id}`);
+    
+    if (partner) {
+      partner.charge_categories = charge_categories;
+      partner.updated_at = new Date().toISOString();
+      await kv.set(`partner:${id}`, partner);
+      return c.json({ success: true, data: partner.charge_categories });
+    }
+    
+    // Fallback to legacy vendor store
+    const vendor = await kv.get(`vendor:${id}`);
+    if (vendor) {
+      vendor.charge_categories = charge_categories;
+      vendor.updated_at = new Date().toISOString();
+      await kv.set(`vendor:${id}`, vendor);
+      return c.json({ success: true, data: vendor.charge_categories });
+    }
+    
+    return c.json({ success: false, error: "Partner/Vendor not found" }, 404);
+  } catch (error) {
+    console.error("Error saving partner charge categories:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// ==================== TRANSACTION VIEW SETTINGS API ====================
+
+// Get visible accounts for transactions module
+app.get("/make-server-c142e950/settings/transaction-view", async (c) => {
+  try {
+    const settings = await kv.get("settings:transaction-view");
+    return c.json({ success: true, data: settings || { visibleAccountIds: [] } });
+  } catch (error) {
+    console.error("Error fetching transaction view settings:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Save visible accounts for transactions module
+app.post("/make-server-c142e950/settings/transaction-view", async (c) => {
+  try {
+    const body = await c.req.json();
+    
+    // minimal validation
+    if (!body || !Array.isArray(body.visibleAccountIds)) {
+       return c.json({ success: false, error: "Invalid body: visibleAccountIds array required" }, 400);
+    }
+    
+    await kv.set("settings:transaction-view", body);
+    console.log(`Updated transaction view settings: ${body.visibleAccountIds.length} accounts visible`);
+    
+    return c.json({ success: true, data: body });
+  } catch (error) {
+    console.error("Error saving transaction view settings:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// ==================== CONTRACT QUOTATION: Active Contract Detection ====================
+
+// GET active contracts for a customer (used by Operations booking panels)
+app.get("/make-server-c142e950/contracts/active", async (c) => {
+  try {
+    const customer_name = c.req.query("customer_name");
+    if (!customer_name) {
+      return c.json({ success: false, error: "customer_name query parameter is required" }, 400);
+    }
+
+    // Fetch all quotations and filter for active contracts matching this customer
+    const allQuotations = await kv.getByPrefix("quotation:");
+    const customerNameLower = customer_name.toLowerCase().trim();
+
+    const activeContracts = allQuotations.filter((q: any) => {
+      // Must be a contract quotation
+      if (q.quotation_type !== "contract") return false;
+
+      // Must match customer name (case-insensitive)
+      const qCustomer = (q.customer_name || "").toLowerCase().trim();
+      if (qCustomer !== customerNameLower) return false;
+
+      // Must be Active — Draft, For Signing, Pending, etc. are not linkable to bookings
+      const status = q.contract_status || q.status || "Draft";
+      if (status !== "Active") return false;
+
+      // Check validity period — contract must currently be valid or not yet started
+      if (q.contract_validity_end) {
+        const endDate = new Date(q.contract_validity_end);
+        endDate.setHours(23, 59, 59, 999);
+        if (endDate < new Date()) return false; // Already ended
+      }
+
+      return true;
+    });
+
+    // Return slim contract data for the banner
+    const contracts = activeContracts.map((q: any) => ({
+      id: q.id,
+      quote_number: q.quote_number,
+      quotation_name: q.quotation_name,
+      contract_status: q.contract_status || "Draft",
+      contract_validity_start: q.contract_validity_start,
+      contract_validity_end: q.contract_validity_end,
+      services: q.services || [],
+      customer_name: q.customer_name,
+    }));
+
+    // ✨ PHASE 5: Auto-detect expiring contracts (within 30 days)
+    const now = new Date();
+    for (const contract of contracts) {
+      if (contract.contract_validity_end && contract.contract_status === "Active") {
+        const endDate = new Date(contract.contract_validity_end);
+        const daysLeft = Math.ceil((endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+        if (daysLeft <= 30 && daysLeft > 0) {
+          contract.contract_status = "Expiring";
+          // Persist the status change
+          const full = await kv.get(`quotation:${contract.id}`);
+          if (full && full.contract_status === "Active") {
+            await kv.set(`quotation:${contract.id}`, { ...full, contract_status: "Expiring", updatedAt: now.toISOString() });
+            console.log(`Contract ${contract.quote_number} auto-flagged as Expiring (${daysLeft}d remaining)`);
+          }
+        }
+      }
+    }
+
+    console.log(`Contract detection: found ${contracts.length} active contract(s) for customer "${customer_name}"`);
+
+    return c.json({ success: true, contracts });
+  } catch (error) {
+    console.error("Error checking active contracts:", error);
+    return c.json({ success: false, error: `Error checking active contracts: ${String(error)}` }, 500);
+  }
+});
+
+// ==================== CONTRACT QUOTATION: Link Booking to Contract (Phase 3) ====================
+
+/**
+ * Link a booking to a contract. Mirrors POST /projects/:id/link-booking pattern.
+ * Unlike projects, contracts allow MULTIPLE bookings per service type.
+ *
+ * @see /docs/blueprints/CONTRACT_FLOWCHART_INTEGRATION_BLUEPRINT.md - Phase 3, Task 3.3
+ */
+app.post("/make-server-c142e950/contracts/:id/link-booking", async (c) => {
+  try {
+    const id = c.req.param("id");
+    const { bookingId, bookingNumber, serviceType, status } = await c.req.json();
+
+    if (!bookingId || !bookingNumber || !serviceType) {
+      return c.json({
+        success: false,
+        error: "Missing required fields: bookingId, bookingNumber, and serviceType are required",
+      }, 400);
+    }
+
+    const contract = await kv.get(`quotation:${id}`);
+    if (!contract) {
+      return c.json({ success: false, error: "Contract not found" }, 404);
+    }
+    if (contract.quotation_type !== "contract") {
+      return c.json({ success: false, error: "Referenced quotation is not a contract" }, 400);
+    }
+
+    // Initialize linkedBookings if needed
+    if (!contract.linkedBookings) {
+      contract.linkedBookings = [];
+    }
+
+    // Check if already linked (by bookingId) — idempotent
+    const alreadyLinked = contract.linkedBookings.some((b: any) => b.bookingId === bookingId);
+    if (alreadyLinked) {
+      return c.json({ success: true, data: contract });
+    }
+
+    // NOTE: Unlike projects, contracts allow MULTIPLE bookings per service type
+    // (e.g., 50 Brokerage bookings under one annual contract)
+
+    contract.linkedBookings.push({
+      bookingId,
+      bookingNumber,
+      serviceType,
+      status,
+      createdAt: new Date().toISOString(),
+    });
+
+    contract.updated_at = new Date().toISOString();
+    await kv.set(`quotation:${id}`, contract);
+
+    // Record activity
+    await recordContractActivity(
+      id, "booking_linked",
+      `${serviceType} booking ${bookingNumber} linked`,
+      undefined, { bookingId, bookingNumber, serviceType }
+    );
+
+    console.log(`Linked booking ${bookingNumber} to contract ${contract.quote_number} (total: ${contract.linkedBookings.length})`);
+
+    return c.json({ success: true, data: contract });
+  } catch (error) {
+    console.error("Error linking booking to contract:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Unlink booking from contract
+app.post("/make-server-c142e950/contracts/:id/unlink-booking", async (c) => {
+  try {
+    const id = c.req.param("id");
+    const { bookingId } = await c.req.json();
+
+    const contract = await kv.get(`quotation:${id}`);
+    if (!contract) {
+      return c.json({ success: false, error: "Contract not found" }, 404);
+    }
+
+    if (contract.linkedBookings) {
+      contract.linkedBookings = contract.linkedBookings.filter(
+        (b: any) => b.bookingId !== bookingId
+      );
+      contract.updated_at = new Date().toISOString();
+      await kv.set(`quotation:${id}`, contract);
+    }
+
+    return c.json({ success: true, data: contract });
+  } catch (error) {
+    console.error("Error unlinking booking from contract:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// REMOVED: Legacy generate-billing endpoint + server-side rate engine (Phase 5E cleanup)
+// Rate card generation now runs client-side via BookingRateCardButton → rateCardToBilling.ts
+// See /docs/blueprints/CONTRACT_BILLINGS_REWORK_BLUEPRINT.md — Phase 5E
+
+/*
+function serverGetQuantityForUnit(unit: string, quantities: any): number {
+  switch (unit) {
+    case "per_container": return quantities.containers ?? quantities.quantity ?? 1;
+    case "per_shipment": return quantities.shipments ?? 1;
+    case "per_bl": return quantities.bls ?? 1;
+    case "per_set": return quantities.sets ?? quantities.quantity ?? 1;
+    default: return quantities.containers ?? quantities.quantity ?? 1;
+  }
+}
+
+function serverResolveModeColumn(columns: string[], bookingMode: string): string | null {
+  const mode = (bookingMode || "").toUpperCase().trim();
+  const direct = columns.find((col: string) => col.toUpperCase() === mode);
+  if (direct) return direct;
+  const partial = columns.find((col: string) => col.toUpperCase().includes(mode));
+  if (partial) return partial;
+  if (mode === "AIR") {
+    const airCol = columns.find((col: string) => col.toUpperCase().includes("AIR"));
+    if (airCol) return airCol;
+  }
+  return columns.length > 0 ? columns[0] : null;
+}
+
+function serverCalculateRates(matrix: any, modeColumn: string, quantities: any): any[] {
+  const applied: any[] = [];
+  const resolvedCol = matrix.columns.includes(modeColumn)
+    ? modeColumn
+    : serverResolveModeColumn(matrix.columns, modeColumn);
+  if (!resolvedCol) return applied;
+
+  for (const row of (matrix.rows || [])) {
+    const rate = row.rates?.[resolvedCol];
+    if (!rate || rate <= 0) continue;
+    const qty = serverGetQuantityForUnit(row.unit, quantities);
+    if (qty <= 0) continue;
+
+    let subtotal: number;
+    let ruleApplied: string;
+    const rule = row.succeeding_rule;
+    if (rule && rule.after_qty > 0 && qty > rule.after_qty) {
+      const baseQty = rule.after_qty;
+      const succQty = qty - baseQty;
+      subtotal = baseQty * rate + succQty * rule.rate;
+      ruleApplied = `${baseQty} x P${rate.toLocaleString()} + ${succQty} x P${rule.rate.toLocaleString()}`;
+    } else {
+      subtotal = qty * rate;
+      ruleApplied = `${qty} x P${rate.toLocaleString()}`;
+    }
+
+    applied.push({
+      particular: row.particular,
+      rate,
+      quantity: qty,
+      subtotal,
+      rule_applied: ruleApplied,
+    });
+  }
+  return applied;
+}
+
+// POST: Generate billing drafts for a contract booking
+app.post("/make-server-c142e950/contracts/:contractId/generate-billing", async (c) => {
+  try {
+    const contractId = c.req.param("contractId");
+    const body = await c.req.json();
+    const { booking_id, service_type, mode, quantities } = body;
+
+    if (!booking_id || !service_type) {
+      return c.json({ success: false, error: "booking_id and service_type are required" }, 400);
+    }
+
+    // Fetch the contract quotation
+    const contract = await kv.get(`quotation:${contractId}`);
+    if (!contract) {
+      return c.json({ success: false, error: `Contract ${contractId} not found` }, 404);
+    }
+    if (contract.quotation_type !== "contract") {
+      return c.json({ success: false, error: "Referenced quotation is not a contract" }, 400);
+    }
+
+    // Find the rate matrix for this service type
+    const matrices = contract.rate_matrices || [];
+    const matrix = matrices.find((m: any) => m.service_type.toLowerCase() === service_type.toLowerCase());
+    if (!matrix) {
+      return c.json({ success: false, error: `No rate matrix found for service type "${service_type}" in contract` }, 404);
+    }
+
+    // Resolve mode column
+    const modeColumn = serverResolveModeColumn(matrix.columns, mode || "FCL");
+    if (!modeColumn) {
+      return c.json({ success: false, error: `Could not resolve mode column for "${mode}"` }, 400);
+    }
+
+    // Calculate applied rates
+    const bookingQuantities = quantities || { containers: 1, shipments: 1 };
+    const appliedRates = serverCalculateRates(matrix, modeColumn, bookingQuantities);
+    const total = appliedRates.reduce((sum: number, r: any) => sum + r.subtotal, 0);
+
+    if (appliedRates.length === 0) {
+      return c.json({ success: false, error: "No applicable rates found for the given mode and quantities" }, 400);
+    }
+
+    // Check for existing billings for this booking to avoid duplicates
+    const existingBillings = await kv.getByPrefix("evoucher:");
+    const alreadyBilled = existingBillings.filter(
+      (b: any) => b.contract_id === contractId && b.source_booking_id === booking_id
+    );
+    if (alreadyBilled.length > 0) {
+      return c.json({
+        success: false,
+        error: `Billing already exists for booking ${booking_id} under this contract`,
+        existing_billings: alreadyBilled.map((b: any) => b.id),
+      }, 409);
+    }
+
+    // Generate billing drafts — one evoucher per applied rate line
+    const creationTimestamp = new Date().toISOString();
+    const generatedBillings: any[] = [];
+
+    for (const appliedRate of appliedRates) {
+      const billingId = `BILL-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
+
+      const billing = {
+        id: billingId,
+        billingId,
+        bookingId: booking_id,
+        bookingType: service_type,
+
+        createdAt: creationTimestamp,
+        updatedAt: creationTimestamp,
+        created_at: creationTimestamp,
+
+        source: "contract",
+        source_type: "contract_rate",
+        contract_id: contractId,
+        contract_number: contract.quote_number,
+        source_booking_id: booking_id,
+
+        purpose: appliedRate.particular,
+        description: `${appliedRate.particular} — ${appliedRate.rule_applied}`,
+        particular: appliedRate.particular,
+        applied_rate: appliedRate.rate,
+        applied_quantity: appliedRate.quantity,
+        rule_applied: appliedRate.rule_applied,
+        mode_column: modeColumn,
+
+        amount: appliedRate.subtotal,
+        currency: contract.currency || "PHP",
+        quantity: appliedRate.quantity,
+        unit: "",
+
+        customer_name: contract.customer_name,
+        customer_id: contract.customer_id,
+
+        status: "draft",
+        transaction_type: "billing",
+        billing_status: "unbilled",
+
+        notes: `Auto-generated from contract ${contract.quote_number} for booking ${booking_id}`,
+      };
+
+      await kv.set(`evoucher:${billingId}`, billing);
+      generatedBillings.push(billing);
+      await new Promise(r => setTimeout(r, 2));
+    }
+
+    // Update the booking with applied rates
+    const prefixes = ["forwarding_booking:", "brokerage_booking:", "trucking_booking:", "marine_insurance_booking:", "others_booking:", "booking:"];
+    for (const prefix of prefixes) {
+      const booking = await kv.get(`${prefix}${booking_id}`);
+      if (booking) {
+        await kv.set(`${prefix}${booking_id}`, {
+          ...booking,
+          contract_applied_rates: appliedRates,
+          contract_billing_total: total,
+          contract_billing_generated_at: creationTimestamp,
+          updatedAt: creationTimestamp,
+        });
+        break;
+      }
+    }
+
+    // Record activity
+    await recordContractActivity(
+      contractId, "billing_generated",
+      `Billing generated for ${service_type} booking ${booking_id} — ${generatedBillings.length} line(s), total ${contract.currency || "PHP"} ${total.toLocaleString()}`,
+      undefined, { booking_id, service_type, total, line_count: generatedBillings.length }
+    );
+
+    console.log(`Generated ${generatedBillings.length} contract billings for booking ${booking_id} (contract: ${contract.quote_number}, total: ${total})`);
+
+    return c.json({
+      success: true,
+      billings: generatedBillings,
+      total,
+      applied_rates: appliedRates,
+      mode_column: modeColumn,
+    });
+  } catch (error) {
+    console.error("Error generating contract billing:", error);
+    return c.json({ success: false, error: `Error generating contract billing: ${String(error)}` }, 500);
+  }
+});
+*/
+
+// GET: Fetch billings for a specific contract
+app.get("/make-server-c142e950/contracts/:contractId/billings", async (c) => {
+  try {
+    const contractId = c.req.param("contractId");
+
+    const allBillings = await kv.getByPrefix("evoucher:");
+    const contractBillings = allBillings
+      .filter((b: any) => b.contract_id === contractId)
+      .sort((a: any, b: any) => new Date(b.createdAt || b.created_at).getTime() - new Date(a.createdAt || a.created_at).getTime());
+
+    const totalBilled = contractBillings.reduce((sum: number, b: any) => sum + (b.amount || 0), 0);
+    const draftCount = contractBillings.filter((b: any) => b.billing_status === "unbilled" || b.status === "draft").length;
+    const billedCount = contractBillings.filter((b: any) => b.billing_status === "billed").length;
+    const collectedCount = contractBillings.filter((b: any) => b.billing_status === "collected").length;
+
+    const totalCollected = contractBillings
+      .filter((b: any) => b.billing_status === "collected")
+      .reduce((sum: number, b: any) => sum + (b.amount || 0), 0);
+    const totalOutstanding = totalBilled - totalCollected;
+
+    return c.json({
+      success: true,
+      billings: contractBillings,
+      summary: {
+        total_billed: totalBilled,
+        total_outstanding: totalOutstanding,
+        total_collected: totalCollected,
+        draft_count: draftCount,
+        billed_count: billedCount,
+        collected_count: collectedCount,
+        total_count: contractBillings.length,
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching contract billings:", error);
+    return c.json({ success: false, error: `Error fetching contract billings: ${String(error)}` }, 500);
+  }
+});
+
+// POST: Renew a contract (Phase 5.4 - Contract Lifecycle)
+app.post("/make-server-c142e950/contracts/:contractId/renew", async (c) => {
+  try {
+    const contractId = c.req.param("contractId");
+    const body = await c.req.json();
+    const { new_validity_start, new_validity_end } = body;
+
+    if (!new_validity_start || !new_validity_end) {
+      return c.json({ success: false, error: "new_validity_start and new_validity_end are required" }, 400);
+    }
+
+    const existing = await kv.get(`quotation:${contractId}`);
+    if (!existing) {
+      return c.json({ success: false, error: `Contract ${contractId} not found` }, 404);
+    }
+
+    // Mark old contract as Renewed
+    await kv.set(`quotation:${contractId}`, {
+      ...existing,
+      contract_status: "Renewed",
+      updatedAt: new Date().toISOString(),
+    });
+
+    // Create new contract as a copy
+    const newId = `QUO-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+    const newQuoteNumber = `CQ-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 10000)).padStart(4, "0")}`;
+
+    const renewedContract = {
+      ...existing,
+      id: newId,
+      quote_number: newQuoteNumber,
+      quotation_name: `${existing.quotation_name || ""} (Renewed)`.trim(),
+      contract_status: "Draft",
+      status: "Draft",
+      contract_validity_start: new_validity_start,
+      contract_validity_end: new_validity_end,
+      renewed_from_id: contractId,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      created_at: new Date().toISOString(),
+    };
+
+    await kv.set(`quotation:${newId}`, renewedContract);
+
+    // Record activity on the original contract
+    await recordContractActivity(
+      contractId, "contract_renewed",
+      `Contract renewed — new contract ${newQuoteNumber} created`,
+      undefined, { new_contract_id: newId, new_quote_number: newQuoteNumber }
+    );
+
+    console.log(`Contract ${existing.quote_number} renewed to ${newQuoteNumber}`);
+
+    return c.json({
+      success: true,
+      original_contract_id: contractId,
+      new_contract: renewedContract,
+    });
+  } catch (error) {
+    console.error("Error renewing contract:", error);
+    return c.json({ success: false, error: `Error renewing contract: ${String(error)}` }, 500);
+  }
+});
+
+// ==================== CONTRACT ACTIVITY LOG API ====================
+// DRY helper: record an activity event for a contract
+
+async function recordContractActivity(
+  contractId: string,
+  eventType: string,
+  description: string,
+  user?: string,
+  metadata?: Record<string, any>
+) {
+  const timestamp = Date.now();
+  const event = {
+    id: `${timestamp}-${Math.random().toString(36).substring(2, 8)}`,
+    contract_id: contractId,
+    event_type: eventType,
+    description,
+    user: user || "System",
+    metadata: metadata || {},
+    created_at: new Date(timestamp).toISOString(),
+  };
+  await kv.set(`contract_activity:${contractId}:${timestamp}`, event);
+  return event;
+}
+
+// GET: Fetch all activity events for a contract
+app.get("/make-server-c142e950/contracts/:id/activity", async (c) => {
+  try {
+    const contractId = c.req.param("id");
+    const allEvents = await kv.getByPrefix(`contract_activity:${contractId}:`);
+
+    const sorted = allEvents.sort((a: any, b: any) =>
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
+
+    return c.json({ success: true, data: sorted });
+  } catch (error) {
+    console.error("Error fetching contract activity:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// POST: Record a manual activity event for a contract
+app.post("/make-server-c142e950/contracts/:id/activity", async (c) => {
+  try {
+    const contractId = c.req.param("id");
+    const body = await c.req.json();
+    const { event_type, description, user, metadata } = body;
+
+    if (!event_type || !description) {
+      return c.json({ success: false, error: "event_type and description are required" }, 400);
+    }
+
+    const event = await recordContractActivity(contractId, event_type, description, user, metadata);
+    return c.json({ success: true, data: event });
+  } catch (error) {
+    console.error("Error recording contract activity:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// PATCH: Update contract status (interactive status changes from ContractStatusSelector)
+app.patch("/make-server-c142e950/contracts/:id/status", async (c) => {
+  try {
+    const contractId = c.req.param("id");
+    const body = await c.req.json();
+    const { status, user } = body;
+
+    const validStatuses = ["Draft", "Active", "Expiring", "Expired", "Renewed"];
+    if (!status || !validStatuses.includes(status)) {
+      return c.json({ success: false, error: `Invalid status. Must be one of: ${validStatuses.join(", ")}` }, 400);
+    }
+
+    const existing = await kv.get(`quotation:${contractId}`);
+    if (!existing) {
+      return c.json({ success: false, error: `Contract ${contractId} not found` }, 404);
+    }
+
+    const oldStatus = existing.contract_status || "Draft";
+    const now = new Date().toISOString();
+
+    const updated = {
+      ...existing,
+      contract_status: status,
+      updated_at: now,
+      updatedAt: now,
+      ...(status === "Active" && !existing.contract_activated_at && {
+        contract_activated_at: now,
+        status: "Converted to Contract",
+      }),
+    };
+
+    await kv.set(`quotation:${contractId}`, updated);
+
+    await recordContractActivity(
+      contractId,
+      "status_changed",
+      `Status changed from ${oldStatus} to ${status}`,
+      user || "Unknown",
+      { old_status: oldStatus, new_status: status }
+    );
+
+    console.log(`Contract ${existing.quote_number} status: ${oldStatus} → ${status}`);
+
+    return c.json({ success: true, data: updated });
+  } catch (error) {
+    console.error("Error updating contract status:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// GET: Fetch all contracts for a customer (for CustomerDetail)
+app.get("/make-server-c142e950/contracts/by-customer/:customerName", async (c) => {
+  try {
+    const customerName = decodeURIComponent(c.req.param("customerName"));
+    const allQuotations = await kv.getByPrefix("quotation:");
+    const customerNameLower = customerName.toLowerCase().trim();
+
+    const contracts = allQuotations
+      .filter((q: any) => {
+        if (q.quotation_type !== "contract") return false;
+        const qCustomer = (q.customer_name || "").toLowerCase().trim();
+        return qCustomer === customerNameLower;
+      })
+      .sort((a: any, b: any) => new Date(b.createdAt || b.created_at).getTime() - new Date(a.createdAt || a.created_at).getTime())
+      .map((q: any) => ({
+        id: q.id,
+        quote_number: q.quote_number,
+        quotation_name: q.quotation_name,
+        contract_status: q.contract_status || "Draft",
+        contract_validity_start: q.contract_validity_start,
+        contract_validity_end: q.contract_validity_end,
+        services: q.services || [],
+        customer_name: q.customer_name,
+        rate_matrices_count: (q.rate_matrices || []).length,
+      }));
+
+    return c.json({ success: true, contracts });
+  } catch (error) {
+    console.error("Error fetching customer contracts:", error);
+    return c.json({ success: false, error: `Error fetching customer contracts: ${String(error)}` }, 500);
   }
 });
 

@@ -1,13 +1,15 @@
-import { X, Plus, Printer, Download, Calendar as CalendarIcon, CreditCard, Clock, Tag, ChevronDown } from "lucide-react";
+import { X, Plus, Printer, Download, Calendar as CalendarIcon, CreditCard, Clock, Tag, ChevronDown, RefreshCw, FileText, Banknote, Receipt, ArrowRight, CheckSquare, Square, Loader2, Save, Zap, Trash2 } from "lucide-react";
 import { useState, useEffect } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence } from "motion/react";
 import logoImage from "figma:asset/28c84ed117b026fbf800de0882eb478561f37f4f.png";
 import { CustomDropdown } from "../bd/CustomDropdown";
 import { GroupedDropdown } from "../bd/GroupedDropdown";
-import type { EVoucher } from "../../types/evoucher";
+import type { EVoucher, EVoucherTransactionType, LinkedBilling } from "../../types/evoucher";
 import { useEVoucherSubmit } from "../../hooks/useEVoucherSubmit";
 import { useUser } from "../../hooks/useUser";
-import { projectId } from "../../utils/supabase/info";
+import { projectId, publicAnonKey } from "../../utils/supabase/info";
+import { getAccounts } from "../../utils/accounting-api";
+import type { Account } from "../../types/accounting";
 
 const API_URL = `https://${projectId}.supabase.co/functions/v1/make-server-c142e950`;
 
@@ -21,16 +23,16 @@ interface LineItem {
 interface AddRequestForPaymentPanelProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave?: (data: any) => void; // DEPRECATED - Use onSuccess instead
-  onSaveDraft?: (data: any) => void; // DEPRECATED - Use onSuccess instead
-  onSuccess?: () => void; // NEW: Called after successful save to backend
+  onSuccess?: () => void; // Called after successful save to backend
   context?: "bd" | "accounting" | "operations" | "collection" | "billing"; // Extended to support all E-Voucher types
   defaultRequestor?: string; // For pre-filling requestor name
   mode?: "create" | "view"; // View mode for displaying existing expense
   existingData?: EVoucher; // Pre-fill data when in view mode
+  initialValues?: Partial<EVoucher>; // Pre-fill data for new creation (e.g. converting expense to billing)
   bookingId?: string; // For auto-linking to specific booking (from Operations modules)
   bookingType?: "forwarding" | "brokerage" | "trucking" | "marine-insurance" | "others";
   onExpenseCreated?: () => void; // Callback after expense is created (used by Operations)
+  footerActions?: React.ReactNode; // Custom footer actions for view mode
 }
 
 type ExpenseCategory = 
@@ -40,6 +42,15 @@ type ExpenseCategory =
   | "Trucking"
   | "Miscellaneous"
   | "Office";
+
+// Revenue Categories for Billing
+type RevenueCategory =
+  | "Brokerage Income"
+  | "Forwarding Income"
+  | "Trucking Income"
+  | "Warehousing Income"
+  | "Documentation Fees"
+  | "Other Service Income";
 
 type PaymentMethod = 
   | "Cash"
@@ -57,6 +68,9 @@ interface SubCategory {
   items: string[];
 }
 
+// UI Subtypes for Operations/Accounting to distinguish between expense types
+type TransactionSubtype = "regular_expense" | "billable_expense";
+
 const EXPENSE_CATEGORIES: ExpenseCategory[] = [
   "Brokerage - FCL",
   "Brokerage - LCL/AIR",
@@ -64,6 +78,15 @@ const EXPENSE_CATEGORIES: ExpenseCategory[] = [
   "Trucking",
   "Miscellaneous",
   "Office"
+];
+
+const REVENUE_CATEGORIES: RevenueCategory[] = [
+  "Brokerage Income",
+  "Forwarding Income",
+  "Trucking Income",
+  "Warehousing Income",
+  "Documentation Fees",
+  "Other Service Income"
 ];
 
 // Hierarchical structure: Category -> Sub-Category -> Sub-Sub-Category
@@ -290,26 +313,33 @@ const CREDIT_TERMS: CreditTerm[] = ["None", "Net7", "Net15", "Net30"];
 export function AddRequestForPaymentPanel({ 
   isOpen, 
   onClose, 
-  onSave,
-  onSaveDraft,
   onSuccess,
   context = "bd",
   defaultRequestor,
   mode,
   existingData,
+  initialValues,
   bookingId,
   bookingType,
-  onExpenseCreated
+  onExpenseCreated,
+  footerActions
 }: AddRequestForPaymentPanelProps) {
+  // View mode specific state
+  const isViewMode = mode === "view";
+
   // Get current user for requestor name
   const { user } = useUser();
   
   // Use the custom hook for E-Voucher submission
-  const { createDraft, submitForApproval, isSaving } = useEVoucherSubmit(context);
+  const { createDraft, submitForApproval, autoApprove, deleteEVoucher, isSaving } = useEVoucherSubmit(context);
   
   // Form state
+  const [transactionType, setTransactionType] = useState<EVoucherTransactionType>("expense");
+  const [transactionSubtype, setTransactionSubtype] = useState<TransactionSubtype>("regular_expense");
+  
   const [requestName, setRequestName] = useState("");
-  const [expenseCategory, setExpenseCategory] = useState<ExpenseCategory>("Brokerage - FCL");
+  // We use "expenseCategory" as a generic "Category" state for both Expense and Revenue
+  const [expenseCategory, setExpenseCategory] = useState<string>("Brokerage - FCL");
   const [subCategory, setSubCategory] = useState("");
   const [projectNumber, setProjectNumber] = useState("");
   const [lineItems, setLineItems] = useState<LineItem[]>([
@@ -320,23 +350,98 @@ export function AddRequestForPaymentPanel({
   const [creditTerms, setCreditTerms] = useState<CreditTerm>("None");
   const [paymentSchedule, setPaymentSchedule] = useState("");
   const [notes, setNotes] = useState("");
-  const [showWorkflowHistory, setShowWorkflowHistory] = useState(true);
   
-  // Pre-fill data if in view mode - MUST be before early return
+  // New State for Collections
+  const [linkedBillings, setLinkedBillings] = useState<LinkedBilling[]>([]);
+  const [availableStatements, setAvailableStatements] = useState<any[]>([]);
+  const [isLoadingStatements, setIsLoadingStatements] = useState(false);
+  const [selectedStatementRef, setSelectedStatementRef] = useState<string>("");
+
+  // Bank/Cash Accounts
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [sourceAccountId, setSourceAccountId] = useState("");
+
+  // Fetch Accounts (Assets Only)
   useEffect(() => {
-    if (mode === "view" && existingData) {
-      setRequestName(existingData.purpose || existingData.description || "");
-      setExpenseCategory((existingData.expense_category as ExpenseCategory) || "Brokerage - FCL");
-      setSubCategory(existingData.sub_category || "");
-      setProjectNumber(existingData.project_number || "");
-      setLineItems(existingData.line_items || [{ id: "1", particular: "", description: "", amount: 0 }]);
-      setPreferredPayment((existingData.payment_method as PaymentMethod) || "Bank Transfer");
-      setVendor(existingData.vendor_name || "");
-      setCreditTerms((existingData.credit_terms as CreditTerm) || "None");
-      setPaymentSchedule(existingData.due_date || "");
-      setNotes(existingData.notes || "");
+    const loadAccounts = async () => {
+      try {
+        const allAccounts = await getAccounts();
+        const assetAccounts = allAccounts.filter(a => a.type === 'Asset' && !a.is_folder);
+        setAccounts(assetAccounts);
+      } catch (e) {
+        console.error("Failed to load accounts", e);
+      }
+    };
+    loadAccounts();
+  }, []);
+
+  // Initialize Transaction Type based on Context
+  useEffect(() => {
+    if (context === "bd") {
+      setTransactionType("budget_request");
+    } else if (context === "collection") {
+      setTransactionType("collection");
+    } else if (context === "billing") {
+      setTransactionType("billing");
+    } else if (context === "operations") {
+      // Operations defaults to expense, but allows switching
+      setTransactionType("expense");
+    } else if (context === "accounting") {
+      setTransactionType("expense");
     }
-  }, [mode, existingData]);
+  }, [context]);
+
+  // Pre-fill data if in view mode OR if initialValues provided
+  useEffect(() => {
+    const dataToLoad = mode === "view" ? existingData : initialValues;
+    
+    if (dataToLoad) {
+      if (dataToLoad.transaction_type) {
+        setTransactionType(dataToLoad.transaction_type);
+        // Infer subtype if possible
+        if (dataToLoad.transaction_type === "budget_request" && context !== "bd") {
+          setTransactionSubtype("cash_advance");
+        } else if (dataToLoad.is_billable || (dataToLoad.source_type === 'billable_expense')) {
+          setTransactionSubtype("billable_expense");
+        } else {
+          setTransactionSubtype("regular_expense");
+        }
+      }
+      
+      setRequestName(dataToLoad.purpose || dataToLoad.description || "");
+      // Only set category if provided, otherwise let defaults logic handle it
+      if (dataToLoad.expense_category) {
+        setExpenseCategory(dataToLoad.expense_category);
+      } else if (dataToLoad.gl_category && dataToLoad.transaction_type === "billing") {
+        // Map GL Category back if needed (simplified)
+      }
+      
+      if (dataToLoad.sub_category) setSubCategory(dataToLoad.sub_category || "");
+      if (dataToLoad.project_number) setProjectNumber(dataToLoad.project_number || "");
+      
+      // Handle line items
+      if (dataToLoad.line_items && dataToLoad.line_items.length > 0) {
+        setLineItems(dataToLoad.line_items);
+      } else if (dataToLoad.amount) {
+        // Create single line item from total amount
+        setLineItems([{ 
+            id: "1", 
+            particular: dataToLoad.purpose || "Service Fee", 
+            description: dataToLoad.description || "", 
+            amount: dataToLoad.amount 
+        }]);
+      }
+
+      if (dataToLoad.payment_method) setPreferredPayment((dataToLoad.payment_method as PaymentMethod) || "Bank Transfer");
+      if (dataToLoad.vendor_name) setVendor(dataToLoad.vendor_name || "");
+      if (dataToLoad.credit_terms) setCreditTerms((dataToLoad.credit_terms as CreditTerm) || "None");
+      if (dataToLoad.due_date) setPaymentSchedule(dataToLoad.due_date || "");
+      if (dataToLoad.notes) setNotes(dataToLoad.notes || "");
+      if (dataToLoad.source_account_id) setSourceAccountId(dataToLoad.source_account_id || "");
+      
+      if (dataToLoad.linked_billings) setLinkedBillings(dataToLoad.linked_billings);
+    }
+  }, [mode, existingData, initialValues, context]);
 
   // Pre-fill bookingId when in Operations context
   useEffect(() => {
@@ -344,15 +449,105 @@ export function AddRequestForPaymentPanel({
       setProjectNumber(bookingId);
       
       // Auto-select expense category based on bookingType
-      if (bookingType === "forwarding") {
-        setExpenseCategory("Forwarding");
-      } else if (bookingType === "brokerage") {
-        setExpenseCategory("Brokerage - FCL");
-      } else if (bookingType === "trucking") {
-        setExpenseCategory("Trucking");
+      if (transactionType === "expense" || transactionType === "budget_request") {
+        if (bookingType === "forwarding") {
+          setExpenseCategory("Forwarding");
+        } else if (bookingType === "brokerage") {
+          setExpenseCategory("Brokerage - FCL");
+        } else if (bookingType === "trucking") {
+          setExpenseCategory("Trucking");
+        }
+      } else if (transactionType === "billing") {
+         if (bookingType === "forwarding") {
+          setExpenseCategory("Forwarding Income");
+        } else if (bookingType === "brokerage") {
+          setExpenseCategory("Brokerage Income");
+        } else if (bookingType === "trucking") {
+          setExpenseCategory("Trucking Income");
+        }
       }
     }
-  }, [bookingId, bookingType]);
+  }, [bookingId, bookingType, transactionType]);
+  
+  // Fetch Open Statements when in Collection Mode
+  useEffect(() => {
+    if (transactionType === "collection" && !isViewMode) {
+      fetchOpenStatements();
+    }
+  }, [transactionType, isViewMode, projectNumber]); // Re-fetch if project number changes
+  
+  const fetchOpenStatements = async () => {
+    try {
+      setIsLoadingStatements(true);
+      const response = await fetch(`${API_URL}/evouchers?transaction_type=billing`, {
+        headers: { "Authorization": `Bearer ${publicAnonKey}` }
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        if (result.success && Array.isArray(result.data)) {
+          let billings = result.data;
+          
+          // Filter by project if projectNumber is set
+          if (projectNumber) {
+            billings = billings.filter((b: any) => b.project_number === projectNumber);
+          }
+          
+          // Group by Statement Reference
+          // Only include items that are billed and have balance
+          const grouped = billings.reduce((acc: any, curr: any) => {
+            if (curr.statement_reference && curr.billing_status === "billed") {
+              const ref = curr.statement_reference;
+              if (!acc[ref]) {
+                acc[ref] = {
+                  ref,
+                  items: [],
+                  totalAmount: 0,
+                  remainingBalance: 0,
+                  project: curr.project_number,
+                  client: curr.vendor_name
+                };
+              }
+              acc[ref].items.push(curr);
+              acc[ref].totalAmount += curr.amount || 0;
+              acc[ref].remainingBalance += (curr.remaining_balance ?? curr.amount) || 0;
+            }
+            return acc;
+          }, {});
+          
+          const statements = Object.values(grouped).filter((s: any) => s.remainingBalance > 1); // Ignore small balances
+          setAvailableStatements(statements);
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching statements:", error);
+    } finally {
+      setIsLoadingStatements(false);
+    }
+  };
+  
+  const handleStatementSelect = (statement: any) => {
+    setSelectedStatementRef(statement.ref);
+    setRequestName(`Payment for ${statement.ref}`);
+    setVendor(statement.client || "");
+    setProjectNumber(statement.project || "");
+    
+    // Create Line Item
+    const newItem: LineItem = {
+      id: "1",
+      particular: `Payment for Statement ${statement.ref}`,
+      description: `${statement.items.length} items linked`,
+      amount: statement.remainingBalance
+    };
+    setLineItems([newItem]);
+    
+    // Create Links
+    const links: LinkedBilling[] = statement.items.map((item: any) => ({
+      id: item.id,
+      amount: item.remaining_balance ?? item.amount
+    }));
+    setLinkedBillings(links);
+  };
 
   // Generate today's date and EVRN number
   const today = new Date();
@@ -401,6 +596,8 @@ export function AddRequestForPaymentPanel({
     try {
       // Prepare form data
       const formData = {
+        transactionType,
+        transactionSubtype, // For frontend metadata if needed
         requestName,
         expenseCategory,
         subCategory,
@@ -414,20 +611,13 @@ export function AddRequestForPaymentPanel({
         notes,
         requestor: defaultRequestor || user?.name || "Current User",
         bookingId,
+        isBillable: transactionSubtype === "billable_expense",
+        linkedBillings: isCollectionMode ? linkedBillings : undefined,
+        sourceAccountId: sourceAccountId || undefined
       };
 
       // Use the hook's submitForApproval function (creates + submits in one go)
       await submitForApproval(formData);
-      
-      // Call legacy callback if provided (backwards compatibility)
-      if (onSave) {
-        onSave({
-          ...formData,
-          evrnNumber,
-          date: todayFormatted,
-          status: "Submitted"
-        });
-      }
       
       // Call new success callback
       onSuccess?.();
@@ -451,6 +641,8 @@ export function AddRequestForPaymentPanel({
     try {
       // Prepare form data
       const formData = {
+        transactionType,
+        transactionSubtype,
         requestName,
         expenseCategory,
         subCategory,
@@ -464,20 +656,13 @@ export function AddRequestForPaymentPanel({
         notes,
         requestor: defaultRequestor || user?.name || "Current User",
         bookingId,
+        isBillable: transactionSubtype === "billable_expense",
+        linkedBillings: isCollectionMode ? linkedBillings : undefined,
+        sourceAccountId: sourceAccountId || undefined
       };
 
       // Use the hook's createDraft function
       await createDraft(formData);
-      
-      // Call legacy callback if provided (backwards compatibility)
-      if (onSaveDraft) {
-        onSaveDraft({
-          ...formData,
-          evrnNumber,
-          date: todayFormatted,
-          status: "Draft"
-        });
-      }
       
       // Call new success callback
       onSuccess?.();
@@ -487,6 +672,45 @@ export function AddRequestForPaymentPanel({
     } catch (error) {
       // Error already handled by the hook (toast shown)
       console.error('Draft save error:', error);
+    }
+  };
+
+  const handleAutoApprove = async () => {
+    if (isViewMode) return;
+
+    try {
+      // Prepare form data
+      const formData = {
+        transactionType,
+        transactionSubtype,
+        requestName,
+        expenseCategory,
+        subCategory,
+        projectNumber,
+        lineItems,
+        totalAmount,
+        preferredPayment,
+        vendor,
+        creditTerms,
+        paymentSchedule,
+        notes,
+        requestor: defaultRequestor || user?.name || "Current User",
+        bookingId,
+        isBillable: transactionSubtype === "billable_expense",
+        linkedBillings: isCollectionMode ? linkedBillings : undefined,
+        sourceAccountId: sourceAccountId || undefined
+      };
+
+      // Use the hook's autoApprove function
+      await autoApprove(formData);
+      
+      // Call success callback
+      onSuccess?.();
+      
+      // Close and reset form
+      handleClose();
+    } catch (error) {
+      console.error('Auto-approve error:', error);
     }
   };
 
@@ -503,19 +727,49 @@ export function AddRequestForPaymentPanel({
     setCreditTerms("None");
     setPaymentSchedule("");
     setNotes("");
+    setTransactionSubtype("regular_expense");
+    setLinkedBillings([]);
+    setSelectedStatementRef("");
+    setSourceAccountId("");
+  };
+
+  const handleDelete = async () => {
+    if (!existingData?.id) return;
+    
+    // Safety check: Confirm deletion
+    const status = existingData.status?.toLowerCase();
+    const isPosted = status === "posted" || status === "paid";
+    
+    const confirmMessage = isPosted 
+      ? "⚠️ WARNING: This record is already POSTED to the ledger.\n\nDeleting it may cause accounting inconsistencies.\n\nAre you sure you want to force delete?"
+      : "Are you sure you want to delete this record?\n\nThis action cannot be undone.";
+
+    if (!confirm(confirmMessage)) {
+      return;
+    }
+
+    try {
+      const success = await deleteEVoucher(existingData.id);
+      if (success) {
+        onSuccess?.(); // Refresh parent list
+        handleClose();
+      }
+    } catch (e) {
+      // Error handled by hook
+    }
   };
 
   if (!isOpen) return null;
 
   const isFormValid = 
     requestName.trim() !== "" &&
-    expenseCategory !== "" &&
-    subCategory !== "" &&
+    (transactionType === "collection" || expenseCategory !== "") && // Category not strict for collections if statements used
+    // Sub-category is optional for some flows
     lineItems.some(item => item.particular.trim() !== "" && item.amount > 0) &&
     vendor.trim() !== "";
 
   // Update sub-category when expense category changes
-  const availableSubCategories = SUB_CATEGORIES[expenseCategory] || [];
+  const availableSubCategories = SUB_CATEGORIES[expenseCategory as ExpenseCategory] || [];
 
   // Context-aware labels
   const isAccounting = context === "accounting";
@@ -524,39 +778,51 @@ export function AddRequestForPaymentPanel({
   const isCollection = context === "collection";
   const isBilling = context === "billing";
   
-  const panelTitle = 
-    isCollection ? "New Collection Voucher" :
-    isBilling ? "New Billing Voucher" :
-    isOperations ? "Add Expense" : 
-    isAccounting ? "Add New Expense" : 
-    "New Budget Request";
-    
-  const panelDescription =
-    isCollection ? "Record a payment collection from customers with complete transaction details" :
-    isBilling ? "Create a new invoice/billing voucher for customer charges" :
-    isOperations ? "Record an expense for this booking with complete categorization and payment details" :
-    isAccounting ? "Record a new expense entry with complete categorization and payment details" :
-    "Create a new expense request with complete categorization and payment details";
-    
-  const formTitle =
-    isCollection ? "COLLECTION VOUCHER" :
-    isBilling ? "BILLING VOUCHER" :
-    isOperations ? "EXPENSE VOUCHER" : 
-    isAccounting ? "EXPENSE VOUCHER" : 
-    "REQUEST FOR PAYMENT";
-    
-  const submitButtonText =
-    isCollection ? "Record Collection" :
-    isBilling ? "Create Invoice" :
-    isOperations ? "Add Expense" : 
-    isAccounting ? "Record Expense" : 
-    "Submit Request";
-
-  // View mode specific state
-  const isViewMode = mode === "view";
+  // Logic for UI State
+  const isExpense = transactionType === "expense";
+  const isBudgetRequest = transactionType === "budget_request";
+  const isCashAdvance = transactionType === "cash_advance";
+  const isCollectionMode = transactionType === "collection";
+  const isBillingMode = transactionType === "billing";
+  
+  // Derived state for labels
+  let panelTitle = "Request For Payment";
+  let panelDescription = "Create a new transaction record";
+  let vendorLabel = "Vendor / Payee";
+  let categoryLabel = "Expense Category";
+  
+  if (isCollectionMode) {
+    panelTitle = "New Collection Voucher";
+    panelDescription = "Record a payment collection from customers";
+    vendorLabel = "Received From (Payer)";
+    categoryLabel = "Collection Category";
+  } else if (isBillingMode) {
+    panelTitle = "New Billing Voucher";
+    panelDescription = "Create a new invoice/billing voucher";
+    vendorLabel = "Bill To (Client)";
+    categoryLabel = "Revenue Category";
+  } else if (isBudgetRequest) {
+    panelTitle = "New Budget Request";
+    panelDescription = "Request funds for operational expenses (Revolving Fund)";
+    vendorLabel = "Payable To";
+    categoryLabel = "Budget Category";
+  } else if (isCashAdvance) {
+    panelTitle = "Cash Advance Request";
+    panelDescription = "Request cash advance for operations/staff";
+    vendorLabel = "Payable To (Employee)";
+    categoryLabel = "Expense Category";
+  } else {
+    // Regular Expense
+    panelTitle = transactionSubtype === "billable_expense" ? "New Billable Expense" : "New Expense Voucher";
+    panelDescription = transactionSubtype === "billable_expense" 
+      ? "Record an expense to be charged to the client" 
+      : "Record a direct expense entry";
+    vendorLabel = "Vendor / Payee";
+    categoryLabel = "Expense Category";
+  }
 
   // Override labels for view mode
-  const viewPanelTitle = isAccounting ? "Expense Details" : "Budget Request Details";
+  const viewPanelTitle = isAccounting ? "Expense Details" : "Transaction Details";
   const viewPanelDescription = "View complete details and workflow history";
   
   // Use view labels if in view mode
@@ -567,15 +833,17 @@ export function AddRequestForPaymentPanel({
   const getStatusColor = (status: string) => {
     switch (status) {
       case "Approved":
-      case "Recorded":
+      case "posted":
         return { bg: "#E8F5F3", color: "#0F766E" };
       case "Disbursed":
       case "Audited":
         return { bg: "#D1FAE5", color: "#059669" };
       case "Disapproved":
-      case "Cancelled":
+      case "rejected":
+      case "cancelled":
         return { bg: "#FFE5E5", color: "#C94F3D" };
       case "Under Review":
+      case "pending":
       case "Processing":
         return { bg: "#FEF3E7", color: "#C88A2B" };
       case "Submitted":
@@ -720,7 +988,9 @@ export function AddRequestForPaymentPanel({
                   letterSpacing: "0.5px",
                   marginBottom: "16px"
                 }}>
-                  {formTitle}
+                  {transactionType === "billing" ? "INVOICE / BILLING" : 
+                   transactionType === "collection" ? "COLLECTION RECEIPT" :
+                   "PAYMENT VOUCHER"}
                 </h1>
                 <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                   <div>
@@ -749,7 +1019,7 @@ export function AddRequestForPaymentPanel({
                       display: "block",
                       marginBottom: "4px"
                     }}>
-                      E-Voucher Ref No.
+                      Ref No.
                     </span>
                     <span style={{ fontSize: "14px", fontWeight: 500, color: "#0F766E" }}>
                       {displayEvrnNumber}
@@ -769,10 +1039,50 @@ export function AddRequestForPaymentPanel({
                 textTransform: "uppercase",
                 letterSpacing: "0.5px"
               }}>
-                Request Information
+                {isBillingMode ? "Billing Details" : 
+                 isCollectionMode ? "Payment Details" : 
+                 "Transaction Details"}
               </h3>
               
               <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                
+                {/* Collection Mode: Statement Picker */}
+                {isCollectionMode && !isViewMode && (
+                   <div style={{ marginBottom: "8px" }}>
+                      <label style={{ 
+                        display: "block", fontSize: "12px", fontWeight: 500, color: "#374151", marginBottom: "8px" 
+                      }}>
+                        Link to Statement / Invoice <span style={{ color: "#EF4444" }}>*</span>
+                      </label>
+                      <div className="relative">
+                        <select
+                          value={selectedStatementRef}
+                          onChange={(e) => {
+                             const stmt = availableStatements.find(s => s.ref === e.target.value);
+                             if (stmt) handleStatementSelect(stmt);
+                          }}
+                          className="w-full px-3 py-2.5 bg-white border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#0F766E]"
+                          disabled={isLoadingStatements}
+                        >
+                          <option value="">Select an open statement...</option>
+                          {availableStatements.map((stmt) => (
+                             <option key={stmt.ref} value={stmt.ref}>
+                                {stmt.ref} — {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(stmt.remainingBalance)} (Client: {stmt.client || "Unknown"})
+                             </option>
+                          ))}
+                        </select>
+                        {isLoadingStatements && (
+                          <div className="absolute right-3 top-2.5">
+                            <Loader2 className="animate-spin text-gray-400" size={16} />
+                          </div>
+                        )}
+                      </div>
+                      <p className="mt-1 text-xs text-gray-500">
+                        Selecting a statement will auto-populate the details.
+                      </p>
+                   </div>
+                )}
+
                 {/* Request Name */}
                 <div>
                   <label style={{ 
@@ -782,7 +1092,9 @@ export function AddRequestForPaymentPanel({
                     color: "#374151", 
                     marginBottom: "8px" 
                   }}>
-                    Request Name / Title {!isViewMode && <span style={{ color: "#EF4444" }}>*</span>}
+                    {isBillingMode ? "Billing Description / Title" : 
+                     isCollectionMode ? "Collection Reference / Title" :
+                     "Description / Purpose"} {!isViewMode && <span style={{ color: "#EF4444" }}>*</span>}
                   </label>
                   <input
                     type="text"
@@ -790,7 +1102,7 @@ export function AddRequestForPaymentPanel({
                     readOnly={isViewMode}
                     value={requestName}
                     onChange={(e) => !isViewMode && setRequestName(e.target.value)}
-                    placeholder="e.g., Q1 2025 Marketing Campaign, Office Supplies - January 2025"
+                    placeholder={isBillingMode ? "e.g., Import Brokerage Services - Ref 12345" : "e.g., Office Supplies, Cash Advance for Docking"}
                     style={{
                       width: "100%",
                       padding: "10px 14px",
@@ -817,30 +1129,82 @@ export function AddRequestForPaymentPanel({
                 </div>
 
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
-                  {/* Expense Category */}
+                  {/* Left Column: Transaction Type + Category */}
                   <div>
-                    <label style={{ 
-                      display: "block", 
-                      fontSize: "12px", 
-                      fontWeight: 500, 
-                      color: "#374151", 
-                      marginBottom: "8px" 
+                    {/* Nested Grid to split Transaction Type and Category evenly within the same width as Project/Booking Ref */}
+                    <div style={{ 
+                      display: "grid", 
+                      gridTemplateColumns: (context === "operations" || context === "accounting") ? "1fr 1fr" : "1fr", 
+                      gap: "16px" 
                     }}>
-                      Expense Category <span style={{ color: "#EF4444" }}>*</span>
-                    </label>
-                    <CustomDropdown
-                      options={EXPENSE_CATEGORIES.map(cat => ({ value: cat, label: cat, icon: <Tag size={16} /> }))}
-                      value={expenseCategory}
-                      onChange={(value) => {
-                        setExpenseCategory(value as ExpenseCategory);
-                        setSubCategory(""); // Reset sub-category when category changes
-                      }}
-                      placeholder="Select category"
-                      disabled={isViewMode}
-                    />
+                      {/* Transaction Type */}
+                      {(context === "operations" || context === "accounting") && (
+                        <div>
+                          <label style={{ 
+                            display: "block", 
+                            fontSize: "12px", 
+                            fontWeight: 500, 
+                            color: "#374151", 
+                            marginBottom: "8px" 
+                          }}>
+                            Transaction Type <span style={{ color: "#EF4444" }}>*</span>
+                          </label>
+                          <CustomDropdown
+                            value={transactionType === "cash_advance" ? "cash_advance" : transactionSubtype === "billable_expense" ? "billable" : "expense"}
+                            onChange={(val) => {
+                              if (val === "cash_advance") {
+                                setTransactionType("cash_advance");
+                                setTransactionSubtype("regular_expense");
+                              } else if (val === "billable") {
+                                setTransactionType("expense");
+                                setTransactionSubtype("billable_expense");
+                              } else {
+                                setTransactionType("expense");
+                                setTransactionSubtype("regular_expense");
+                              }
+                            }}
+                            options={[
+                              { value: "expense", label: "Regular Expense" },
+                              { value: "billable", label: "Billable Expense" },
+                              { value: "cash_advance", label: "Cash Advance" }
+                            ]}
+                            placeholder="Select type"
+                            icon={Receipt}
+                            disabled={isViewMode}
+                          />
+                        </div>
+                      )}
+
+                      {/* Category Dropdown */}
+                      <div>
+                        <label style={{ 
+                          display: "block", 
+                          fontSize: "12px", 
+                          fontWeight: 500, 
+                          color: "#374151", 
+                          marginBottom: "8px" 
+                        }}>
+                          {categoryLabel} <span style={{ color: "#EF4444" }}>*</span>
+                        </label>
+                        <CustomDropdown
+                          options={
+                            transactionType === "billing" 
+                            ? REVENUE_CATEGORIES.map(cat => ({ value: cat, label: cat, icon: <Tag size={16} /> }))
+                            : EXPENSE_CATEGORIES.map(cat => ({ value: cat, label: cat, icon: <Tag size={16} /> }))
+                          }
+                          value={expenseCategory}
+                          onChange={(value) => {
+                            setExpenseCategory(value);
+                            setSubCategory(""); // Reset sub-category when category changes
+                          }}
+                          placeholder="Select category"
+                          disabled={isViewMode || isCollectionMode} // Disabled in collection mode (implied)
+                        />
+                      </div>
+                    </div>
                   </div>
 
-                  {/* Sub-Category */}
+                  {/* Right Column: Sub-Category */}
                   <div>
                     <label style={{ 
                       display: "block", 
@@ -849,294 +1213,210 @@ export function AddRequestForPaymentPanel({
                       color: "#374151", 
                       marginBottom: "8px" 
                     }}>
-                      Sub-Category <span style={{ color: "#EF4444" }}>*</span>
+                      Sub-Category
                     </label>
-                    <GroupedDropdown
-                      options={availableSubCategories}
-                      value={subCategory}
-                      onChange={setSubCategory}
-                      placeholder="Select sub-category"
-                      disabled={isViewMode}
-                    />
+                    {availableSubCategories.length > 0 ? (
+                      <GroupedDropdown
+                        options={availableSubCategories}
+                        value={subCategory}
+                        onChange={(value) => setSubCategory(value)}
+                        placeholder="Select sub-category"
+                        disabled={isViewMode || !expenseCategory || isCollectionMode}
+                      />
+                    ) : (
+                      <input
+                         type="text"
+                         readOnly
+                         placeholder="N/A"
+                         className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-md text-sm text-gray-400"
+                      />
+                    )}
                   </div>
                 </div>
 
-                {/* Project Number */}
-                <div>
-                  <label style={{ 
-                    display: "block", 
-                    fontSize: "12px", 
-                    fontWeight: 500, 
-                    color: "#374151", 
-                    marginBottom: "8px" 
-                  }}>
-                    Project / Booking Number {["Brokerage - FCL", "Brokerage - LCL/AIR", "Forwarding", "Trucking"].includes(expenseCategory) && <span style={{ color: "#6B7280", fontWeight: 400 }}>(Optional)</span>}
-                  </label>
-                  <input
-                    type="text"
-                    value={projectNumber}
-                    onChange={(e) => !isViewMode && setProjectNumber(e.target.value)}
-                    readOnly={isViewMode}
-                    placeholder="e.g., LCL-IMPS-001-SEA or BRK-2024-045"
-                    style={{
-                      width: "100%",
-                      padding: "10px 14px",
-                      fontSize: "14px",
-                      border: "1px solid #E5E7EB",
-                      borderRadius: "6px",
-                      outline: "none",
-                      transition: "all 0.2s",
-                      backgroundColor: isViewMode ? "#F9FAFB" : "#FFFFFF",
-                      cursor: isViewMode ? "default" : "text"
-                    }}
-                    onFocus={(e) => {
-                      if (!isViewMode) {
-                        e.currentTarget.style.borderColor = "#0F766E";
-                        e.currentTarget.style.boxShadow = "0 0 0 3px rgba(15, 118, 110, 0.1)";
-                      }
-                    }}
-                    onBlur={(e) => {
-                      e.currentTarget.style.borderColor = "#E5E7EB";
-                      e.currentTarget.style.boxShadow = "none";
-                    }}
-                  />
+                {/* Project / Booking Number */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+                  <div>
+                    <label style={{ 
+                      display: "block", 
+                      fontSize: "12px", 
+                      fontWeight: 500, 
+                      color: "#374151", 
+                      marginBottom: "8px" 
+                    }}>
+                      Project / Booking Ref (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      readOnly={isViewMode || !!bookingId || isCollectionMode} // Read only if view mode OR passed as prop OR collection mode
+                      value={projectNumber}
+                      onChange={(e) => !isViewMode && setProjectNumber(e.target.value)}
+                      placeholder="e.g., BN-2025-001"
+                      style={{
+                        width: "100%",
+                        padding: "10px 14px",
+                        fontSize: "14px",
+                        border: "1px solid #E5E7EB",
+                        borderRadius: "6px",
+                        outline: "none",
+                        transition: "all 0.2s",
+                        backgroundColor: (isViewMode || bookingId || isCollectionMode) ? "#F9FAFB" : "#FFFFFF",
+                        color: "#374151"
+                      }}
+                    />
+                  </div>
+                  
+                  {/* Vendor / Counterparty */}
+                  <div>
+                    <label style={{ 
+                      display: "block", 
+                      fontSize: "12px", 
+                      fontWeight: 500, 
+                      color: "#374151", 
+                      marginBottom: "8px" 
+                    }}>
+                      {vendorLabel} <span style={{ color: "#EF4444" }}>*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required={!isViewMode}
+                      readOnly={isViewMode || isCollectionMode} // Auto-filled in collection mode
+                      value={vendor}
+                      onChange={(e) => !isViewMode && setVendor(e.target.value)}
+                      placeholder={isBillingMode ? "Client Name" : isCollectionMode ? "Payer Name" : "Vendor Name"}
+                      style={{
+                        width: "100%",
+                        padding: "10px 14px",
+                        fontSize: "14px",
+                        border: "1px solid #E5E7EB",
+                        borderRadius: "6px",
+                        outline: "none",
+                        transition: "all 0.2s",
+                        backgroundColor: (isViewMode || isCollectionMode) ? "#F9FAFB" : "#FFFFFF"
+                      }}
+                    />
+                  </div>
                 </div>
               </div>
             </div>
 
             {/* Line Items Section */}
             <div style={{ marginBottom: "32px" }}>
-              <h3 style={{ 
-                fontSize: "14px", 
-                fontWeight: 600, 
-                color: "#12332B", 
-                marginBottom: "16px",
-                textTransform: "uppercase",
-                letterSpacing: "0.5px"
-              }}>
-                Expense Details
-              </h3>
-
-              {/* Table Header */}
-              <div style={{ 
-                display: "grid", 
-                gridTemplateColumns: "1fr 1.5fr 180px 40px",
-                gap: "12px",
-                paddingBottom: "12px",
-                borderBottom: "2px solid #E5E7EB",
-                marginBottom: "12px"
-              }}>
-                <div style={{ 
-                  fontSize: "11px", 
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
+                <h3 style={{ 
+                  fontSize: "14px", 
                   fontWeight: 600, 
-                  color: "#6B7280",
+                  color: "#12332B", 
                   textTransform: "uppercase",
                   letterSpacing: "0.5px"
                 }}>
-                  Particular
-                </div>
-                <div style={{ 
-                  fontSize: "11px", 
-                  fontWeight: 600, 
-                  color: "#6B7280",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.5px"
-                }}>
-                  Description
-                </div>
-                <div style={{ 
-                  fontSize: "11px", 
-                  fontWeight: 600, 
-                  color: "#6B7280",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.5px",
-                  textAlign: "right"
-                }}>
-                  Amount (₱)
-                </div>
-                <div></div>
+                  Line Items
+                </h3>
+                {!isViewMode && !isCollectionMode && (
+                  <button
+                    type="button"
+                    onClick={handleAddLine}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      color: "#0F766E",
+                      backgroundColor: "transparent",
+                      border: "1px solid #E5E9E8",
+                      padding: "6px 12px",
+                      borderRadius: "6px",
+                      cursor: "pointer",
+                      transition: "all 0.2s"
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#F0FDFA"}
+                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "transparent"}
+                  >
+                    <Plus size={14} />
+                    Add Item
+                  </button>
+                )}
               </div>
 
-              {/* Line Items */}
-              {lineItems.map((item) => (
-                <div 
-                  key={item.id} 
-                  style={{ 
-                    display: "grid", 
-                    gridTemplateColumns: "1fr 1.5fr 180px 40px",
-                    gap: "12px",
-                    marginBottom: "12px",
-                    alignItems: "start"
-                  }}
-                >
-                  <input
-                    type="text"
-                    value={item.particular}
-                    onChange={(e) => !isViewMode && handleLineItemChange(item.id, "particular", e.target.value)}
-                    readOnly={isViewMode}
-                    placeholder="Enter particular"
-                    style={{
-                      padding: "8px 12px",
-                      fontSize: "14px",
-                      border: "1px solid #E5E7EB",
-                      borderRadius: "6px",
-                      outline: "none",
-                      transition: "all 0.2s",
-                      backgroundColor: isViewMode ? "#F9FAFB" : "#FFFFFF",
-                      cursor: isViewMode ? "default" : "text"
-                    }}
-                    onFocus={(e) => {
-                      if (!isViewMode) {
-                        e.currentTarget.style.borderColor = "#0F766E";
-                        e.currentTarget.style.boxShadow = "0 0 0 3px rgba(15, 118, 110, 0.1)";
-                      }
-                    }}
-                    onBlur={(e) => {
-                      e.currentTarget.style.borderColor = "#E5E7EB";
-                      e.currentTarget.style.boxShadow = "none";
-                    }}
-                  />
-                  <input
-                    type="text"
-                    value={item.description}
-                    onChange={(e) => !isViewMode && handleLineItemChange(item.id, "description", e.target.value)}
-                    readOnly={isViewMode}
-                    placeholder="Optional details"
-                    style={{
-                      padding: "8px 12px",
-                      fontSize: "14px",
-                      border: "1px solid #E5E7EB",
-                      borderRadius: "6px",
-                      outline: "none",
-                      transition: "all 0.2s",
-                      backgroundColor: isViewMode ? "#F9FAFB" : "#FFFFFF",
-                      cursor: isViewMode ? "default" : "text"
-                    }}
-                    onFocus={(e) => {
-                      if (!isViewMode) {
-                        e.currentTarget.style.borderColor = "#0F766E";
-                        e.currentTarget.style.boxShadow = "0 0 0 3px rgba(15, 118, 110, 0.1)";
-                      }
-                    }}
-                    onBlur={(e) => {
-                      e.currentTarget.style.borderColor = "#E5E7EB";
-                      e.currentTarget.style.boxShadow = "none";
-                    }}
-                  />
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={item.amount || ""}
-                    onChange={(e) => !isViewMode && handleLineItemChange(item.id, "amount", parseFloat(e.target.value) || 0)}
-                    readOnly={isViewMode}
-                    placeholder="0.00"
-                    style={{
-                      padding: "8px 12px",
-                      fontSize: "14px",
-                      border: "1px solid #E5E7EB",
-                      borderRadius: "6px",
-                      outline: "none",
-                      textAlign: "right",
-                      transition: "all 0.2s",
-                      backgroundColor: isViewMode ? "#F9FAFB" : "#FFFFFF",
-                      cursor: isViewMode ? "default" : "text"
-                    }}
-                    onFocus={(e) => {
-                      if (!isViewMode) {
-                        e.currentTarget.style.borderColor = "#0F766E";
-                        e.currentTarget.style.boxShadow = "0 0 0 3px rgba(15, 118, 110, 0.1)";
-                      }
-                    }}
-                    onBlur={(e) => {
-                      e.currentTarget.style.borderColor = "#E5E7EB";
-                      e.currentTarget.style.boxShadow = "none";
-                    }}
-                  />
-                  {!isViewMode && lineItems.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveLine(item.id)}
-                      style={{
-                        width: "32px",
-                        height: "32px",
-                        borderRadius: "6px",
-                        border: "1px solid #E5E7EB",
-                        backgroundColor: "white",
-                        color: "#EF4444",
-                        cursor: "pointer",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        fontSize: "18px",
-                        transition: "all 0.2s",
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.backgroundColor = "#FEF2F2";
-                        e.currentTarget.style.borderColor = "#EF4444";
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.backgroundColor = "white";
-                        e.currentTarget.style.borderColor = "#E5E7EB";
-                      }}
-                    >
-                      ×
-                    </button>
-                  )}
-                </div>
-              ))}
-
-              {/* Add Another Line Button */}
-              {!isViewMode && (
-                <button
-                  type="button"
-                  onClick={handleAddLine}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "8px",
-                    padding: "8px 16px",
-                    fontSize: "14px",
-                    fontWeight: 500,
-                    color: "#0F766E",
-                    backgroundColor: "transparent",
-                    border: "1px dashed #0F766E",
-                    borderRadius: "6px",
-                    cursor: "pointer",
-                    marginTop: "8px",
-                    transition: "all 0.2s",
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = "rgba(15, 118, 110, 0.05)";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = "transparent";
-                  }}
-                >
-                  <Plus size={16} />
-                  Add Another Line
-                </button>
-              )}
-
-              {/* Total Amount */}
-              <div style={{ 
-                display: "flex", 
-                justifyContent: "flex-end",
-                paddingTop: "16px",
-                marginTop: "16px",
-                borderTop: "2px solid #E5E7EB"
-              }}>
-                <div style={{ display: "flex", gap: "24px", alignItems: "center" }}>
-                  <span style={{ fontSize: "14px", fontWeight: 600, color: "#6B7280" }}>
-                    Total Amount
-                  </span>
-                  <span style={{ fontSize: "20px", fontWeight: 700, color: "#12332B" }}>
-                    ₱{totalAmount.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}
-                  </span>
-                </div>
+              <div style={{ border: "1px solid #E5E7EB", borderRadius: "8px", overflow: "hidden" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <thead style={{ backgroundColor: "#F9FAFB", borderBottom: "1px solid #E5E7EB" }}>
+                    <tr>
+                      <th style={{ padding: "10px 16px", textAlign: "left", fontSize: "12px", fontWeight: 600, color: "#6B7280", width: "40%" }}>Particulars</th>
+                      <th style={{ padding: "10px 16px", textAlign: "left", fontSize: "12px", fontWeight: 600, color: "#6B7280", width: "30%" }}>Description</th>
+                      <th style={{ padding: "10px 16px", textAlign: "right", fontSize: "12px", fontWeight: 600, color: "#6B7280", width: "20%" }}>Amount</th>
+                      {!isViewMode && !isCollectionMode && <th style={{ padding: "10px 16px", width: "10%" }}></th>}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lineItems.map((item) => (
+                      <tr key={item.id} style={{ borderBottom: "1px solid #F3F4F6" }}>
+                        <td style={{ padding: "10px 16px" }}>
+                          <input
+                            type="text"
+                            readOnly={isViewMode || isCollectionMode}
+                            value={item.particular}
+                            onChange={(e) => handleLineItemChange(item.id, "particular", e.target.value)}
+                            placeholder="Item name"
+                            style={{ width: "100%", border: "none", outline: "none", fontSize: "14px", backgroundColor: "transparent" }}
+                          />
+                        </td>
+                        <td style={{ padding: "10px 16px" }}>
+                          <input
+                            type="text"
+                            readOnly={isViewMode || isCollectionMode}
+                            value={item.description}
+                            onChange={(e) => handleLineItemChange(item.id, "description", e.target.value)}
+                            placeholder="Optional description"
+                            style={{ width: "100%", border: "none", outline: "none", fontSize: "14px", backgroundColor: "transparent" }}
+                          />
+                        </td>
+                        <td style={{ padding: "10px 16px" }}>
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "4px" }}>
+                            <span style={{ color: "#9CA3AF", fontSize: "14px" }}>₱</span>
+                            <input
+                              type="number"
+                              readOnly={isViewMode} // Allow editing amount in collection mode (partial payment)
+                              value={item.amount || ""}
+                              onChange={(e) => handleLineItemChange(item.id, "amount", parseFloat(e.target.value) || 0)}
+                              placeholder="0.00"
+                              style={{ width: "100px", textAlign: "right", border: "none", outline: "none", fontSize: "14px", backgroundColor: "transparent" }}
+                            />
+                          </div>
+                        </td>
+                        {!isViewMode && !isCollectionMode && (
+                          <td style={{ padding: "10px 16px", textAlign: "center" }}>
+                            {lineItems.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveLine(item.id)}
+                                style={{ color: "#EF4444", background: "none", border: "none", cursor: "pointer" }}
+                              >
+                                <X size={16} />
+                              </button>
+                            )}
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot style={{ backgroundColor: "#F9FAFB", borderTop: "1px solid #E5E7EB" }}>
+                    <tr>
+                      <td colSpan={2} style={{ padding: "12px 16px", textAlign: "right", fontWeight: 600, fontSize: "13px", color: "#374151" }}>
+                        Total Amount
+                      </td>
+                      <td style={{ padding: "12px 16px", textAlign: "right", fontWeight: 700, fontSize: "14px", color: "#12332B" }}>
+                        ₱ {totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+                      {!isViewMode && !isCollectionMode && <td></td>}
+                    </tr>
+                  </tfoot>
+                </table>
               </div>
             </div>
 
-            {/* Payment Details Section */}
+            {/* Payment & Terms Section */}
             <div style={{ marginBottom: "32px" }}>
               <h3 style={{ 
                 fontSize: "14px", 
@@ -1146,11 +1426,11 @@ export function AddRequestForPaymentPanel({
                 textTransform: "uppercase",
                 letterSpacing: "0.5px"
               }}>
-                Payment Details
+                Payment & Terms
               </h3>
-              
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
-                {/* Preferred Payment */}
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", rowGap: "16px" }}>
+                {/* Payment Method */}
                 <div>
                   <label style={{ 
                     display: "block", 
@@ -1159,14 +1439,39 @@ export function AddRequestForPaymentPanel({
                     color: "#374151", 
                     marginBottom: "8px" 
                   }}>
-                    Preferred Payment Method <span style={{ color: "#EF4444" }}>*</span>
+                    Method
                   </label>
                   <CustomDropdown
-                    options={PAYMENT_METHODS.map(method => ({ value: method, label: method, icon: <CreditCard size={16} /> }))}
+                    options={PAYMENT_METHODS.map(m => ({ value: m, label: m, icon: <CreditCard size={16} /> }))}
                     value={preferredPayment}
                     onChange={(value) => setPreferredPayment(value as PaymentMethod)}
-                    placeholder="Select payment method"
+                    placeholder="Select method"
                     disabled={isViewMode}
+                  />
+                </div>
+
+                {/* Source Account (Bank/Fund) - Only show if Accounts loaded */}
+                <div>
+                  <label style={{ 
+                    display: "block", 
+                    fontSize: "12px", 
+                    fontWeight: 500, 
+                    color: "#374151", 
+                    marginBottom: "8px" 
+                  }}>
+                    Source Account / Fund
+                  </label>
+                  <CustomDropdown
+                    options={accounts.map(acc => ({ 
+                      value: acc.id, 
+                      label: `${acc.name} (${acc.currency})`, 
+                      icon: <Banknote size={16} /> 
+                    }))}
+                    value={sourceAccountId}
+                    onChange={(value) => setSourceAccountId(value)}
+                    placeholder="Select account (Optional)"
+                    disabled={isViewMode || accounts.length === 0}
+                    searchable
                   />
                 </div>
 
@@ -1182,15 +1487,15 @@ export function AddRequestForPaymentPanel({
                     Credit Terms
                   </label>
                   <CustomDropdown
-                    options={CREDIT_TERMS.map(term => ({ value: term, label: term, icon: <Clock size={16} /> }))}
+                    options={CREDIT_TERMS.map(t => ({ value: t, label: t, icon: <Clock size={16} /> }))}
                     value={creditTerms}
                     onChange={(value) => setCreditTerms(value as CreditTerm)}
-                    placeholder="Select credit terms"
+                    placeholder="Select terms"
                     disabled={isViewMode}
                   />
                 </div>
 
-                {/* Payment Schedule */}
+                {/* Due Date */}
                 <div>
                   <label style={{ 
                     display: "block", 
@@ -1199,35 +1504,24 @@ export function AddRequestForPaymentPanel({
                     color: "#374151", 
                     marginBottom: "8px" 
                   }}>
-                    Payment Schedule Date
+                    Payment Due Date
                   </label>
                   <div style={{ position: "relative" }}>
+                    <CalendarIcon size={16} style={{ position: "absolute", left: "10px", top: "50%", transform: "translateY(-50%)", color: "#9CA3AF" }} />
                     <input
                       type="date"
-                      value={paymentSchedule}
-                      onChange={(e) => !isViewMode && setPaymentSchedule(e.target.value)}
                       readOnly={isViewMode}
-                      disabled={isViewMode}
+                      value={paymentSchedule}
+                      onChange={(e) => setPaymentSchedule(e.target.value)}
                       style={{
                         width: "100%",
-                        padding: "10px 14px",
+                        padding: "10px 10px 10px 36px",
                         fontSize: "14px",
                         border: "1px solid #E5E7EB",
                         borderRadius: "6px",
                         outline: "none",
                         transition: "all 0.2s",
-                        backgroundColor: isViewMode ? "#F9FAFB" : "#FFFFFF",
-                        cursor: isViewMode ? "default" : "text"
-                      }}
-                      onFocus={(e) => {
-                        if (!isViewMode) {
-                          e.currentTarget.style.borderColor = "#0F766E";
-                          e.currentTarget.style.boxShadow = "0 0 0 3px rgba(15, 118, 110, 0.1)";
-                        }
-                      }}
-                      onBlur={(e) => {
-                        e.currentTarget.style.borderColor = "#E5E7EB";
-                        e.currentTarget.style.boxShadow = "none";
+                        backgroundColor: isViewMode ? "#F9FAFB" : "#FFFFFF"
                       }}
                     />
                   </div>
@@ -1235,18 +1529,8 @@ export function AddRequestForPaymentPanel({
               </div>
             </div>
 
-            {/* Vendor Information */}
-            <div style={{ marginBottom: "32px" }}>
-              <h3 style={{ 
-                fontSize: "14px", 
-                fontWeight: 600, 
-                color: "#12332B", 
-                marginBottom: "16px",
-                textTransform: "uppercase",
-                letterSpacing: "0.5px"
-              }}>
-                Vendor / Payee Information
-              </h3>
+            {/* Notes Section */}
+            <div>
               <label style={{ 
                 display: "block", 
                 fontSize: "12px", 
@@ -1254,281 +1538,220 @@ export function AddRequestForPaymentPanel({
                 color: "#374151", 
                 marginBottom: "8px" 
               }}>
-                For the Account Of <span style={{ color: "#EF4444" }}>*</span>
-              </label>
-              <input
-                type="text"
-                required={!isViewMode}
-                readOnly={isViewMode}
-                value={vendor}
-                onChange={(e) => !isViewMode && setVendor(e.target.value)}
-                placeholder="Enter vendor or payee name"
-                style={{
-                  width: "100%",
-                  padding: "10px 14px",
-                  fontSize: "14px",
-                  border: "1px solid #E5E7EB",
-                  borderRadius: "6px",
-                  outline: "none",
-                  transition: "all 0.2s",
-                  backgroundColor: isViewMode ? "#F9FAFB" : "#FFFFFF",
-                  cursor: isViewMode ? "default" : "text"
-                }}
-                onFocus={(e) => {
-                  if (!isViewMode) {
-                    e.currentTarget.style.borderColor = "#0F766E";
-                    e.currentTarget.style.boxShadow = "0 0 0 3px rgba(15, 118, 110, 0.1)";
-                  }
-                }}
-                onBlur={(e) => {
-                  e.currentTarget.style.borderColor = "#E5E7EB";
-                  e.currentTarget.style.boxShadow = "none";
-                }}
-              />
-            </div>
-
-            {/* Notes Section */}
-            <div style={{ marginBottom: "24px" }}>
-              <h3 style={{ 
-                fontSize: "14px", 
-                fontWeight: 600, 
-                color: "#12332B", 
-                marginBottom: "16px",
-                textTransform: "uppercase",
-                letterSpacing: "0.5px"
-              }}>
                 Additional Notes
-              </h3>
+              </label>
               <textarea
                 readOnly={isViewMode}
                 value={notes}
-                onChange={(e) => !isViewMode && setNotes(e.target.value)}
-                placeholder="Add any additional notes or remarks here..."
-                rows={4}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Any special instructions or remarks..."
+                rows={3}
                 style={{
                   width: "100%",
-                  padding: "10px 14px",
+                  padding: "12px",
                   fontSize: "14px",
                   border: "1px solid #E5E7EB",
                   borderRadius: "6px",
                   outline: "none",
-                  transition: "all 0.2s",
                   resize: "vertical",
-                  fontFamily: "inherit",
-                  backgroundColor: isViewMode ? "#F9FAFB" : "#FFFFFF",
-                  cursor: isViewMode ? "default" : "text"
-                }}
-                onFocus={(e) => {
-                  if (!isViewMode) {
-                    e.currentTarget.style.borderColor = "#0F766E";
-                    e.currentTarget.style.boxShadow = "0 0 0 3px rgba(15, 118, 110, 0.1)";
-                  }
-                }}
-                onBlur={(e) => {
-                  e.currentTarget.style.borderColor = "#E5E7EB";
-                  e.currentTarget.style.boxShadow = "none";
+                  backgroundColor: isViewMode ? "#F9FAFB" : "#FFFFFF"
                 }}
               />
-            </div>
-
-            {/* Requestor Info */}
-            <div style={{ 
-              padding: "12px 16px", 
-              backgroundColor: "#F9FAFB", 
-              borderRadius: "6px",
-              border: "1px solid #E5E7EB"
-            }}>
-              <span style={{ fontSize: "12px", color: "#6B7280" }}>
-                <strong>Requestor:</strong> {displayRequestor} (Account Owner)
-              </span>
             </div>
           </form>
         </div>
 
         {/* Footer Actions */}
-        <div 
-          style={{
-            padding: "20px 48px",
-            borderTop: "1px solid var(--neuron-ui-border)",
+        {!isViewMode ? (
+          <div style={{ 
+            padding: "24px 48px", 
+            borderTop: "1px solid var(--neuron-ui-border)", 
             backgroundColor: "#FFFFFF",
             display: "flex",
-            justifyContent: isViewMode ? "flex-end" : "space-between",
-            alignItems: "center"
-          }}
-        >
-          {/* Conditional buttons based on mode */}
-          {isViewMode ? (
-            // View mode: Just Print and Download Excel on the right
-            <div style={{ display: "flex", gap: "12px" }}>
+            justifyContent: "flex-end",
+            gap: "12px"
+          }}>
+            <button
+              type="button"
+              onClick={handleClose}
+              style={{
+                padding: "10px 20px",
+                fontSize: "14px",
+                fontWeight: 500,
+                color: "#374151",
+                backgroundColor: "#FFFFFF",
+                border: "1px solid #D1D5DB",
+                borderRadius: "6px",
+                cursor: "pointer",
+                transition: "all 0.2s"
+              }}
+            >
+              Cancel
+            </button>
+            
+            <button
+              type="button"
+              onClick={handleSaveDraft}
+              disabled={isSaving}
+              style={{
+                padding: "10px 20px",
+                fontSize: "14px",
+                fontWeight: 500,
+                color: "#12332B",
+                backgroundColor: "#FFFFFF",
+                border: "1px solid #12332B",
+                borderRadius: "6px",
+                cursor: isSaving ? "not-allowed" : "pointer",
+                transition: "all 0.2s",
+                opacity: isSaving ? 0.7 : 1,
+                display: "flex",
+                alignItems: "center",
+                gap: "8px"
+              }}
+            >
+              <Save size={16} />
+              Save Draft
+            </button>
+            
+            {isAccounting && (
               <button
                 type="button"
-                onClick={() => window.print()}
+                onClick={handleAutoApprove}
+                disabled={!isFormValid || isSaving}
                 style={{
+                  padding: "10px 20px",
+                  fontSize: "14px",
+                  fontWeight: 600,
+                  color: "#FFFFFF",
+                  backgroundColor: "#0F766E", // Slightly different shade if needed
+                  border: "none",
+                  borderRadius: "6px",
+                  cursor: (isFormValid && !isSaving) ? "pointer" : "not-allowed",
+                  transition: "all 0.2s",
+                  opacity: (isFormValid && !isSaving) ? 1 : 0.5,
                   display: "flex",
                   alignItems: "center",
-                  gap: "8px",
-                  padding: "8px 16px",
-                  fontSize: "14px",
-                  fontWeight: 500,
-                  color: "#6B7280",
-                  backgroundColor: "transparent",
-                  border: "1px solid #E5E7EB",
-                  borderRadius: "8px",
-                  cursor: "pointer",
-                  transition: "all 0.2s",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = "#F9FAFB";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = "transparent";
+                  gap: "8px"
                 }}
               >
-                <Printer size={16} />
-                Print
+                <Zap size={16} />
+                Auto-Approve
               </button>
-              <button
-                type="button"
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "8px",
-                  padding: "8px 16px",
-                  fontSize: "14px",
-                  fontWeight: 500,
-                  color: "#6B7280",
-                  backgroundColor: "transparent",
-                  border: "1px solid #E5E7EB",
-                  borderRadius: "8px",
-                  cursor: "pointer",
-                  transition: "all 0.2s",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = "#F9FAFB";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = "transparent";
-                }}
-              >
-                <Download size={16} />
-                Download Excel
-              </button>
-            </div>
-          ) : (
-            // Create mode: Show all buttons
-            <>
-              <div style={{ display: "flex", gap: "12px" }}>
+            )}
+            
+            <button
+              type="button"
+              onClick={(e) => handleSubmit(e)}
+              disabled={!isFormValid || isSaving}
+              style={{
+                padding: "10px 24px",
+                fontSize: "14px",
+                fontWeight: 600,
+                color: "#FFFFFF",
+                backgroundColor: isAccounting ? "#115E59" : "#0F766E",
+                border: "none",
+                borderRadius: "6px",
+                cursor: (isFormValid && !isSaving) ? "pointer" : "not-allowed",
+                transition: "all 0.2s",
+                opacity: (isFormValid && !isSaving) ? 1 : 0.5,
+                display: "flex",
+                alignItems: "center",
+                gap: "8px"
+              }}
+            >
+              {isSaving ? (
+                <>
+                  <Loader2 size={16} className="animate-spin" />
+                  Processing...
+                </>
+              ) : (
+                <>
+                  {isCollectionMode ? "Record Collection" : isAccounting ? "Save & Submit" : "Submit Request"}
+                  <ArrowRight size={16} />
+                </>
+              )}
+            </button>
+          </div>
+        ) : (
+          /* View Mode Footer with Status Banner */
+          <div style={{ 
+            padding: "24px 48px", 
+            borderTop: "1px solid var(--neuron-ui-border)", 
+            backgroundColor: "#FFFFFF",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "32px"
+          }}>
+             {/* Left Action: Delete & Custom Actions */}
+             <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
                 <button
                   type="button"
-                  onClick={() => window.print()}
+                  onClick={handleDelete}
+                  disabled={isSaving}
                   style={{
                     display: "flex",
                     alignItems: "center",
                     gap: "8px",
-                    padding: "8px 16px",
-                    fontSize: "14px",
+                    padding: "10px 16px",
+                    fontSize: "13px",
                     fontWeight: 500,
-                    color: "#6B7280",
+                    color: "#EF4444",
                     backgroundColor: "transparent",
-                    border: "1px solid #E5E7EB",
-                    borderRadius: "8px",
-                    cursor: "pointer",
-                    transition: "all 0.2s",
+                    border: "1px solid #FECACA",
+                    borderRadius: "6px",
+                    cursor: isSaving ? "not-allowed" : "pointer",
+                    transition: "all 0.2s"
                   }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = "#F9FAFB";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = "transparent";
-                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#FEF2F2"}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "transparent"}
                 >
-                  <Printer size={16} />
-                  Print
+                  {isSaving ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                  Delete
                 </button>
-                <button
-                  type="button"
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "8px",
-                    padding: "8px 16px",
-                    fontSize: "14px",
-                    fontWeight: 500,
-                    color: "#6B7280",
-                    backgroundColor: "transparent",
-                    border: "1px solid #E5E7EB",
-                    borderRadius: "8px",
-                    cursor: "pointer",
-                    transition: "all 0.2s",
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = "#F9FAFB";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = "transparent";
-                  }}
-                >
-                  <Download size={16} />
-                  Download Excel
-                </button>
-              </div>
+                
+                {footerActions}
+             </div>
 
-              <div style={{ display: "flex", gap: "12px" }}>
-                <button
-                  type="button"
-                  onClick={handleSaveDraft}
-                  style={{
-                    padding: "10px 20px",
-                    fontSize: "14px",
-                    fontWeight: 500,
-                    color: "#374151",
-                    backgroundColor: "#FFFFFF",
-                    border: "1px solid #E5E7EB",
-                    borderRadius: "8px",
-                    cursor: "pointer",
-                    transition: "all 0.2s",
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = "#F9FAFB";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = "#FFFFFF";
-                  }}
-                >
-                  Save as Draft
-                </button>
-                <button
-                  type="submit"
-                  form="rfp-form"
-                  disabled={!isFormValid}
-                  style={{
-                    padding: "10px 24px",
-                    fontSize: "14px",
-                    fontWeight: 600,
-                    color: "#FFFFFF",
-                    backgroundColor: isFormValid ? "#0F766E" : "#D1D5DB",
-                    border: "none",
-                    borderRadius: "8px",
-                    cursor: isFormValid ? "pointer" : "not-allowed",
-                    transition: "all 0.2s",
-                  }}
-                  onMouseEnter={(e) => {
-                    if (isFormValid) {
-                      e.currentTarget.style.backgroundColor = "#0D6559";
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (isFormValid) {
-                      e.currentTarget.style.backgroundColor = "#0F766E";
-                    }
-                  }}
-                >
-                  {submitButtonText}
-                </button>
-              </div>
-            </>
-          )}
-        </div>
+             <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+              {statusStyle && (
+                <div style={{ textAlign: "right" }}>
+                    <span style={{ display: "block", fontSize: "11px", color: "#6B7280", marginBottom: "4px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                      STATUS
+                    </span>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "8px" }}>
+                       <span style={{ 
+                         display: "inline-flex",
+                         alignItems: "center",
+                         padding: "4px 12px",
+                         borderRadius: "16px",
+                         backgroundColor: statusStyle.bg,
+                         color: statusStyle.color,
+                         fontSize: "13px",
+                         fontWeight: 600,
+                         textTransform: "uppercase",
+                         letterSpacing: "0.5px"
+                       }}>
+                          {existingData?.status || "Draft"}
+                       </span>
+                    </div>
+                </div>
+             )}
+
+             {/* Vertical Divider */}
+             <div style={{ width: "1px", height: "40px", backgroundColor: "#D1D5DB" }} />
+
+             <div style={{ textAlign: "right" }}>
+                <span style={{ display: "block", fontSize: "11px", color: "#6B7280", marginBottom: "4px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                  TOTAL AMOUNT
+                </span>
+                <span style={{ fontSize: "24px", fontWeight: 700, color: "#12332B" }}>
+                  ₱ {(existingData?.amount || totalAmount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+             </div>
+          </div>
+          </div>
+        )}
       </motion.div>
     </>
   );

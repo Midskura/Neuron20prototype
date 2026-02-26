@@ -1,4 +1,4 @@
-import { X, Package, Ship, Box, Warehouse, Link as LinkIcon, Users } from "lucide-react";
+import { Package, Ship, Box, Warehouse, Link as LinkIcon, Users } from "lucide-react";
 import { useState, useEffect } from "react";
 import type { ForwardingBooking, ExecutionStatus } from "../../../types/operations";
 import type { Project } from "../../../types/pricing";
@@ -10,6 +10,12 @@ import { autofillForwardingFromProject, linkBookingToProject } from "../../../ut
 import { TeamAssignmentForm, type TeamAssignment } from "../../pricing/TeamAssignmentForm";
 import type { User } from "../../../hooks/useUser";
 import { CustomDropdown } from "../../bd/CustomDropdown";
+import { SearchableDropdown } from "../../shared/SearchableDropdown";
+import { MovementToggle } from "../shared/MovementToggle";
+import { ContractDetectionBanner } from "../shared/ContractDetectionBanner";
+import { MultiInputField } from "../../shared/MultiInputField";
+import { BookingCreationPanel } from "../shared/BookingCreationPanel";
+import { useCustomerOptions } from "../shared/useCustomerOptions";
 
 interface CreateForwardingBookingPanelProps {
   isOpen: boolean;
@@ -40,8 +46,13 @@ export function CreateForwardingBookingPanel({
   const [fetchedProject, setFetchedProject] = useState<Project | null>(null);
   const [teamAssignment, setTeamAssignment] = useState<TeamAssignment | null>(null);
   
+  // ✨ CONTRACT: Detected contract ID for auto-linking
+  const [detectedContractId, setDetectedContractId] = useState<string | null>(null);
+  const customerOptions = useCustomerOptions(isOpen);
+  
   // General Information
   const [customerName, setCustomerName] = useState("");
+  const [movement, setMovement] = useState<"IMPORT" | "EXPORT">("IMPORT");
   const [accountOwner, setAccountOwner] = useState(currentUser?.name || "");
   const [accountHandler, setAccountHandler] = useState("");
   const [services, setServices] = useState<string[]>([]);
@@ -85,6 +96,20 @@ export function CreateForwardingBookingPanel({
   const [dimensions, setDimensions] = useState("");
   const [eta, setEta] = useState("");
 
+  // Export Specific Fields
+  const [incoterms, setIncoterms] = useState("");
+  const [cargoNature, setCargoNature] = useState("");
+  const [bookingReferenceNumber, setBookingReferenceNumber] = useState("");
+  const [lct, setLct] = useState("");
+  const [transitTime, setTransitTime] = useState("");
+  const [route, setRoute] = useState("");
+  const [tareWeight, setTareWeight] = useState("");
+  const [vgm, setVgm] = useState("");
+  const [truckingName, setTruckingName] = useState("");
+  const [plateNumber, setPlateNumber] = useState("");
+  const [warehouseAddress, setWarehouseAddress] = useState("");
+  const [pickupLocation, setPickupLocation] = useState("");
+
   // FCL-specific
   const [containerNumbers, setContainerNumbers] = useState("");
   const [containerDeposit, setContainerDeposit] = useState(false);
@@ -101,6 +126,7 @@ export function CreateForwardingBookingPanel({
     if (prefillData && source === "pricing") {
       // Auto-populate fields from prefillData
       if (prefillData.customerName) setCustomerName(prefillData.customerName);
+      if (prefillData.movement) setMovement(prefillData.movement);
       if (prefillData.projectNumber) setProjectNumber(prefillData.projectNumber);
       if (prefillData.quotationReferenceNumber) setQuotationReferenceNumber(prefillData.quotationReferenceNumber);
       if (prefillData.commodityDescription) setCommodityDescription(prefillData.commodityDescription);
@@ -119,6 +145,7 @@ export function CreateForwardingBookingPanel({
     const autofilled = autofillForwardingFromProject(project);
     
     setCustomerName(autofilled.customerName || "");
+    if (autofilled.movement) setMovement(autofilled.movement);
     setQuotationReferenceNumber(autofilled.quotationReferenceNumber || "");
     setCommodityDescription(autofilled.commodityDescription || "");
     setDeliveryAddress(autofilled.deliveryAddress || "");
@@ -190,7 +217,9 @@ export function CreateForwardingBookingPanel({
       } = {
         bookingId: bookingNumber || undefined,
         projectNumber: projectNumber || undefined,
+        ...(detectedContractId && { contract_id: detectedContractId }),
         customerName,
+        movement,
         accountOwner,
         accountHandler,
         services,
@@ -221,6 +250,18 @@ export function CreateForwardingBookingPanel({
         grossWeight,
         dimensions,
         eta,
+        incoterms: movement === "EXPORT" ? incoterms : undefined,
+        cargoNature: movement === "EXPORT" ? cargoNature : undefined,
+        bookingReferenceNumber: movement === "EXPORT" ? bookingReferenceNumber : undefined,
+        lct: movement === "EXPORT" ? lct : undefined,
+        transitTime: movement === "EXPORT" ? transitTime : undefined,
+        route: movement === "EXPORT" ? route : undefined,
+        tareWeight: (movement === "EXPORT" && mode === "FCL") ? tareWeight : undefined,
+        vgm: (movement === "EXPORT" && mode === "FCL") ? vgm : undefined,
+        truckingName: (movement === "EXPORT" && mode === "FCL") ? truckingName : undefined,
+        plateNumber: (movement === "EXPORT" && mode === "FCL") ? plateNumber : undefined,
+        warehouseAddress: (movement === "EXPORT" && mode === "FCL") ? warehouseAddress : undefined,
+        pickupLocation: (movement === "EXPORT" && mode === "FCL") ? pickupLocation : undefined,
         containerNumbers: mode === "FCL" ? containerNumbers.split(",").map(c => c.trim()).filter(Boolean) : undefined,
         containerDeposit: mode === "FCL" ? containerDeposit : undefined,
         emptyReturn: mode === "FCL" ? emptyReturn : undefined,
@@ -327,69 +368,19 @@ export function CreateForwardingBookingPanel({
     (source === "operations" || (source === "pricing" && teamAssignment !== null));
 
   return (
-    <>
-      {/* Backdrop */}
-      <div
-        className="fixed inset-0 bg-black z-40"
-        onClick={handleClose}
-        style={{
-          backdropFilter: "blur(2px)",
-          backgroundColor: "rgba(18, 51, 43, 0.15)"
-        }}
-      />
-
-      {/* Side Panel */}
-      <div
-        className="fixed right-0 top-0 h-full w-[680px] bg-white shadow-2xl z-50 flex flex-col animate-slide-in"
-        style={{
-          borderLeft: "1px solid var(--neuron-ui-border)",
-        }}
-      >
-        {/* Header */}
-        <div
-          className="px-12 py-8 border-b"
-          style={{
-            borderColor: "var(--neuron-ui-border)",
-            backgroundColor: "#FFFFFF",
-          }}
-        >
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-3">
-              <div
-                className="w-10 h-10 rounded-lg flex items-center justify-center"
-                style={{ backgroundColor: "#E8F2EE" }}
-              >
-                <Ship size={20} style={{ color: "#0F766E" }} />
-              </div>
-              <h2 style={{ fontSize: "24px", fontWeight: 600, color: "#12332B" }}>
-                New Forwarding Booking
-              </h2>
-            </div>
-            <button
-              onClick={handleClose}
-              className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors"
-              style={{
-                color: "var(--neuron-ink-muted)",
-                backgroundColor: "transparent",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = "var(--neuron-state-hover)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = "transparent";
-              }}
-            >
-              <X size={20} />
-            </button>
-          </div>
-          <p style={{ fontSize: "14px", color: "#667085" }}>
-            Create a new freight forwarding booking for shipment management
-          </p>
-        </div>
-
-        {/* Form Content */}
-        <div className="flex-1 overflow-auto px-12 py-8">
-          <form onSubmit={handleSubmit} id="create-forwarding-form">
+    <BookingCreationPanel
+      isOpen={isOpen}
+      onClose={handleClose}
+      icon={<Ship size={20} />}
+      title="New Forwarding Booking"
+      subtitle="Create a new freight forwarding booking for shipment management"
+      formId="create-forwarding-form"
+      onSubmit={handleSubmit}
+      isSubmitting={isSubmitting}
+      isFormValid={isFormValid}
+      submitLabel="Create Booking"
+      submitIcon={<Ship size={16} />}
+    >
             {/* Project Reference - Autofill Section - Only show when from Operations */}
             {source === "operations" && (
               <ProjectAutofillSection
@@ -413,7 +404,7 @@ export function CreateForwardingBookingPanel({
                 value={bookingNumber}
                 onChange={(e) => setBookingNumber(e.target.value)}
                 placeholder="Leave blank for auto-generation or enter custom"
-                className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                 style={{
                   border: "1px solid var(--neuron-ui-border)",
                   backgroundColor: "#FFFFFF",
@@ -435,25 +426,33 @@ export function CreateForwardingBookingPanel({
               </div>
 
               <div className="space-y-4">
+                {/* Movement Toggle */}
                 <div>
-                  <label
-                    className="block mb-1.5"
-                    style={{ fontSize: "13px", fontWeight: 500, color: "#12332B" }}
-                  >
-                    Customer Name <span style={{ color: "#C94F3D" }}>*</span>
+                  <label className="block mb-1.5" style={{ fontSize: "13px", fontWeight: 500, color: "#12332B" }}>
+                    Movement <span style={{ color: "#C94F3D" }}>*</span>
                   </label>
-                  <input
-                    type="text"
+                  <MovementToggle
+                    value={movement}
+                    onChange={setMovement}
+                    layoutIdPrefix="forwarding-movement-pill"
+                  />
+                </div>
+
+                <div>
+                  <SearchableDropdown
+                    label="Customer Name"
                     required
                     value={customerName}
-                    onChange={(e) => setCustomerName(e.target.value)}
-                    placeholder="Enter customer name"
-                    className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
-                    style={{
-                      border: "1px solid var(--neuron-ui-border)",
-                      backgroundColor: "#FFFFFF",
-                      color: "var(--neuron-ink-primary)",
-                    }}
+                    onChange={(value) => setCustomerName(value)}
+                    options={customerOptions}
+                    placeholder="Search customer..."
+                    fullWidth
+                  />
+                  {/* ✨ CONTRACT: Detection banner */}
+                  <ContractDetectionBanner
+                    customerName={customerName}
+                    serviceType="Forwarding"
+                    onContractDetected={setDetectedContractId}
                   />
                 </div>
 
@@ -470,7 +469,7 @@ export function CreateForwardingBookingPanel({
                       value={accountOwner}
                       onChange={(e) => setAccountOwner(e.target.value)}
                       placeholder="Account owner"
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                      className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
                         backgroundColor: "#FFFFFF",
@@ -491,7 +490,7 @@ export function CreateForwardingBookingPanel({
                       value={accountHandler}
                       onChange={(e) => setAccountHandler(e.target.value)}
                       placeholder="Account handler"
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                      className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
                         backgroundColor: "#FFFFFF",
@@ -558,7 +557,7 @@ export function CreateForwardingBookingPanel({
                       value={typeOfEntry}
                       onChange={(e) => setTypeOfEntry(e.target.value)}
                       placeholder="e.g., Import, Export"
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                      className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
                         backgroundColor: "#FFFFFF",
@@ -567,6 +566,52 @@ export function CreateForwardingBookingPanel({
                     />
                   </div>
                 </div>
+
+                {movement === "EXPORT" && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <CustomDropdown
+                      label="Incoterms"
+                      value={incoterms}
+                      onChange={setIncoterms}
+                      options={[
+                        { value: "EXW", label: "EXW - Ex Works" },
+                        { value: "FCA", label: "FCA - Free Carrier" },
+                        { value: "CPT", label: "CPT - Carriage Paid To" },
+                        { value: "CIP", label: "CIP - Carriage and Insurance Paid To" },
+                        { value: "DAP", label: "DAP - Delivered at Place" },
+                        { value: "DPU", label: "DPU - Delivered at Place Unloaded" },
+                        { value: "DDP", label: "DDP - Delivered Duty Paid" },
+                        { value: "FAS", label: "FAS - Free Alongside Ship" },
+                        { value: "FOB", label: "FOB - Free on Board" },
+                        { value: "CFR", label: "CFR - Cost and Freight" },
+                        { value: "CIF", label: "CIF - Cost, Insurance and Freight" },
+                      ]}
+                      placeholder="Select Incoterms..."
+                      fullWidth
+                    />
+
+                    <div>
+                      <label
+                        className="block mb-1.5"
+                        style={{ fontSize: "13px", fontWeight: 500, color: "#12332B" }}
+                      >
+                        Cargo Nature
+                      </label>
+                      <input
+                        type="text"
+                        value={cargoNature}
+                        onChange={(e) => setCargoNature(e.target.value)}
+                        placeholder="e.g. Hazardous, Perishable"
+                        className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
+                        style={{
+                          border: "1px solid var(--neuron-ui-border)",
+                          backgroundColor: "#FFFFFF",
+                          color: "var(--neuron-ink-primary)",
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
 
                 <div>
                   <label
@@ -580,7 +625,7 @@ export function CreateForwardingBookingPanel({
                     value={cargoType}
                     onChange={(e) => setCargoType(e.target.value)}
                     placeholder="e.g., General, Hazardous"
-                    className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                    className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                     style={{
                       border: "1px solid var(--neuron-ui-border)",
                       backgroundColor: "#FFFFFF",
@@ -601,7 +646,7 @@ export function CreateForwardingBookingPanel({
                     value={stackability}
                     onChange={(e) => setStackability(e.target.value)}
                     placeholder="e.g., Stackable, Non-Stackable"
-                    className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                    className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                     style={{
                       border: "1px solid var(--neuron-ui-border)",
                       backgroundColor: "#FFFFFF",
@@ -622,7 +667,7 @@ export function CreateForwardingBookingPanel({
                     onChange={(e) => setDeliveryAddress(e.target.value)}
                     rows={2}
                     placeholder="Enter delivery address"
-                    className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px] resize-none"
+                    className="w-full px-3.5 py-2.5 rounded-lg text-[13px] resize-none"
                     style={{
                       border: "1px solid var(--neuron-ui-border)",
                       backgroundColor: "#FFFFFF",
@@ -644,7 +689,7 @@ export function CreateForwardingBookingPanel({
                       value={quotationReferenceNumber}
                       onChange={(e) => setQuotationReferenceNumber(e.target.value)}
                       placeholder="Quotation reference number"
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                      className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
                         backgroundColor: "#FFFFFF",
@@ -688,7 +733,7 @@ export function CreateForwardingBookingPanel({
                       onChange={(e) => setPendingReason(e.target.value)}
                       rows={2}
                       placeholder="Explain why this booking is pending..."
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px] resize-none"
+                      className="w-full px-3.5 py-2.5 rounded-lg text-[13px] resize-none"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
                         backgroundColor: "#FFFFFF",
@@ -711,7 +756,7 @@ export function CreateForwardingBookingPanel({
                       required
                       value={completionDate}
                       onChange={(e) => setCompletionDate(e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                      className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
                         backgroundColor: "#FFFFFF",
@@ -736,7 +781,7 @@ export function CreateForwardingBookingPanel({
                         onChange={(e) => setCancellationReason(e.target.value)}
                         rows={2}
                         placeholder="Explain why this booking was cancelled..."
-                        className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px] resize-none"
+                        className="w-full px-3.5 py-2.5 rounded-lg text-[13px] resize-none"
                         style={{
                           border: "1px solid var(--neuron-ui-border)",
                           backgroundColor: "#FFFFFF",
@@ -756,7 +801,7 @@ export function CreateForwardingBookingPanel({
                         required
                         value={cancelledDate}
                         onChange={(e) => setCancelledDate(e.target.value)}
-                        className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                        className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                         style={{
                           border: "1px solid var(--neuron-ui-border)",
                           backgroundColor: "#FFFFFF",
@@ -793,7 +838,7 @@ export function CreateForwardingBookingPanel({
                         value={qty20ft}
                         onChange={(e) => setQty20ft(e.target.value)}
                         placeholder="e.g., 2"
-                        className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                        className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                         style={{
                           border: "1px solid var(--neuron-ui-border)",
                           backgroundColor: "#FFFFFF",
@@ -814,7 +859,7 @@ export function CreateForwardingBookingPanel({
                         value={qty40ft}
                         onChange={(e) => setQty40ft(e.target.value)}
                         placeholder="e.g., 1"
-                        className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                        className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                         style={{
                           border: "1px solid var(--neuron-ui-border)",
                           backgroundColor: "#FFFFFF",
@@ -835,7 +880,7 @@ export function CreateForwardingBookingPanel({
                         value={qty45ft}
                         onChange={(e) => setQty45ft(e.target.value)}
                         placeholder="e.g., 0"
-                        className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                        className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                         style={{
                           border: "1px solid var(--neuron-ui-border)",
                           backgroundColor: "#FFFFFF",
@@ -860,7 +905,7 @@ export function CreateForwardingBookingPanel({
                         value={volumeGrossWeight}
                         onChange={(e) => setVolumeGrossWeight(e.target.value)}
                         placeholder="e.g., 1000"
-                        className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                        className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                         style={{
                           border: "1px solid var(--neuron-ui-border)",
                           backgroundColor: "#FFFFFF",
@@ -881,7 +926,7 @@ export function CreateForwardingBookingPanel({
                         value={mode === "LCL" ? volumeDimensions : volumeChargeableWeight}
                         onChange={(e) => mode === "LCL" ? setVolumeDimensions(e.target.value) : setVolumeChargeableWeight(e.target.value)}
                         placeholder={mode === "LCL" ? "e.g., 10" : "e.g., 1200"}
-                        className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                        className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                         style={{
                           border: "1px solid var(--neuron-ui-border)",
                           backgroundColor: "#FFFFFF",
@@ -917,7 +962,7 @@ export function CreateForwardingBookingPanel({
                       value={consignee}
                       onChange={(e) => setConsignee(e.target.value)}
                       placeholder="Consignee name"
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                      className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
                         backgroundColor: "#FFFFFF",
@@ -938,7 +983,7 @@ export function CreateForwardingBookingPanel({
                       value={shipper}
                       onChange={(e) => setShipper(e.target.value)}
                       placeholder="Shipper name"
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                      className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
                         backgroundColor: "#FFFFFF",
@@ -949,26 +994,18 @@ export function CreateForwardingBookingPanel({
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label
-                      className="block mb-1.5"
-                      style={{ fontSize: "13px", fontWeight: 500, color: "#12332B" }}
-                    >
-                      MBL/MAWB
-                    </label>
-                    <input
-                      type="text"
-                      value={mblMawb}
-                      onChange={(e) => setMblMawb(e.target.value)}
-                      placeholder="Master bill of lading"
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
-                      style={{
-                        border: "1px solid var(--neuron-ui-border)",
-                        backgroundColor: "#FFFFFF",
-                        color: "var(--neuron-ink-primary)",
-                      }}
-                    />
-                  </div>
+                  <MultiInputField
+                    label={movement === "EXPORT" ? "Booking Reference No." : "MBL/MAWB"}
+                    value={movement === "EXPORT" ? bookingReferenceNumber : mblMawb}
+                    onChange={(v) => movement === "EXPORT" ? setBookingReferenceNumber(v) : setMblMawb(v)}
+                    placeholder={movement === "EXPORT" ? "Booking reference" : "Master bill of lading"}
+                    addButtonText={movement === "EXPORT" ? "Add Reference No." : "Add MBL/MAWB"}
+                    inputStyle={{
+                      border: "1px solid var(--neuron-ui-border)",
+                      backgroundColor: "#FFFFFF",
+                      color: "var(--neuron-ink-primary)",
+                    }}
+                  />
 
                   <div>
                     <label
@@ -982,7 +1019,7 @@ export function CreateForwardingBookingPanel({
                       value={hblHawb}
                       onChange={(e) => setHblHawb(e.target.value)}
                       placeholder="House bill of lading"
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                      className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
                         backgroundColor: "#FFFFFF",
@@ -1005,7 +1042,7 @@ export function CreateForwardingBookingPanel({
                       value={registryNumber}
                       onChange={(e) => setRegistryNumber(e.target.value)}
                       placeholder="Registry number"
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                      className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
                         backgroundColor: "#FFFFFF",
@@ -1026,7 +1063,7 @@ export function CreateForwardingBookingPanel({
                       value={carrier}
                       onChange={(e) => setCarrier(e.target.value)}
                       placeholder="Carrier name"
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                      className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
                         backgroundColor: "#FFFFFF",
@@ -1049,7 +1086,7 @@ export function CreateForwardingBookingPanel({
                       value={aolPol}
                       onChange={(e) => setAolPol(e.target.value)}
                       placeholder="Airport/Port of Loading"
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                      className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
                         backgroundColor: "#FFFFFF",
@@ -1070,7 +1107,7 @@ export function CreateForwardingBookingPanel({
                       value={aodPod}
                       onChange={(e) => setAodPod(e.target.value)}
                       placeholder="Airport/Port of Discharge"
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                      className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
                         backgroundColor: "#FFFFFF",
@@ -1093,7 +1130,7 @@ export function CreateForwardingBookingPanel({
                       value={forwarder}
                       onChange={(e) => setForwarder(e.target.value)}
                       placeholder="Forwarder name"
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                      className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
                         backgroundColor: "#FFFFFF",
@@ -1114,7 +1151,7 @@ export function CreateForwardingBookingPanel({
                       value={countryOfOrigin}
                       onChange={(e) => setCountryOfOrigin(e.target.value)}
                       placeholder="Country of origin"
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                      className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
                         backgroundColor: "#FFFFFF",
@@ -1136,7 +1173,7 @@ export function CreateForwardingBookingPanel({
                     onChange={(e) => setCommodityDescription(e.target.value)}
                     rows={2}
                     placeholder="Describe the commodity"
-                    className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px] resize-none"
+                    className="w-full px-3.5 py-2.5 rounded-lg text-[13px] resize-none"
                     style={{
                       border: "1px solid var(--neuron-ui-border)",
                       backgroundColor: "#FFFFFF",
@@ -1158,7 +1195,7 @@ export function CreateForwardingBookingPanel({
                       value={preferentialTreatment}
                       onChange={(e) => setPreferentialTreatment(e.target.value)}
                       placeholder="e.g., GSP"
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                      className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
                         backgroundColor: "#FFFFFF",
@@ -1179,7 +1216,7 @@ export function CreateForwardingBookingPanel({
                       value={grossWeight}
                       onChange={(e) => setGrossWeight(e.target.value)}
                       placeholder="e.g., 1000 kg"
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                      className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
                         backgroundColor: "#FFFFFF",
@@ -1200,7 +1237,7 @@ export function CreateForwardingBookingPanel({
                       value={dimensions}
                       onChange={(e) => setDimensions(e.target.value)}
                       placeholder="e.g., 10x5x3 m"
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                      className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
                         backgroundColor: "#FFFFFF",
@@ -1210,25 +1247,95 @@ export function CreateForwardingBookingPanel({
                   </div>
                 </div>
 
-                <div>
-                  <label
-                    className="block mb-1.5"
-                    style={{ fontSize: "13px", fontWeight: 500, color: "#12332B" }}
-                  >
-                    ETA (Estimated Time of Arrival)
-                  </label>
-                  <input
-                    type="date"
-                    value={eta}
-                    onChange={(e) => setEta(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
-                    style={{
-                      border: "1px solid var(--neuron-ui-border)",
-                      backgroundColor: "#FFFFFF",
-                      color: "var(--neuron-ink-primary)",
-                    }}
-                  />
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label
+                      className="block mb-1.5"
+                      style={{ fontSize: "13px", fontWeight: 500, color: "#12332B" }}
+                    >
+                      ETA (Estimated Time of Arrival)
+                    </label>
+                    <input
+                      type="date"
+                      value={eta}
+                      onChange={(e) => setEta(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
+                      style={{
+                        border: "1px solid var(--neuron-ui-border)",
+                        backgroundColor: "#FFFFFF",
+                        color: "var(--neuron-ink-primary)",
+                      }}
+                    />
+                  </div>
+
+                  {movement === "EXPORT" && (
+                    <div>
+                      <label
+                        className="block mb-1.5"
+                        style={{ fontSize: "13px", fontWeight: 500, color: "#12332B" }}
+                      >
+                        LCT (Last Cargo Time)
+                      </label>
+                      <input
+                        type="datetime-local"
+                        value={lct}
+                        onChange={(e) => setLct(e.target.value)}
+                        className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
+                        style={{
+                          border: "1px solid var(--neuron-ui-border)",
+                          backgroundColor: "#FFFFFF",
+                          color: "var(--neuron-ink-primary)",
+                        }}
+                      />
+                    </div>
+                  )}
                 </div>
+
+                {movement === "EXPORT" && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label
+                        className="block mb-1.5"
+                        style={{ fontSize: "13px", fontWeight: 500, color: "#12332B" }}
+                      >
+                        Transit Time
+                      </label>
+                      <input
+                        type="text"
+                        value={transitTime}
+                        onChange={(e) => setTransitTime(e.target.value)}
+                        placeholder="e.g., 25 days"
+                        className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
+                        style={{
+                          border: "1px solid var(--neuron-ui-border)",
+                          backgroundColor: "#FFFFFF",
+                          color: "var(--neuron-ink-primary)",
+                        }}
+                      />
+                    </div>
+
+                    <div>
+                      <label
+                        className="block mb-1.5"
+                        style={{ fontSize: "13px", fontWeight: 500, color: "#12332B" }}
+                      >
+                        Route
+                      </label>
+                      <input
+                        type="text"
+                        value={route}
+                        onChange={(e) => setRoute(e.target.value)}
+                        placeholder="e.g., Direct / Transshipment"
+                        className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
+                        style={{
+                          border: "1px solid var(--neuron-ui-border)",
+                          backgroundColor: "#FFFFFF",
+                          color: "var(--neuron-ink-primary)",
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -1243,26 +1350,154 @@ export function CreateForwardingBookingPanel({
                 </div>
 
                 <div className="space-y-4">
-                  <div>
-                    <label
-                      className="block mb-1.5"
-                      style={{ fontSize: "13px", fontWeight: 500, color: "#12332B" }}
-                    >
-                      Container Number/s
-                    </label>
-                    <input
-                      type="text"
-                      value={containerNumbers}
-                      onChange={(e) => setContainerNumbers(e.target.value)}
-                      placeholder="Comma-separated (e.g., ABCD1234567, EFGH7654321)"
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
-                      style={{
-                        border: "1px solid var(--neuron-ui-border)",
-                        backgroundColor: "#FFFFFF",
-                        color: "var(--neuron-ink-primary)",
-                      }}
-                    />
-                  </div>
+                  {movement === "EXPORT" && (
+                    <>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label
+                            className="block mb-1.5"
+                            style={{ fontSize: "13px", fontWeight: 500, color: "#12332B" }}
+                          >
+                            Tare Weight
+                          </label>
+                          <input
+                            type="text"
+                            value={tareWeight}
+                            onChange={(e) => setTareWeight(e.target.value)}
+                            placeholder="Tare weight"
+                            className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
+                            style={{
+                              border: "1px solid var(--neuron-ui-border)",
+                              backgroundColor: "#FFFFFF",
+                              color: "var(--neuron-ink-primary)",
+                            }}
+                          />
+                        </div>
+
+                        <div>
+                          <label
+                            className="block mb-1.5"
+                            style={{ fontSize: "13px", fontWeight: 500, color: "#12332B" }}
+                          >
+                            VGM
+                          </label>
+                          <input
+                            type="text"
+                            value={vgm}
+                            onChange={(e) => setVgm(e.target.value)}
+                            placeholder="Verified Gross Mass"
+                            className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
+                            style={{
+                              border: "1px solid var(--neuron-ui-border)",
+                              backgroundColor: "#FFFFFF",
+                              color: "var(--neuron-ink-primary)",
+                            }}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label
+                            className="block mb-1.5"
+                            style={{ fontSize: "13px", fontWeight: 500, color: "#12332B" }}
+                          >
+                            Trucking Name
+                          </label>
+                          <input
+                            type="text"
+                            value={truckingName}
+                            onChange={(e) => setTruckingName(e.target.value)}
+                            placeholder="Trucking company"
+                            className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
+                            style={{
+                              border: "1px solid var(--neuron-ui-border)",
+                              backgroundColor: "#FFFFFF",
+                              color: "var(--neuron-ink-primary)",
+                            }}
+                          />
+                        </div>
+
+                        <div>
+                          <label
+                            className="block mb-1.5"
+                            style={{ fontSize: "13px", fontWeight: 500, color: "#12332B" }}
+                          >
+                            Plate Number
+                          </label>
+                          <input
+                            type="text"
+                            value={plateNumber}
+                            onChange={(e) => setPlateNumber(e.target.value)}
+                            placeholder="Vehicle plate number"
+                            className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
+                            style={{
+                              border: "1px solid var(--neuron-ui-border)",
+                              backgroundColor: "#FFFFFF",
+                              color: "var(--neuron-ink-primary)",
+                            }}
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label
+                          className="block mb-1.5"
+                          style={{ fontSize: "13px", fontWeight: 500, color: "#12332B" }}
+                        >
+                          Warehouse Address
+                        </label>
+                        <textarea
+                          value={warehouseAddress}
+                          onChange={(e) => setWarehouseAddress(e.target.value)}
+                          rows={2}
+                          placeholder="Warehouse address"
+                          className="w-full px-3.5 py-2.5 rounded-lg text-[13px] resize-none"
+                          style={{
+                            border: "1px solid var(--neuron-ui-border)",
+                            backgroundColor: "#FFFFFF",
+                            color: "var(--neuron-ink-primary)",
+                          }}
+                        />
+                      </div>
+                      
+                      {incoterms === "EXW" && (
+                        <div>
+                          <label
+                            className="block mb-1.5"
+                            style={{ fontSize: "13px", fontWeight: 500, color: "#12332B" }}
+                          >
+                            Collection Address (EXW)
+                          </label>
+                          <textarea
+                            value={pickupLocation}
+                            onChange={(e) => setPickupLocation(e.target.value)}
+                            rows={2}
+                            placeholder="Address for pickup"
+                            className="w-full px-3.5 py-2.5 rounded-lg text-[13px] resize-none"
+                            style={{
+                              border: "1px solid var(--neuron-ui-border)",
+                              backgroundColor: "#FFFFFF",
+                              color: "var(--neuron-ink-primary)",
+                            }}
+                          />
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  <MultiInputField
+                    label="Container Number/s"
+                    value={containerNumbers}
+                    onChange={(v) => setContainerNumbers(v)}
+                    placeholder="Container number"
+                    addButtonText="Add Container"
+                    inputStyle={{
+                      border: "1px solid var(--neuron-ui-border)",
+                      backgroundColor: "#FFFFFF",
+                      color: "var(--neuron-ink-primary)",
+                    }}
+                  />
 
                   <div className="flex items-center gap-2">
                     <input
@@ -1293,7 +1528,7 @@ export function CreateForwardingBookingPanel({
                         value={emptyReturn}
                         onChange={(e) => setEmptyReturn(e.target.value)}
                         placeholder="Empty return location"
-                        className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                        className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                         style={{
                           border: "1px solid var(--neuron-ui-border)",
                           backgroundColor: "#FFFFFF",
@@ -1313,7 +1548,7 @@ export function CreateForwardingBookingPanel({
                         type="date"
                         value={detDemValidity}
                         onChange={(e) => setDetDemValidity(e.target.value)}
-                        className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                        className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                         style={{
                           border: "1px solid var(--neuron-ui-border)",
                           backgroundColor: "#FFFFFF",
@@ -1335,7 +1570,7 @@ export function CreateForwardingBookingPanel({
                         type="date"
                         value={storageValidity}
                         onChange={(e) => setStorageValidity(e.target.value)}
-                        className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                        className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                         style={{
                           border: "1px solid var(--neuron-ui-border)",
                           backgroundColor: "#FFFFFF",
@@ -1355,7 +1590,7 @@ export function CreateForwardingBookingPanel({
                         type="date"
                         value={croAvailability}
                         onChange={(e) => setCroAvailability(e.target.value)}
-                        className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                        className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                         style={{
                           border: "1px solid var(--neuron-ui-border)",
                           backgroundColor: "#FFFFFF",
@@ -1378,7 +1613,7 @@ export function CreateForwardingBookingPanel({
                         value={qty20ft}
                         onChange={(e) => setQty20ft(e.target.value)}
                         placeholder="e.g., 2"
-                        className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                        className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                         style={{
                           border: "1px solid var(--neuron-ui-border)",
                           backgroundColor: "#FFFFFF",
@@ -1399,7 +1634,7 @@ export function CreateForwardingBookingPanel({
                         value={qty40ft}
                         onChange={(e) => setQty40ft(e.target.value)}
                         placeholder="e.g., 1"
-                        className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                        className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                         style={{
                           border: "1px solid var(--neuron-ui-border)",
                           backgroundColor: "#FFFFFF",
@@ -1420,7 +1655,7 @@ export function CreateForwardingBookingPanel({
                         value={qty45ft}
                         onChange={(e) => setQty45ft(e.target.value)}
                         placeholder="e.g., 0"
-                        className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                        className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                         style={{
                           border: "1px solid var(--neuron-ui-border)",
                           backgroundColor: "#FFFFFF",
@@ -1443,7 +1678,7 @@ export function CreateForwardingBookingPanel({
                         value={volumeGrossWeight}
                         onChange={(e) => setVolumeGrossWeight(e.target.value)}
                         placeholder="e.g., 1000 kg"
-                        className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                        className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                         style={{
                           border: "1px solid var(--neuron-ui-border)",
                           backgroundColor: "#FFFFFF",
@@ -1464,7 +1699,7 @@ export function CreateForwardingBookingPanel({
                         value={volumeDimensions}
                         onChange={(e) => setVolumeDimensions(e.target.value)}
                         placeholder="e.g., 10x5x3 m"
-                        className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                        className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                         style={{
                           border: "1px solid var(--neuron-ui-border)",
                           backgroundColor: "#FFFFFF",
@@ -1485,7 +1720,7 @@ export function CreateForwardingBookingPanel({
                         value={volumeChargeableWeight}
                         onChange={(e) => setVolumeChargeableWeight(e.target.value)}
                         placeholder="e.g., 1000 kg"
-                        className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                        className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                         style={{
                           border: "1px solid var(--neuron-ui-border)",
                           backgroundColor: "#FFFFFF",
@@ -1520,7 +1755,7 @@ export function CreateForwardingBookingPanel({
                     value={warehouseLocation}
                     onChange={(e) => setWarehouseLocation(e.target.value)}
                     placeholder="Warehouse location"
-                    className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                    className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                     style={{
                       border: "1px solid var(--neuron-ui-border)",
                       backgroundColor: "#FFFFFF",
@@ -1555,67 +1790,6 @@ export function CreateForwardingBookingPanel({
                 </div>
               </div>
             )}
-          </form>
-        </div>
-
-        {/* Footer Actions */}
-        <div
-          className="px-12 py-6 border-t flex items-center justify-end gap-3"
-          style={{
-            borderColor: "var(--neuron-ui-border)",
-            backgroundColor: "#FFFFFF",
-          }}
-        >
-          <button
-            type="button"
-            onClick={handleClose}
-            className="px-6 py-2.5 rounded-lg transition-colors"
-            style={{
-              border: "1px solid var(--neuron-ui-border)",
-              backgroundColor: "#FFFFFF",
-              color: "var(--neuron-ink-secondary)",
-              fontSize: "14px",
-              fontWeight: 500,
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = "var(--neuron-state-hover)";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = "#FFFFFF";
-            }}
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            form="create-forwarding-form"
-            disabled={!isFormValid || isSubmitting}
-            className="px-6 py-2.5 rounded-lg transition-all flex items-center gap-2"
-            style={{
-              backgroundColor: isFormValid && !isSubmitting ? "#0F766E" : "#D1D5DB",
-              color: "#FFFFFF",
-              fontSize: "14px",
-              fontWeight: 600,
-              border: "none",
-              cursor: isFormValid && !isSubmitting ? "pointer" : "not-allowed",
-              opacity: isFormValid && !isSubmitting ? 1 : 0.6,
-            }}
-            onMouseEnter={(e) => {
-              if (isFormValid && !isSubmitting) {
-                e.currentTarget.style.backgroundColor = "#0D6560";
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (isFormValid && !isSubmitting) {
-                e.currentTarget.style.backgroundColor = "#0F766E";
-              }
-            }}
-          >
-            <Ship size={16} />
-            {isSubmitting ? "Creating..." : "Create Booking"}
-          </button>
-        </div>
-      </div>
-    </>
+    </BookingCreationPanel>
   );
 }

@@ -1,9 +1,19 @@
-import { useState } from "react";
-import { ArrowLeft, MoreVertical, Lock, Edit3, Clock, ChevronRight } from "lucide-react";
+import React, { useState } from "react";
+import { ArrowLeft, MoreVertical, Lock, Clock, ChevronRight } from "lucide-react";
 import type { TruckingBooking, ExecutionStatus } from "../../types/operations";
-import { BillingsTab } from "./shared/BillingsTab";
+import { UnifiedBillingsTab } from "../shared/billings/UnifiedBillingsTab";
+import { BookingRateCardButton } from "../contracts/BookingRateCardButton";
 import { ExpensesTab } from "./shared/ExpensesTab";
 import { BookingCommentsTab } from "../shared/BookingCommentsTab";
+import { useProjectFinancials } from "../../hooks/useProjectFinancials";
+import { StatusSelector } from "../StatusSelector";
+import { projectId, publicAnonKey } from "../../utils/supabase/info";
+import { toast } from "../ui/toast-utils";
+import { EditableMultiInputField } from "../shared/EditableMultiInputField";
+import { EditableSectionCard, useSectionEdit } from "../shared/EditableSectionCard";
+import { EditableField } from "../shared/EditableField";
+import { normalizeTruckingLineItems } from "../../utils/contractQuantityExtractor";
+import { Truck as TruckIcon } from "lucide-react";
 
 interface TruckingBookingDetailsProps {
   booking: TruckingBooking;
@@ -14,17 +24,6 @@ interface TruckingBookingDetailsProps {
 
 type DetailTab = "booking-info" | "billings" | "expenses" | "comments";
 
-const STATUS_COLORS: Record<ExecutionStatus, string> = {
-  "Draft": "bg-gray-100 text-gray-700 border-gray-300",
-  "Confirmed": "bg-blue-50 text-blue-700 border-blue-300",
-  "In Progress": "bg-[#0F766E]/10 text-[#0F766E] border-[#0F766E]/30",
-  "Pending": "bg-amber-50 text-amber-700 border-amber-300",
-  "On Hold": "bg-orange-50 text-orange-700 border-orange-300",
-  "Completed": "bg-emerald-50 text-emerald-700 border-emerald-300",
-  "Cancelled": "bg-red-50 text-red-700 border-red-300",
-};
-
-// Activity Timeline Data Structure
 interface ActivityLogEntry {
   id: string;
   timestamp: Date;
@@ -35,434 +34,100 @@ interface ActivityLogEntry {
   newValue?: string;
   statusFrom?: ExecutionStatus;
   statusTo?: ExecutionStatus;
-  note?: string;
 }
 
 const initialActivityLog: ActivityLogEntry[] = [
-  {
-    id: "init-1",
-    timestamp: new Date(),
-    user: "System",
-    action: "created"
-  },
+  { id: "init-1", timestamp: new Date(), user: "System", action: "created" },
 ];
 
-// Field locking rules based on status
-// NOTE: All fields are now editable regardless of status since changes are tracked in activity log
-function isFieldLocked(fieldName: string, status: ExecutionStatus): { locked: boolean; reason: string } {
-  // All fields are editable - changes will be tracked in the activity log
-  return { locked: false, reason: "" };
+const FIELD_LABELS: Record<string, string> = {
+  accountHandler: "Account Handler",
+  preferredDeliveryDate: "Preferred Delivery Date",
+  consignee: "Consignee",
+  driver: "Driver",
+  helper: "Helper",
+  vehicleReferenceNumber: "Vehicle Reference Number",
+  pullOut: "Pull Out Location",
+  deliveryAddress: "Delivery Address",
+  warehouseAddress: "Warehouse Address",
+  withGps: "With GPS",
+  deliveryInstructions: "Delivery Instructions",
+  dateDelivered: "Date Delivered",
+  tabsBooking: "TABS Booking",
+  emptyReturn: "Empty Return",
+  cyFee: "CY Fee",
+  eirAvailability: "EIR Availability",
+  earlyGateIn: "Early Gate In",
+  gateIn: "Gate In",
+  detDemValidity: "Det/Dem Validity",
+  storageValidity: "Storage Validity",
+  shippingLine: "Shipping Line",
+};
+
+function diffAndApply(
+  original: TruckingBooking,
+  draft: TruckingBooking,
+  fields: string[],
+  addActivity: (fieldName: string, oldValue: string, newValue: string) => void,
+  setEditedBooking: (fn: (prev: TruckingBooking) => TruckingBooking) => void,
+  onBookingUpdated: () => void,
+) {
+  const updates: Record<string, any> = {};
+  fields.forEach((field) => {
+    const oldVal = String((original as any)[field] ?? "");
+    const newVal = String((draft as any)[field] ?? "");
+    if (oldVal !== newVal) {
+      addActivity(FIELD_LABELS[field] || field, oldVal, newVal);
+      updates[field] = (draft as any)[field];
+    }
+  });
+  if (Object.keys(updates).length > 0) {
+    setEditedBooking((prev: TruckingBooking) => ({ ...prev, ...updates }));
+    onBookingUpdated();
+    toast.success("Changes saved");
+  }
 }
 
-export function TruckingBookingDetails({
-  booking,
-  onBack,
-  onUpdate,
-  currentUser
-}: TruckingBookingDetailsProps) {
-  const [activeTab, setActiveTab] = useState<DetailTab>("booking-info");
-  const [showTimeline, setShowTimeline] = useState(false);
-  const [activityLog, setActivityLog] = useState<ActivityLogEntry[]>(initialActivityLog);
-  const [editedBooking, setEditedBooking] = useState<TruckingBooking>(booking);
-
-  const addActivity = (
-    fieldName: string,
-    oldValue: string,
-    newValue: string
-  ) => {
-    const newActivity: ActivityLogEntry = {
-      id: `activity-${Date.now()}-${Math.random()}`,
-      timestamp: new Date(),
-      user: currentUser?.name || "Current User",
-      action: "field_updated",
-      fieldName,
-      oldValue,
-      newValue
-    };
-
-    setActivityLog(prev => [newActivity, ...prev]);
-  };
-
+function LockedField({ label, value, tooltip }: { label: string; value: string; tooltip?: string }) {
   return (
-    <div style={{ 
-      backgroundColor: "white",
-      display: "flex",
-      flexDirection: "column",
-      height: "100vh"
-    }}>
-      {/* Header Bar */}
-      <div style={{
-        padding: "20px 48px",
-        borderBottom: "1px solid var(--neuron-ui-border)",
-        backgroundColor: "#F8FBFB",
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center"
-      }}>
-        <div>
-          <button
-            onClick={onBack}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "8px",
-              background: "none",
-              border: "none",
-              color: "var(--neuron-ink-secondary)",
-              cursor: "pointer",
-              fontSize: "13px",
-              marginBottom: "12px",
-              padding: "0"
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.color = "var(--neuron-brand-green)";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.color = "var(--neuron-ink-secondary)";
-            }}
-          >
-            <ArrowLeft size={16} />
-            Back to Trucking Bookings
-          </button>
-          
-          <h1 style={{ 
-            fontSize: "20px",
-            fontWeight: 600,
-            color: "var(--neuron-ink-primary)",
-            marginBottom: "4px"
-          }}>
-            {booking.customerName}
-          </h1>
-          <p style={{ fontSize: "13px", color: "var(--neuron-ink-muted)", margin: 0 }}>
-            {booking.bookingId}
-          </p>
-        </div>
-
-        {/* Action Buttons */}
-        <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
-          <button
-            onClick={() => setShowTimeline(!showTimeline)}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "8px",
-              padding: "10px 20px",
-              backgroundColor: showTimeline ? "#E8F2EE" : "white",
-              border: `1.5px solid ${showTimeline ? "#0F766E" : "var(--neuron-ui-border)"}`,
-              borderRadius: "8px",
-              fontSize: "14px",
-              fontWeight: 600,
-              color: showTimeline ? "#0F766E" : "var(--neuron-ink-secondary)",
-              cursor: "pointer",
-              transition: "all 0.2s ease"
-            }}
-            onMouseEnter={(e) => {
-              if (!showTimeline) {
-                e.currentTarget.style.backgroundColor = "#F9FAFB";
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (!showTimeline) {
-                e.currentTarget.style.backgroundColor = "white";
-              }
-            }}
-          >
-            <Clock size={16} />
-            Activity
-          </button>
-
-          <div style={{
-            padding: "8px 16px",
-            borderRadius: "6px",
-            fontSize: "13px",
-            fontWeight: 500,
-            backgroundColor: booking.status === "Draft" ? "#F3F4F6" : 
-                           booking.status === "In Progress" ? "#E8F2EE" :
-                           booking.status === "Completed" ? "#D1FAE5" :
-                           booking.status === "Cancelled" ? "#FEE2E2" : "#FFF3E0",
-            color: booking.status === "Draft" ? "#6B7280" :
-                   booking.status === "In Progress" ? "#0F766E" :
-                   booking.status === "Completed" ? "#10B981" :
-                   booking.status === "Cancelled" ? "#EF4444" : "#F59E0B",
-            border: `1px solid ${booking.status === "Draft" ? "#E5E7EB" : 
-                                 booking.status === "In Progress" ? "#0F766E33" :
-                                 booking.status === "Completed" ? "#10B98133" :
-                                 booking.status === "Cancelled" ? "#EF444433" : "#F59E0B33"}`
-          }}>
-            {booking.status}
-          </div>
-
-          <button
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              width: "40px",
-              height: "40px",
-              backgroundColor: "white",
-              border: "1.5px solid var(--neuron-ui-border)",
-              borderRadius: "8px",
-              cursor: "pointer",
-              transition: "all 0.2s ease"
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = "#F9FAFB";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = "white";
-            }}
-          >
-            <MoreVertical size={18} />
-          </button>
-        </div>
-      </div>
-
-      {/* Tabs */}
-      <div style={{
-        padding: "0 48px",
-        borderBottom: "1px solid var(--neuron-ui-border)",
-        backgroundColor: "white",
-        display: "flex",
-        gap: "32px"
-      }}>
-        <button
-          onClick={() => setActiveTab("booking-info")}
-          style={{
-            padding: "16px 0",
-            background: "none",
-            border: "none",
-            borderBottom: activeTab === "booking-info" ? "2px solid #0F766E" : "2px solid transparent",
-            color: activeTab === "booking-info" ? "#0F766E" : "#667085",
-            fontSize: "14px",
-            fontWeight: 600,
-            cursor: "pointer",
-            transition: "all 0.2s ease",
-            marginBottom: "-1px"
-          }}
-        >
-          Booking Information
-        </button>
-        <button
-          onClick={() => setActiveTab("billings")}
-          style={{
-            padding: "16px 0",
-            background: "none",
-            border: "none",
-            borderBottom: activeTab === "billings" ? "2px solid #0F766E" : "2px solid transparent",
-            color: activeTab === "billings" ? "#0F766E" : "#667085",
-            fontSize: "14px",
-            fontWeight: 600,
-            cursor: "pointer",
-            transition: "all 0.2s ease",
-            marginBottom: "-1px"
-          }}
-        >
-          Billings
-        </button>
-        <button
-          onClick={() => setActiveTab("expenses")}
-          style={{
-            padding: "16px 0",
-            background: "none",
-            border: "none",
-            borderBottom: activeTab === "expenses" ? "2px solid #0F766E" : "2px solid transparent",
-            color: activeTab === "expenses" ? "#0F766E" : "#667085",
-            fontSize: "14px",
-            fontWeight: 600,
-            cursor: "pointer",
-            transition: "all 0.2s ease",
-            marginBottom: "-1px"
-          }}
-        >
-          Expenses
-        </button>
-        <button
-          onClick={() => setActiveTab("comments")}
-          style={{
-            padding: "16px 0",
-            background: "none",
-            border: "none",
-            borderBottom: activeTab === "comments" ? "2px solid #0F766E" : "2px solid transparent",
-            color: activeTab === "comments" ? "#0F766E" : "#667085",
-            fontSize: "14px",
-            fontWeight: 600,
-            cursor: "pointer",
-            transition: "all 0.2s ease",
-            marginBottom: "-1px"
-          }}
-        >
-          Comments
-        </button>
-      </div>
-
-      {/* Content with Timeline Sidebar */}
-      <div style={{ 
-        flex: 1,
-        overflow: "hidden",
-        display: "flex"
-      }}>
-        <div style={{ 
-          flex: showTimeline ? "0 0 65%" : "1",
-          overflow: "auto",
-          transition: "flex 0.3s ease"
-        }}>
-          {activeTab === "booking-info" && (
-            <BookingInformationTab
-              booking={editedBooking}
-              onBookingUpdated={onUpdate}
-              addActivity={addActivity}
-              setEditedBooking={setEditedBooking}
-            />
-          )}
-          {activeTab === "billings" && (
-            <BillingsTab
-              bookingId={booking.bookingId}
-              bookingType="trucking"
-              currentUser={currentUser}
-            />
-          )}
-          {activeTab === "expenses" && (
-            <ExpensesTab
-              bookingId={booking.bookingId}
-              bookingType="trucking"
-              currentUser={currentUser}
-            />
-          )}
-          {activeTab === "comments" && (
-            <BookingCommentsTab
-              bookingId={booking.bookingId}
-              currentUserId={currentUser?.email || "unknown"}
-              currentUserName={currentUser?.name || "Unknown User"}
-              currentUserDepartment={currentUser?.department || "Operations"}
-            />
-          )}
-        </div>
-
-        {showTimeline && (
-          <div style={{
-            flex: "0 0 35%",
-            borderLeft: "1px solid var(--neuron-ui-border)",
-            backgroundColor: "#FAFBFC",
-            overflow: "auto"
-          }}>
-            <ActivityTimeline activities={activityLog} />
-          </div>
-        )}
+    <div>
+      <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", fontWeight: 500, color: "var(--neuron-ink-base)", marginBottom: "8px" }}>
+        {label}
+        <Lock size={12} color="#9CA3AF" title={tooltip} style={{ cursor: "help" }} />
+      </label>
+      <div style={{ padding: "10px 14px", backgroundColor: "#F9FAFB", border: "1px solid #E5E7EB", borderRadius: "6px", fontSize: "14px", color: "#6B7280", cursor: "not-allowed" }}>
+        {value || "—"}
       </div>
     </div>
   );
 }
 
-// Activity Timeline Component
 function ActivityTimeline({ activities }: { activities: ActivityLogEntry[] }) {
   return (
     <div style={{ padding: "24px" }}>
-      <h3 style={{
-        fontSize: "16px",
-        fontWeight: 600,
-        color: "var(--neuron-brand-green)",
-        marginBottom: "20px"
-      }}>
-        Activity Timeline
-      </h3>
-
+      <h3 style={{ fontSize: "16px", fontWeight: 600, color: "var(--neuron-brand-green)", marginBottom: "20px" }}>Activity Timeline</h3>
       <div style={{ position: "relative" }}>
-        <div style={{
-          position: "absolute",
-          left: "15px",
-          top: "0",
-          bottom: "0",
-          width: "2px",
-          backgroundColor: "#E5E7EB"
-        }} />
-
+        <div style={{ position: "absolute", left: "15px", top: "0", bottom: "0", width: "2px", backgroundColor: "#E5E7EB" }} />
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
           {activities.map((activity) => (
             <div key={activity.id} style={{ position: "relative", paddingLeft: "40px" }}>
-              <div style={{
-                position: "absolute",
-                left: "8px",
-                top: "4px",
-                width: "16px",
-                height: "16px",
-                borderRadius: "50%",
-                backgroundColor: activity.action === "status_changed" ? "#0F766E" :
-                               activity.action === "created" ? "#6B7280" :
-                               activity.action === "field_updated" ? "#3B82F6" : "#F59E0B",
-                border: "3px solid #FAFBFC"
-              }} />
-
-              <div style={{
-                backgroundColor: "white",
-                border: "1px solid var(--neuron-ui-border)",
-                borderRadius: "8px",
-                padding: "12px 16px"
-              }}>
-                <div style={{
-                  fontSize: "11px",
-                  color: "var(--neuron-ink-muted)",
-                  marginBottom: "6px"
-                }}>
-                  {activity.timestamp.toLocaleString()}
-                </div>
-
+              <div style={{ position: "absolute", left: "8px", top: "4px", width: "16px", height: "16px", borderRadius: "50%", backgroundColor: activity.action === "status_changed" ? "#0F766E" : activity.action === "created" ? "#6B7280" : "#3B82F6", border: "3px solid #FAFBFC" }} />
+              <div style={{ backgroundColor: "white", border: "1px solid var(--neuron-ui-border)", borderRadius: "8px", padding: "12px 16px" }}>
+                <div style={{ fontSize: "11px", color: "var(--neuron-ink-muted)", marginBottom: "6px" }}>{activity.timestamp.toLocaleString()}</div>
                 {activity.action === "field_updated" && (
                   <div>
-                    <div style={{
-                      fontSize: "13px",
-                      color: "var(--neuron-ink-base)",
-                      marginBottom: "4px"
-                    }}>
-                      <span style={{ fontWeight: 600 }}>{activity.fieldName}</span> updated
-                    </div>
+                    <div style={{ fontSize: "13px", color: "var(--neuron-ink-base)", marginBottom: "4px" }}><span style={{ fontWeight: 600 }}>{activity.fieldName}</span> updated</div>
                     {activity.oldValue && activity.newValue && (
-                      <div style={{
-                        fontSize: "12px",
-                        color: "var(--neuron-ink-secondary)",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "8px",
-                        marginTop: "6px"
-                      }}>
-                        <span style={{
-                          padding: "2px 8px",
-                          backgroundColor: "#FEE2E2",
-                          borderRadius: "4px",
-                          textDecoration: "line-through",
-                          color: "#EF4444"
-                        }}>
-                          {activity.oldValue || "(empty)"}
-                        </span>
+                      <div style={{ fontSize: "12px", display: "flex", alignItems: "center", gap: "8px", marginTop: "6px" }}>
+                        <span style={{ padding: "2px 8px", backgroundColor: "#FEE2E2", borderRadius: "4px", textDecoration: "line-through", color: "#EF4444" }}>{activity.oldValue}</span>
                         <ChevronRight size={12} />
-                        <span style={{
-                          padding: "2px 8px",
-                          backgroundColor: "#D1FAE5",
-                          borderRadius: "4px",
-                          color: "#10B981"
-                        }}>
-                          {activity.newValue}
-                        </span>
+                        <span style={{ padding: "2px 8px", backgroundColor: "#D1FAE5", borderRadius: "4px", color: "#10B981" }}>{activity.newValue}</span>
                       </div>
                     )}
                   </div>
                 )}
-
-                {activity.action === "created" && (
-                  <div style={{
-                    fontSize: "13px",
-                    color: "var(--neuron-ink-base)"
-                  }}>
-                    Booking created
-                  </div>
-                )}
-
-                <div style={{
-                  fontSize: "11px",
-                  color: "var(--neuron-ink-muted)",
-                  marginTop: "8px"
-                }}>
-                  by {activity.user}
-                </div>
+                {activity.action === "created" && <div style={{ fontSize: "13px", color: "var(--neuron-ink-base)" }}>Booking created</div>}
+                <div style={{ fontSize: "11px", color: "var(--neuron-ink-muted)", marginTop: "8px" }}>by {activity.user}</div>
               </div>
             </div>
           ))}
@@ -472,649 +137,240 @@ function ActivityTimeline({ activities }: { activities: ActivityLogEntry[] }) {
   );
 }
 
-// Locked Field Component
-function LockedField({ label, value, tooltip }: { label: string; value: string; tooltip?: string }) {
-  return (
-    <div>
-      <label style={{
-        display: "flex",
-        alignItems: "center",
-        gap: "6px",
-        fontSize: "13px",
-        fontWeight: 500,
-        color: "var(--neuron-ink-base)",
-        marginBottom: "8px"
-      }}>
-        {label}
-        <Lock size={12} color="#9CA3AF" title={tooltip} style={{ cursor: "help" }} />
-      </label>
-      <div style={{
-        padding: "10px 14px",
-        backgroundColor: "#F9FAFB",
-        border: "1px solid #E5E7EB",
-        borderRadius: "6px",
-        fontSize: "14px",
-        color: "#6B7280",
-        cursor: "not-allowed"
-      }}>
-        {value || "—"}
-      </div>
-    </div>
-  );
-}
+export function TruckingBookingDetails({ booking, onBack, onUpdate, currentUser }: TruckingBookingDetailsProps) {
+  const [activeTab, setActiveTab] = useState<DetailTab>("booking-info");
+  const [showTimeline, setShowTimeline] = useState(false);
+  const [activityLog, setActivityLog] = useState<ActivityLogEntry[]>(initialActivityLog);
+  const [editedBooking, setEditedBooking] = useState<TruckingBooking>(booking);
 
-interface EditableFieldProps {
-  fieldName: string;
-  label: string;
-  value: string;
-  type?: "text" | "date" | "textarea" | "select";
-  options?: string[];
-  required?: boolean;
-  placeholder?: string;
-  status: ExecutionStatus;
-  onSave?: (value: string) => void;
-}
+  const addActivity = (fieldName: string, oldValue: string, newValue: string) => {
+    setActivityLog(prev => [{ id: `activity-${Date.now()}-${Math.random()}`, timestamp: new Date(), user: currentUser?.name || "Current User", action: "field_updated", fieldName, oldValue, newValue }, ...prev]);
+  };
 
-function EditableField({ 
-  fieldName,
-  label, 
-  value, 
-  type = "text", 
-  options = [],
-  required = false,
-  placeholder = "Click to add...",
-  status,
-  onSave
-}: EditableFieldProps) {
-  const [isEditing, setIsEditing] = useState(false);
-  const [editValue, setEditValue] = useState(value);
-  const [isSaving, setIsSaving] = useState(false);
-  const [saveSuccess, setSaveSuccess] = useState(false);
-
-  const lockStatus = isFieldLocked(fieldName, status);
-  const isEmpty = !value || value.trim() === "";
-
-  const handleSave = async () => {
-    setIsSaving(true);
-    await new Promise(resolve => setTimeout(resolve, 300));
-    
-    if (onSave) {
-      onSave(editValue);
+  const handleStatusUpdate = async (newStatus: ExecutionStatus) => {
+    const oldStatus = editedBooking.status;
+    if (oldStatus === newStatus) return;
+    setEditedBooking(prev => ({ ...prev, status: newStatus }));
+    setActivityLog(prev => [{ id: `activity-${Date.now()}`, timestamp: new Date(), user: currentUser?.name || "Current User", action: "status_changed", statusFrom: oldStatus, statusTo: newStatus }, ...prev]);
+    try {
+      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-c142e950/trucking-bookings/${booking.bookingId}`, {
+        method: 'PUT', headers: { 'Authorization': `Bearer ${publicAnonKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus })
+      });
+      if (!response.ok) throw new Error('Failed to update status');
+      toast.success(`Status updated to ${newStatus}`);
+      onUpdate();
+    } catch (error) {
+      console.error("Error updating status:", error);
+      toast.error("Failed to update status");
+      setEditedBooking(prev => ({ ...prev, status: oldStatus }));
     }
-    
-    setIsSaving(false);
-    setSaveSuccess(true);
-    setIsEditing(false);
-    setTimeout(() => setSaveSuccess(false), 2000);
   };
 
-  const handleCancel = () => {
-    setEditValue(value);
-    setIsEditing(false);
-  };
+  const financials = useProjectFinancials(booking.projectNumber || "");
+  const bookingBillingItems = financials.billingItems.filter(item => item.booking_id === booking.bookingId);
 
-  if (lockStatus.locked) {
-    return (
-      <div>
-        <label style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "6px",
-          fontSize: "13px",
-          fontWeight: 500,
-          color: "var(--neuron-ink-base)",
-          marginBottom: "8px"
-        }}>
-          {label}
-          {required && <span style={{ color: "#EF4444" }}>*</span>}
-          <Lock size={12} color="#9CA3AF" title={lockStatus.reason} style={{ cursor: "help" }} />
-        </label>
-        <div style={{
-          padding: "10px 14px",
-          backgroundColor: "#F9FAFB",
-          border: "1px solid #E5E7EB",
-          borderRadius: "6px",
-          fontSize: "14px",
-          color: "#6B7280",
-          cursor: "not-allowed"
-        }}>
-          {value || "—"}
-        </div>
-      </div>
-    );
-  }
-
-  if (isEditing) {
-    return (
-      <div>
-        <label style={{
-          display: "block",
-          fontSize: "13px",
-          fontWeight: 500,
-          color: "var(--neuron-ink-base)",
-          marginBottom: "8px"
-        }}>
-          {label} {required && <span style={{ color: "#EF4444" }}>*</span>}
-        </label>
-        <div style={{ position: "relative" }}>
-          {type === "textarea" ? (
-            <textarea
-              value={editValue}
-              onChange={(e) => setEditValue(e.target.value)}
-              onBlur={handleSave}
-              autoFocus
-              rows={3}
-              style={{
-                width: "100%",
-                padding: "10px 14px",
-                backgroundColor: "white",
-                border: "2px solid #0F766E",
-                borderRadius: "6px",
-                fontSize: "14px",
-                color: "var(--neuron-ink-primary)",
-                outline: "none",
-                resize: "vertical"
-              }}
-            />
-          ) : (
-            <input
-              type={type}
-              value={editValue}
-              onChange={(e) => setEditValue(e.target.value)}
-              onBlur={handleSave}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleSave();
-                if (e.key === "Escape") handleCancel();
-              }}
-              autoFocus
-              style={{
-                width: "100%",
-                padding: "10px 14px",
-                backgroundColor: "white",
-                border: "2px solid #0F766E",
-                borderRadius: "6px",
-                fontSize: "14px",
-                color: "var(--neuron-ink-primary)",
-                outline: "none"
-              }}
-            />
-          )}
-          {isSaving && (
-            <span style={{
-              position: "absolute",
-              right: "14px",
-              top: "50%",
-              transform: "translateY(-50%)",
-              fontSize: "12px",
-              color: "#0F766E"
-            }}>
-              Saving...
-            </span>
-          )}
-        </div>
-      </div>
-    );
-  }
+  const tabStyle = (tab: DetailTab) => ({
+    padding: "0 4px", fontSize: "14px", fontWeight: 500,
+    color: activeTab === tab ? "#0F766E" : "var(--neuron-ink-muted)",
+    background: "none", borderTop: "none", borderLeft: "none", borderRight: "none",
+    borderBottom: activeTab === tab ? "2px solid #0F766E" : "2px solid transparent",
+    cursor: "pointer" as const, transition: "all 0.2s", height: "100%"
+  });
 
   return (
-    <div>
-      <label style={{
-        display: "block",
-        fontSize: "13px",
-        fontWeight: 500,
-        color: "var(--neuron-ink-base)",
-        marginBottom: "8px"
-      }}>
-        {label} {required && <span style={{ color: "#EF4444" }}>*</span>}
-      </label>
-      <div
-        onClick={() => setIsEditing(true)}
-        style={{
-          position: "relative",
-          padding: "10px 14px",
-          backgroundColor: isEmpty ? "white" : "#FAFBFC",
-          border: `1px solid ${isEmpty && required ? "#FCD34D" : "#E5E7EB"}`,
-          borderRadius: "6px",
-          fontSize: "14px",
-          color: isEmpty ? "#9CA3AF" : "var(--neuron-ink-primary)",
-          cursor: "pointer",
-          transition: "all 0.2s ease",
-          minHeight: type === "textarea" ? "80px" : "42px"
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.borderColor = "#0F766E";
-          e.currentTarget.style.backgroundColor = "white";
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.borderColor = isEmpty && required ? "#FCD34D" : "#E5E7EB";
-          e.currentTarget.style.backgroundColor = isEmpty ? "white" : "#FAFBFC";
-        }}
-      >
-        {isEmpty ? (
-          <span style={{ color: "#9CA3AF" }}>{placeholder}</span>
-        ) : type === "date" && value ? (
-          new Date(value).toLocaleDateString()
-        ) : (
-          value
-        )}
-        {!isEmpty && (
-          <Edit3 
-            size={14} 
-            style={{ 
-              position: "absolute", 
-              right: "14px", 
-              top: "50%", 
-              transform: "translateY(-50%)",
-              color: "#9CA3AF",
-              opacity: 0
-            }}
-            className="edit-icon"
-          />
-        )}
-        {/* Removed "✓ Saved" indicator */}
+    <div style={{ backgroundColor: "white", display: "flex", flexDirection: "column", height: "100vh" }}>
+      <div style={{ padding: "20px 48px", borderBottom: "1px solid var(--neuron-ui-border)", backgroundColor: "white", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div>
+          <button onClick={onBack} style={{ display: "flex", alignItems: "center", gap: "8px", background: "none", border: "none", color: "var(--neuron-ink-secondary)", cursor: "pointer", fontSize: "13px", marginBottom: "12px", padding: "0" }}
+            onMouseEnter={(e) => { e.currentTarget.style.color = "var(--neuron-brand-green)"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.color = "var(--neuron-ink-secondary)"; }}>
+            <ArrowLeft size={16} /> Back to Trucking Bookings
+          </button>
+          <h1 style={{ fontSize: "20px", fontWeight: 600, color: "var(--neuron-ink-primary)", marginBottom: "4px" }}>{booking.customerName}</h1>
+          <p style={{ fontSize: "13px", color: "var(--neuron-ink-muted)", margin: 0 }}>{booking.bookingId}</p>
+        </div>
+        <StatusSelector status={editedBooking.status} onUpdateStatus={handleStatusUpdate} />
       </div>
-      <style>{`
-        div:hover .edit-icon {
-          opacity: 1 !important;
-        }
-      `}</style>
+
+      <div style={{ padding: "0 48px", borderBottom: "1px solid var(--neuron-ui-border)", backgroundColor: "white", display: "flex", justifyContent: "space-between", alignItems: "center", height: "56px" }}>
+        <div style={{ display: "flex", gap: "24px", height: "100%" }}>
+          <button onClick={() => setActiveTab("booking-info")} style={tabStyle("booking-info")}>Booking Information</button>
+          <button onClick={() => setActiveTab("billings")} style={tabStyle("billings")}>Billings</button>
+          <button onClick={() => setActiveTab("expenses")} style={tabStyle("expenses")}>Expenses</button>
+          <button onClick={() => setActiveTab("comments")} style={tabStyle("comments")}>Comments</button>
+        </div>
+        <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+          <button onClick={() => setShowTimeline(!showTimeline)} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 16px", backgroundColor: showTimeline ? "#E8F2EE" : "white", border: `1px solid ${showTimeline ? "#0F766E" : "var(--neuron-ui-border)"}`, borderRadius: "6px", fontSize: "13px", fontWeight: 500, color: showTimeline ? "#0F766E" : "var(--neuron-ink-secondary)", cursor: "pointer" }}>
+            <Clock size={16} /> Activity
+          </button>
+          <div style={{ padding: "8px 16px", borderRadius: "6px", fontSize: "13px", fontWeight: 600, backgroundColor: booking.movement === "EXPORT" ? "#FFF7ED" : "#E6FFFA", color: booking.movement === "EXPORT" ? "#C2410C" : "#0F766E", border: `1px solid ${booking.movement === "EXPORT" ? "#FED7AA" : "#99F6E4"}` }}>
+            {booking.movement || "IMPORT"}
+          </div>
+          <button style={{ display: "flex", alignItems: "center", justifyContent: "center", width: "36px", height: "36px", backgroundColor: "white", border: "1px solid var(--neuron-ui-border)", borderRadius: "6px", cursor: "pointer" }}>
+            <MoreVertical size={18} />
+          </button>
+        </div>
+      </div>
+
+      <div style={{ flex: 1, overflow: "hidden", display: "flex" }}>
+        <div style={{ flex: showTimeline ? "0 0 65%" : "1", overflow: "auto", transition: "flex 0.3s ease" }}>
+          {activeTab === "booking-info" && <BookingInformationTab booking={editedBooking} onBookingUpdated={onUpdate} addActivity={addActivity} setEditedBooking={setEditedBooking} />}
+          {activeTab === "billings" && <div className="flex flex-col bg-white p-12 min-h-[600px]"><UnifiedBillingsTab items={bookingBillingItems} projectId={booking.projectNumber || ""} bookingId={booking.bookingId} onRefresh={financials.refresh} isLoading={financials.isLoading} extraActions={<BookingRateCardButton booking={booking} serviceType="Trucking" existingBillingItems={bookingBillingItems} onRefresh={financials.refresh} />} /></div>}
+          {activeTab === "expenses" && <ExpensesTab bookingId={booking.bookingId} bookingType="trucking" currentUser={currentUser} />}
+          {activeTab === "comments" && <BookingCommentsTab bookingId={booking.bookingId} currentUserId={currentUser?.email || "unknown"} currentUserName={currentUser?.name || "Unknown User"} currentUserDepartment={currentUser?.department || "Operations"} />}
+        </div>
+        {showTimeline && <div style={{ flex: "0 0 35%", borderLeft: "1px solid var(--neuron-ui-border)", backgroundColor: "#FAFBFC", overflow: "auto" }}><ActivityTimeline activities={activityLog} /></div>}
+      </div>
     </div>
   );
 }
 
-// Booking Information Tab Component
-function BookingInformationTab({
-  booking,
-  onBookingUpdated,
-  addActivity,
-  setEditedBooking
-}: {
-  booking: TruckingBooking;
-  onBookingUpdated: () => void;
-  addActivity: (fieldName: string, oldValue: string, newValue: string) => void;
-  setEditedBooking: (booking: TruckingBooking) => void;
+function BookingInformationTab({ booking, onBookingUpdated, addActivity, setEditedBooking }: {
+  booking: TruckingBooking; onBookingUpdated: () => void;
+  addActivity: (fieldName: string, oldValue: string, newValue: string) => void; setEditedBooking: any;
 }) {
-  
+  const generalSection = useSectionEdit(booking);
+  const shipmentSection = useSectionEdit(booking);
+  const fclSection = useSectionEdit(booking);
+
+  // ✨ Multi-line trucking: normalize line items for view-mode display
+  const lineItems = normalizeTruckingLineItems(booking);
+  const hasMultiLineItems = lineItems.length > 1;
+  // @deprecated: truckType LockedField shows comma-joined types from line items when multi-line
+  const truckTypeDisplay = hasMultiLineItems
+    ? [...new Set(lineItems.map(li => li.truckType).filter(Boolean))].join(", ") || "—"
+    : (booking.truckType || "");
+
+  const GENERAL_FIELDS = ["accountHandler", "preferredDeliveryDate"];
+  const SHIPMENT_FIELDS = ["consignee", "driver", "helper", "vehicleReferenceNumber", "pullOut", "deliveryAddress", "warehouseAddress", "withGps", "deliveryInstructions", "dateDelivered"];
+  const FCL_FIELDS = ["tabsBooking", "emptyReturn", "cyFee", "eirAvailability", "earlyGateIn", "gateIn", "detDemValidity", "storageValidity", "shippingLine"];
+
+  const gMode = generalSection.isEditing ? "edit" : "view";
+  const sMode = shipmentSection.isEditing ? "edit" : "view";
+  const fMode = fclSection.isEditing ? "edit" : "view";
+
   return (
-    <div style={{ 
-      padding: "32px 48px",
-      maxWidth: "1400px",
-      margin: "0 auto"
-    }}>
-      
-      {/* General Information Section */}
-      <div style={{
-        backgroundColor: "white",
-        border: "1px solid var(--neuron-ui-border)",
-        borderRadius: "8px",
-        padding: "24px",
-        marginBottom: "24px"
-      }}>
-        <div style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: "20px"
-        }}>
-          <h2 style={{
-            fontSize: "16px",
-            fontWeight: 600,
-            color: "var(--neuron-brand-green)",
-            margin: 0
-          }}>
-            General Information
-          </h2>
-          <span style={{
-            fontSize: "12px",
-            color: "var(--neuron-ink-muted)"
-          }}>
-            Last updated by {booking.accountHandler || "System"}, {new Date(booking.updatedAt).toLocaleString()}
-          </span>
-        </div>
+    <div style={{ padding: "32px 48px", maxWidth: "1400px", margin: "0 auto" }}>
 
+      {/* ── General Information ── */}
+      <EditableSectionCard
+        title="General Information"
+        subtitle={`Last updated by ${booking.accountHandler || "System"}, ${new Date(booking.updatedAt).toLocaleString()}`}
+        isEditing={generalSection.isEditing}
+        onEdit={generalSection.startEditing}
+        onCancel={generalSection.cancel}
+        onSave={() => { const draft = generalSection.save(); diffAndApply(booking, draft, GENERAL_FIELDS, addActivity, setEditedBooking, onBookingUpdated); }}
+      >
         <div style={{ display: "grid", gap: "20px" }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}>
-            <LockedField 
-              label="Customer Name" 
-              value={booking.customerName}
-            />
-            <LockedField 
-              label="Account Owner" 
-              value={booking.accountOwner || ""}
-            />
+            <LockedField label="Customer Name" value={booking.customerName} />
+            <LockedField label="Account Owner" value={booking.accountOwner || ""} />
           </div>
-
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "20px" }}>
-            <EditableField
-              fieldName="accountHandler"
-              label="Account Handler"
-              value={booking.accountHandler || ""}
-              status={booking.status}
-              placeholder="Assign handler..."
-              onSave={(value) => {
-                onBookingUpdated();
-                addActivity("Account Handler", booking.accountHandler || "", value);
-                setEditedBooking({ ...booking, accountHandler: value });
-              }}
-            />
-            <LockedField 
-              label="Service/s" 
-              value={booking.service || ""}
-            />
-            <LockedField 
-              label="Truck Type" 
-              value={booking.truckType || ""}
-            />
+            <EditableField label="Account Handler" value={generalSection.draft.accountHandler || ""} mode={gMode} placeholder="Assign handler..." onChange={(v) => generalSection.updateField("accountHandler", v)} />
+            <LockedField label="Service/s" value={booking.service || ""} />
+            <LockedField label="Truck Type" value={truckTypeDisplay} />
           </div>
-
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "20px" }}>
-            <LockedField 
-              label="Mode" 
-              value={booking.mode || ""}
-            />
-            <EditableField
-              fieldName="preferredDeliveryDate"
-              label="Preferred Delivery Date"
-              value={booking.preferredDeliveryDate || ""}
-              type="date"
-              status={booking.status}
-              onSave={(value) => {
-                onBookingUpdated();
-                addActivity("Preferred Delivery Date", booking.preferredDeliveryDate || "", value);
-                setEditedBooking({ ...booking, preferredDeliveryDate: value });
-              }}
-            />
-            <LockedField 
-              label="Quotation Reference" 
-              value={booking.quotationReferenceNumber || ""}
-            />
+            <LockedField label="Mode" value={booking.mode || ""} />
+            <EditableField label="Preferred Delivery Date" value={generalSection.draft.preferredDeliveryDate || ""} type="date" mode={gMode} onChange={(v) => generalSection.updateField("preferredDeliveryDate", v)} />
+            <LockedField label="Quotation Reference" value={booking.quotationReferenceNumber || ""} />
           </div>
         </div>
+      </EditableSectionCard>
 
-        <div style={{
-          marginTop: "16px",
-          padding: "12px",
-          backgroundColor: "#F0F9FF",
-          borderRadius: "6px",
-          fontSize: "12px",
-          color: "#0369A1"
-        }}>
-          <strong>Click any field to edit</strong>
-        </div>
-      </div>
-
-      {/* Shipment Information Section */}
-      <div style={{
-        backgroundColor: "white",
-        border: "1px solid var(--neuron-ui-border)",
-        borderRadius: "8px",
-        padding: "24px",
-        marginBottom: "24px"
-      }}>
-        <h2 style={{
-          fontSize: "16px",
-          fontWeight: 600,
-          color: "var(--neuron-brand-green)",
-          marginBottom: "20px"
-        }}>
-          Shipment Information
-        </h2>
-
+      {/* ── Shipment Information ── */}
+      <EditableSectionCard
+        title="Shipment Information"
+        isEditing={shipmentSection.isEditing}
+        onEdit={shipmentSection.startEditing}
+        onCancel={shipmentSection.cancel}
+        onSave={() => { const draft = shipmentSection.save(); diffAndApply(booking, draft, SHIPMENT_FIELDS, addActivity, setEditedBooking, onBookingUpdated); }}
+      >
         <div style={{ display: "grid", gap: "20px" }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}>
-            <EditableField
-              fieldName="consignee"
-              label="Consignee"
-              value={booking.consignee || ""}
-              status={booking.status}
-              placeholder="Enter consignee..."
-              onSave={(value) => {
-                onBookingUpdated();
-                addActivity("Consignee", booking.consignee || "", value);
-                setEditedBooking({ ...booking, consignee: value });
-              }}
-            />
-            <EditableField
-              fieldName="driver"
-              label="Driver"
-              value={booking.driver || ""}
-              status={booking.status}
-              placeholder="Assign driver..."
-              onSave={(value) => {
-                onBookingUpdated();
-                addActivity("Driver", booking.driver || "", value);
-                setEditedBooking({ ...booking, driver: value });
-              }}
-            />
+            <EditableField label="Consignee" value={shipmentSection.draft.consignee || ""} mode={sMode} placeholder="Enter consignee..." onChange={(v) => shipmentSection.updateField("consignee", v)} />
+            <EditableField label="Driver" value={shipmentSection.draft.driver || ""} mode={sMode} placeholder="Assign driver..." onChange={(v) => shipmentSection.updateField("driver", v)} />
           </div>
-
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "20px" }}>
-            <EditableField
-              fieldName="helper"
-              label="Helper"
-              value={booking.helper || ""}
-              status={booking.status}
-              placeholder="Assign helper..."
-              onSave={(value) => {
-                onBookingUpdated();
-                addActivity("Helper", booking.helper || "", value);
-                setEditedBooking({ ...booking, helper: value });
-              }}
-            />
-            <EditableField
-              fieldName="vehicleReferenceNumber"
-              label="Vehicle Reference Number"
-              value={booking.vehicleReferenceNumber || ""}
-              status={booking.status}
-              placeholder="Enter vehicle ref..."
-              onSave={(value) => {
-                onBookingUpdated();
-                addActivity("Vehicle Reference Number", booking.vehicleReferenceNumber || "", value);
-                setEditedBooking({ ...booking, vehicleReferenceNumber: value });
-              }}
-            />
-            <EditableField
-              fieldName="pullOut"
-              label="Pull Out Location"
-              value={booking.pullOut || ""}
-              status={booking.status}
-              placeholder="Enter pull out location..."
-              onSave={(value) => {
-                onBookingUpdated();
-                addActivity("Pull Out", booking.pullOut || "", value);
-                setEditedBooking({ ...booking, pullOut: value });
-              }}
-            />
+            <EditableField label="Helper" value={shipmentSection.draft.helper || ""} mode={sMode} placeholder="Assign helper..." onChange={(v) => shipmentSection.updateField("helper", v)} />
+            <EditableMultiInputField fieldName="vehicleReferenceNumber" label="Vehicle Reference Number" value={shipmentSection.draft.vehicleReferenceNumber || ""} status={booking.status} placeholder="Enter vehicle ref..." addButtonText="Add Vehicle Ref." mode={sMode} onChange={(v) => shipmentSection.updateField("vehicleReferenceNumber", v)} />
+            <EditableField label="Pull Out Location" value={shipmentSection.draft.pullOut || ""} mode={sMode} placeholder="Enter pull out location..." onChange={(v) => shipmentSection.updateField("pullOut", v)} />
           </div>
-
-          <div>
-            <EditableField
-              fieldName="deliveryAddress"
-              label="Delivery Address"
-              value={booking.deliveryAddress || ""}
-              type="textarea"
-              status={booking.status}
-              placeholder="Enter delivery address..."
-              onSave={(value) => {
-                onBookingUpdated();
-                addActivity("Delivery Address", booking.deliveryAddress || "", value);
-                setEditedBooking({ ...booking, deliveryAddress: value });
-              }}
-            />
-          </div>
-
-          <div>
-            <EditableField
-              fieldName="deliveryInstructions"
-              label="Delivery Instructions"
-              value={booking.deliveryInstructions || ""}
-              type="textarea"
-              status={booking.status}
-              placeholder="Enter special instructions..."
-              onSave={(value) => {
-                onBookingUpdated();
-                addActivity("Delivery Instructions", booking.deliveryInstructions || "", value);
-                setEditedBooking({ ...booking, deliveryInstructions: value });
-              }}
-            />
-          </div>
-
-          {booking.dateDelivered && (
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}>
-              <EditableField
-                fieldName="dateDelivered"
-                label="Date Delivered"
-                value={booking.dateDelivered}
-                type="date"
-                status={booking.status}
-                onSave={(value) => {
-                  onBookingUpdated();
-                  addActivity("Date Delivered", booking.dateDelivered || "", value);
-                  setEditedBooking({ ...booking, dateDelivered: value });
-                }}
-              />
+          {/* ✨ Multi-line trucking: Destinations read-only display */}
+          {hasMultiLineItems && (
+            <div>
+              <label style={{ display: "block", fontSize: "13px", fontWeight: 500, color: "var(--neuron-ink-base)", marginBottom: "8px" }}>
+                Destinations ({lineItems.length})
+              </label>
+              <div style={{ border: "1px solid #E5E7EB", borderRadius: "8px", overflow: "hidden" }}>
+                {/* Header */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 100px 60px", backgroundColor: "#F9FAFB", borderBottom: "1px solid #E5E7EB", padding: "6px 12px" }}>
+                  <span style={{ fontSize: "11px", fontWeight: 600, color: "#667085", textTransform: "uppercase", letterSpacing: "0.5px" }}>Destination</span>
+                  <span style={{ fontSize: "11px", fontWeight: 600, color: "#667085", textTransform: "uppercase", letterSpacing: "0.5px" }}>Truck Type</span>
+                  <span style={{ fontSize: "11px", fontWeight: 600, color: "#667085", textTransform: "uppercase", letterSpacing: "0.5px", textAlign: "center" }}>Qty</span>
+                </div>
+                {/* Rows */}
+                {lineItems.map((li) => (
+                  <div key={li.id} style={{ display: "grid", gridTemplateColumns: "1fr 100px 60px", padding: "8px 12px", borderBottom: "1px solid #F3F4F6", alignItems: "center" }}>
+                    <span style={{ fontSize: "13px", color: "#12332B" }}>{li.destination || "—"}</span>
+                    <span style={{ fontSize: "13px", color: "#12332B" }}>{li.truckType || "—"}</span>
+                    <span style={{ fontSize: "13px", fontWeight: 600, color: "#12332B", textAlign: "center" }}>{li.quantity}</span>
+                  </div>
+                ))}
+                {/* Total */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 100px 60px", padding: "8px 12px", backgroundColor: "#F9FAFB" }}>
+                  <span style={{ fontSize: "12px", fontWeight: 600, color: "#667085" }}>Total</span>
+                  <span />
+                  <span style={{ fontSize: "13px", fontWeight: 700, color: "#12332B", textAlign: "center" }}>{lineItems.reduce((s, li) => s + li.quantity, 0)}</span>
+                </div>
+              </div>
             </div>
           )}
+          {/* @deprecated — Delivery Address shown for backward compat / single-line bookings */}
+          <EditableField label="Delivery Address" value={shipmentSection.draft.deliveryAddress || ""} type="textarea" mode={sMode} placeholder="Enter delivery address..." onChange={(v) => shipmentSection.updateField("deliveryAddress", v)} />
+          {booking.movement === "EXPORT" && (
+            <>
+              <EditableField label="Warehouse Address" value={shipmentSection.draft.warehouseAddress || ""} type="textarea" mode={sMode} placeholder="Enter warehouse address..." onChange={(v) => shipmentSection.updateField("warehouseAddress", v)} />
+              <EditableField label="With GPS?" value={shipmentSection.draft.withGps ? "Yes" : "No"} type="select" options={["Yes", "No"]} mode={sMode} onChange={(v) => shipmentSection.updateField("withGps", (v === "Yes") as any)} />
+            </>
+          )}
+          <EditableField label="Delivery Instructions" value={shipmentSection.draft.deliveryInstructions || ""} type="textarea" mode={sMode} placeholder="Enter special instructions..." onChange={(v) => shipmentSection.updateField("deliveryInstructions", v)} />
+          {booking.dateDelivered && (
+            <EditableField label="Date Delivered" value={shipmentSection.draft.dateDelivered || ""} type="date" mode={sMode} onChange={(v) => shipmentSection.updateField("dateDelivered", v)} />
+          )}
         </div>
-      </div>
+      </EditableSectionCard>
 
-      {/* FCL Information Section */}
-      {(booking.tabsBooking || booking.emptyReturn || booking.cyFee || booking.eirAvailability || 
+      {/* ── FCL Information ── */}
+      {(booking.tabsBooking || booking.emptyReturn || booking.cyFee || booking.eirAvailability ||
         booking.earlyGateIn || booking.detDemValidity || booking.storageValidity || booking.shippingLine) && (
-        <div style={{
-          backgroundColor: "white",
-          border: "1px solid var(--neuron-ui-border)",
-          borderRadius: "8px",
-          padding: "24px"
-        }}>
-          <h2 style={{
-            fontSize: "16px",
-            fontWeight: 600,
-            color: "var(--neuron-brand-green)",
-            marginBottom: "20px"
-          }}>
-            FCL Information
-          </h2>
-
+        <EditableSectionCard
+          title="FCL Information"
+          isEditing={fclSection.isEditing}
+          onEdit={fclSection.startEditing}
+          onCancel={fclSection.cancel}
+          onSave={() => { const draft = fclSection.save(); diffAndApply(booking, draft, FCL_FIELDS, addActivity, setEditedBooking, onBookingUpdated); }}
+        >
           <div style={{ display: "grid", gap: "20px" }}>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "20px" }}>
-              {booking.tabsBooking && (
-                <EditableField
-                  fieldName="tabsBooking"
-                  label="TABS Booking"
-                  value={booking.tabsBooking}
-                  status={booking.status}
-                  onSave={(value) => {
-                    onBookingUpdated();
-                    addActivity("TABS Booking", booking.tabsBooking || "", value);
-                    setEditedBooking({ ...booking, tabsBooking: value });
-                  }}
-                />
-              )}
-              {booking.emptyReturn && (
-                <EditableField
-                  fieldName="emptyReturn"
-                  label="Empty Return"
-                  value={booking.emptyReturn}
-                  status={booking.status}
-                  onSave={(value) => {
-                    onBookingUpdated();
-                    addActivity("Empty Return", booking.emptyReturn || "", value);
-                    setEditedBooking({ ...booking, emptyReturn: value });
-                  }}
-                />
-              )}
-              {booking.cyFee && (
-                <EditableField
-                  fieldName="cyFee"
-                  label="CY Fee"
-                  value={booking.cyFee}
-                  status={booking.status}
-                  onSave={(value) => {
-                    onBookingUpdated();
-                    addActivity("CY Fee", booking.cyFee || "", value);
-                    setEditedBooking({ ...booking, cyFee: value });
-                  }}
-                />
-              )}
+              {booking.tabsBooking && <EditableField label="TABS Booking" value={fclSection.draft.tabsBooking || ""} mode={fMode} onChange={(v) => fclSection.updateField("tabsBooking", v)} />}
+              {booking.emptyReturn && <EditableField label="Empty Return" value={fclSection.draft.emptyReturn || ""} mode={fMode} onChange={(v) => fclSection.updateField("emptyReturn", v)} />}
+              {booking.cyFee && <EditableField label="CY Fee" value={fclSection.draft.cyFee || ""} mode={fMode} onChange={(v) => fclSection.updateField("cyFee", v)} />}
             </div>
-
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "20px" }}>
-              {booking.eirAvailability && (
-                <EditableField
-                  fieldName="eirAvailability"
-                  label="EIR Availability"
-                  value={booking.eirAvailability}
-                  type="date"
-                  status={booking.status}
-                  onSave={(value) => {
-                    onBookingUpdated();
-                    addActivity("EIR Availability", booking.eirAvailability || "", value);
-                    setEditedBooking({ ...booking, eirAvailability: value });
-                  }}
-                />
-              )}
-              {booking.earlyGateIn && (
-                <EditableField
-                  fieldName="earlyGateIn"
-                  label="Early Gate In"
-                  value={booking.earlyGateIn}
-                  type="date"
-                  status={booking.status}
-                  onSave={(value) => {
-                    onBookingUpdated();
-                    addActivity("Early Gate In", booking.earlyGateIn || "", value);
-                    setEditedBooking({ ...booking, earlyGateIn: value });
-                  }}
-                />
-              )}
-              {booking.detDemValidity && (
-                <EditableField
-                  fieldName="detDemValidity"
-                  label="Det/Dem Validity"
-                  value={booking.detDemValidity}
-                  type="date"
-                  status={booking.status}
-                  onSave={(value) => {
-                    onBookingUpdated();
-                    addActivity("Det/Dem Validity", booking.detDemValidity || "", value);
-                    setEditedBooking({ ...booking, detDemValidity: value });
-                  }}
-                />
-              )}
+              {booking.eirAvailability && <EditableField label="EIR Availability" value={fclSection.draft.eirAvailability || ""} type="date" mode={fMode} onChange={(v) => fclSection.updateField("eirAvailability", v)} />}
+              {booking.earlyGateIn && <EditableField label="Early Gate In" value={fclSection.draft.earlyGateIn || ""} type="date" mode={fMode} onChange={(v) => fclSection.updateField("earlyGateIn", v)} />}
+              {booking.movement === "EXPORT" && <EditableField label="Gate In" value={fclSection.draft.gateIn || ""} type="date" mode={fMode} onChange={(v) => fclSection.updateField("gateIn", v)} />}
+              {booking.detDemValidity && <EditableField label="Det/Dem Validity" value={fclSection.draft.detDemValidity || ""} type="date" mode={fMode} onChange={(v) => fclSection.updateField("detDemValidity", v)} />}
             </div>
-
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "20px" }}>
-              {booking.storageValidity && (
-                <EditableField
-                  fieldName="storageValidity"
-                  label="Storage Validity"
-                  value={booking.storageValidity}
-                  type="date"
-                  status={booking.status}
-                  onSave={(value) => {
-                    onBookingUpdated();
-                    addActivity("Storage Validity", booking.storageValidity || "", value);
-                    setEditedBooking({ ...booking, storageValidity: value });
-                  }}
-                />
-              )}
-              {booking.shippingLine && (
-                <EditableField
-                  fieldName="shippingLine"
-                  label="Shipping Line"
-                  value={booking.shippingLine}
-                  status={booking.status}
-                  onSave={(value) => {
-                    onBookingUpdated();
-                    addActivity("Shipping Line", booking.shippingLine || "", value);
-                    setEditedBooking({ ...booking, shippingLine: value });
-                  }}
-                />
-              )}
+              {booking.storageValidity && <EditableField label="Storage Validity" value={fclSection.draft.storageValidity || ""} type="date" mode={fMode} onChange={(v) => fclSection.updateField("storageValidity", v)} />}
+              {booking.shippingLine && <EditableField label="Shipping Line" value={fclSection.draft.shippingLine || ""} mode={fMode} onChange={(v) => fclSection.updateField("shippingLine", v)} />}
             </div>
           </div>
-        </div>
+        </EditableSectionCard>
       )}
     </div>
   );

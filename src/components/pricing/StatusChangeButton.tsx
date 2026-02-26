@@ -144,13 +144,13 @@ export function StatusChangeButton({ quotation, onStatusChange, userDepartment }
   const availableActions = getAvailableActions();
 
   // Don't show status button if there are no actions available
-  if (availableActions.length === 0 && quotation.status === "Converted to Project") {
+  if (availableActions.length === 0 && (quotation.status === "Converted to Project" || quotation.status === "Converted to Contract")) {
     return null;
   }
 
   return (
     <div style={{ position: "relative" }} ref={menuRef}>
-      {/* Status Indicator Button */}
+      {/* Status Indicator Button - Outline Style */}
       <button
         onClick={() => setShowMenu(!showMenu)}
         style={{
@@ -158,7 +158,7 @@ export function StatusChangeButton({ quotation, onStatusChange, userDepartment }
           alignItems: "center",
           gap: "8px",
           padding: "8px 14px",
-          backgroundColor: statusStyle.bgColor,
+          backgroundColor: "white", // White background by default
           border: `1px solid ${statusStyle.borderColor}`,
           borderRadius: "8px",
           fontSize: "13px",
@@ -168,10 +168,11 @@ export function StatusChangeButton({ quotation, onStatusChange, userDepartment }
           transition: "all 0.2s ease"
         }}
         onMouseEnter={(e) => {
-          e.currentTarget.style.opacity = "0.85";
+          // On hover, show the faint background color
+          e.currentTarget.style.backgroundColor = statusStyle.bgColor;
         }}
         onMouseLeave={(e) => {
-          e.currentTarget.style.opacity = "1";
+          e.currentTarget.style.backgroundColor = "white";
         }}
       >
         <span style={{ color: statusStyle.color, display: "flex", alignItems: "center" }}>

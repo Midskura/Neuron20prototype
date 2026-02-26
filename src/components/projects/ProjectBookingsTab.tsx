@@ -1,9 +1,12 @@
 import { useState, useEffect } from "react";
-import { Eye, FileText, Package, Plus } from "lucide-react";
+import { Eye, FileText, Package, Plus, Receipt } from "lucide-react";
 import type { Project } from "../../types/pricing";
 import { ProjectBookingReadOnlyView } from "./ProjectBookingReadOnlyView";
 import { CreateBookingFromProjectPanel } from "./CreateBookingFromProjectPanel";
 import { projectId, publicAnonKey } from "../../utils/supabase/info";
+import { toast } from "../ui/toast-utils";
+import { StatusSelector } from "../StatusSelector";
+import { ExecutionStatus } from "../../types/operations";
 
 interface ProjectBookingsTabProps {
   project: Project;
@@ -26,9 +29,51 @@ export function ProjectBookingsTab({ project, currentUser, selectedBookingId }: 
   const [hasCleanedUp, setHasCleanedUp] = useState(false);
   const [createBookingService, setCreateBookingService] = useState<any>(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [generatingBillingId, setGeneratingBillingId] = useState<string | null>(null);
 
   const linkedBookings = project.linkedBookings || [];
   const servicesMetadata = project.services_metadata || [];
+
+  const handleGenerateBilling = async (e: React.MouseEvent, bookingId: string, serviceType: string) => {
+    e.stopPropagation(); // Prevent opening the drawer
+    if (generatingBillingId) return;
+
+    try {
+      setGeneratingBillingId(bookingId);
+      toast.loading("Generating billing for " + serviceType + "...", { id: "gen-billing" });
+
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-c142e950/projects/${project.id}/generate-invoice`,
+        {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${publicAnonKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            bookingId: bookingId,
+            bookingType: serviceType, // Send the exact service tag (e.g., "Forwarding")
+            filterByService: true
+          }),
+        }
+      );
+
+      const result = await response.json();
+
+      if (response.ok && result.success) {
+        toast.success("Billing generated successfully!", { id: "gen-billing" });
+        // Optional: Redirect to billings tab? Or just notify.
+        // For now, notification is enough.
+      } else {
+        toast.error(result.error || "Failed to generate billing", { id: "gen-billing" });
+      }
+    } catch (error) {
+      console.error("Error generating billing:", error);
+      toast.error("An error occurred", { id: "gen-billing" });
+    } finally {
+      setGeneratingBillingId(null);
+    }
+  };
   
   // Auto-open booking if selectedBookingId is provided
   useEffect(() => {
@@ -92,7 +137,13 @@ export function ProjectBookingsTab({ project, currentUser, selectedBookingId }: 
           if (response.ok) {
             const result = await response.json();
             if (result.success && result.data) {
-              verified.push(booking);
+              // Ensure we use the status from the fresh API response
+              // This is critical to ensure the "Hydration on Read" principle is followed
+              // The status in project.linkedBookings might be stale
+              verified.push({
+                ...booking,
+                status: result.data.status || booking.status
+              });
             } else {
               console.warn(`Booking ${booking.bookingId} exists in project but not in database`);
             }
@@ -423,15 +474,24 @@ export function ProjectBookingsTab({ project, currentUser, selectedBookingId }: 
                               e.currentTarget.style.boxShadow = "none";
                             }}
                           >
-                            <div
-                              style={{
-                                fontSize: "14px",
-                                fontWeight: 600,
-                                color: "var(--neuron-ink-primary)",
-                                marginBottom: "4px",
-                              }}
-                            >
-                              {booking.bookingId}
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", marginBottom: "4px" }}>
+                              <div
+                                style={{
+                                  fontSize: "14px",
+                                  fontWeight: 600,
+                                  color: "var(--neuron-ink-primary)",
+                                }}
+                              >
+                                {booking.bookingId}
+                              </div>
+                              
+                              <div onClick={(e) => e.stopPropagation()}>
+                                <StatusSelector 
+                                  status={booking.status as ExecutionStatus} 
+                                  className="h-8 text-xs py-1 px-3"
+                                  readOnly={true}
+                                />
+                              </div>
                             </div>
                             <div
                               style={{

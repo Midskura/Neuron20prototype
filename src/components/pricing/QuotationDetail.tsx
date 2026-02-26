@@ -9,13 +9,15 @@ interface QuotationDetailProps {
   userDepartment?: "BD" | "PD";
   onAcceptQuotation?: (quotation: QuotationNew) => void;
   onUpdate?: (quotation: QuotationNew) => void;
+  onDuplicate?: (quotation: QuotationNew) => void;
   onDelete?: () => void;
   onCreateTicket?: (quotation: QuotationNew) => void;
   onConvertToProject?: (projectId: string) => void;
+  onConvertToContract?: (quotationId: string) => void;
   currentUser?: { id: string; name: string; email: string; department: string } | null;
 }
 
-export function QuotationDetail({ quotation, onBack, onEdit, userDepartment, onAcceptQuotation, onUpdate, onDelete, onCreateTicket, onConvertToProject, currentUser }: QuotationDetailProps) {
+export function QuotationDetail({ quotation, onBack, onEdit, userDepartment, onAcceptQuotation, onUpdate, onDuplicate, onDelete, onCreateTicket, onConvertToProject, onConvertToContract, currentUser }: QuotationDetailProps) {
   const handleUpdate = (updatedQuotation: QuotationNew) => {
     if (onUpdate) {
       onUpdate(updatedQuotation);
@@ -30,9 +32,11 @@ export function QuotationDetail({ quotation, onBack, onEdit, userDepartment, onA
       userDepartment={userDepartment} 
       onAcceptQuotation={onAcceptQuotation}
       onUpdate={handleUpdate}
+      onDuplicate={onDuplicate}
       onDelete={onDelete}
       onCreateTicket={onCreateTicket}
       onConvertToProject={onConvertToProject}
+      onConvertToContract={onConvertToContract}
       currentUser={currentUser}
     />
   );

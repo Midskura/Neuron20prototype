@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { ContactsListWithFilters } from "./crm/ContactsListWithFilters";
 import { CustomersListWithFilters } from "./crm/CustomersListWithFilters";
 import { CustomerDetail } from "./bd/CustomerDetail";
@@ -17,9 +17,10 @@ import type { Contact } from "../types/bd";
 import type { Customer } from "../types/bd";
 import type { Task } from "../types/bd";
 import type { Activity } from "../types/bd";
-import type { QuotationNew, Project } from "../types/pricing";
+import type { QuotationNew, Project, QuotationType } from "../types/pricing";
 import { projectId, publicAnonKey } from '../utils/supabase/info';
 import { toast } from "./ui/toast-utils";
+import { useCachedFetch, useInvalidateCache } from "../hooks/useNeuronCache";
 
 type BDView = "contacts" | "customers" | "inquiries" | "projects" | "tasks" | "activities" | "budget-requests" | "reports";
 type SubView = "list" | "detail" | "builder";
@@ -46,10 +47,8 @@ export function BusinessDevelopment({ view: initialView = "contacts", onCreateIn
   const [selectedActivity, setSelectedActivity] = useState<Activity | null>(null);
   const [selectedQuotation, setSelectedQuotation] = useState<QuotationNew | null>(null);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
-  const [quotations, setQuotations] = useState<QuotationNew[]>([]);
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
   const [customerDetailKey, setCustomerDetailKey] = useState(0);
+  const [pendingQuotationType, setPendingQuotationType] = useState<QuotationType>("project");
   
   // State for fetched related data
   const [activityContactInfo, setActivityContactInfo] = useState<Contact | null>(null);
@@ -61,90 +60,49 @@ export function BusinessDevelopment({ view: initialView = "contacts", onCreateIn
   // Map department name to userDepartment format
   const userDepartment: "BD" | "PD" = "BD"; // Always BD since this is the Business Development module
 
-  // Fetch quotations from backend
-  const fetchQuotations = async () => {
-    setIsLoading(true);
-    try {
-      console.log('Fetching quotations from:', `${API_URL}/quotations?department=bd`);
-      
-      const response = await fetch(`${API_URL}/quotations?department=bd`, {
-        headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
-          'Content-Type': 'application/json'
-        }
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      const result = await response.json();
-      
-      if (result.success) {
-        setQuotations(result.data);
-        console.log(`Fetched ${result.data.length} quotations for BD`);
-      } else {
-        console.error('Error fetching quotations:', result.error);
-        alert('Error loading quotations: ' + result.error);
-      }
-    } catch (error) {
-      console.error('Error fetching quotations:', error);
-      alert('Unable to connect to server. Please check your connection or try again later.\n\nError: ' + error);
-      // Set empty array so UI doesn't break
-      setQuotations([]);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  // ── Cached data fetching ──────────────────────────────────
+  const invalidateCache = useInvalidateCache();
 
-  // Fetch projects from backend
-  const fetchProjects = async () => {
-    setIsLoading(true);
-    try {
-      console.log('Fetching projects from:', `${API_URL}/projects`);
-      
-      const response = await fetch(`${API_URL}/projects`, {
-        headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
-          'Content-Type': 'application/json'
-        }
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      const result = await response.json();
-      
-      if (result.success) {
-        setProjects(result.data);
-        console.log(`Fetched ${result.data.length} projects`);
-      } else {
-        console.error('Error fetching projects:', result.error);
-        toast.error("Error loading projects", result.error);
-      }
-    } catch (error) {
-      console.error('Error fetching projects:', error);
-      toast.error("Unable to connect to server");
-      setProjects([]);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  const quotationsFetcher = useCallback(async (): Promise<QuotationNew[]> => {
+    const response = await fetch(`${API_URL}/quotations?department=bd`, {
+      headers: { 'Authorization': `Bearer ${publicAnonKey}`, 'Content-Type': 'application/json' }
+    });
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+    const result = await response.json();
+    if (result.success) return result.data;
+    throw new Error(result.error);
+  }, []);
 
-  // Fetch quotations when view changes to inquiries
-  useEffect(() => {
-    if (view === "inquiries") {
-      fetchQuotations();
-    }
-  }, [view]);
+  const { data: cachedQuotations, isLoading: quotationsLoading, refresh: refreshQuotations } = useCachedFetch<QuotationNew[]>(
+    "quotations-bd",
+    quotationsFetcher,
+    [],
+  );
 
-  // Fetch projects when view changes to projects
-  useEffect(() => {
-    if (view === "projects") {
-      fetchProjects();
-    }
-  }, [view]);
+  const projectsFetcher = useCallback(async (): Promise<Project[]> => {
+    const response = await fetch(`${API_URL}/projects`, {
+      headers: { 'Authorization': `Bearer ${publicAnonKey}`, 'Content-Type': 'application/json' }
+    });
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+    const result = await response.json();
+    if (result.success) return result.data;
+    throw new Error(result.error);
+  }, []);
+
+  const { data: cachedProjects, isLoading: projectsLoading, refresh: refreshProjects } = useCachedFetch<Project[]>(
+    "projects",
+    projectsFetcher,
+    [],
+  );
+
+  // Sync cached data into local state for backward compat with mutation handlers
+  const quotations = cachedQuotations;
+  const projects = cachedProjects;
+  const isLoading = quotationsLoading || projectsLoading;
+
+  // Alias for backward compat
+  const fetchQuotations = async () => { invalidateCache("quotations-bd"); await refreshQuotations(); };
+  const fetchProjects = async () => { invalidateCache("projects"); await refreshProjects(); };
 
   // Reset to list view when switching between main views
   useEffect(() => {
@@ -402,6 +360,11 @@ export function BusinessDevelopment({ view: initialView = "contacts", onCreateIn
     setSubView("detail");
   };
 
+  const handleViewProject = (project: Project) => {
+    setSelectedProject(project);
+    setView("projects");
+  };
+
   const handleBackFromInquiry = () => {
     setSelectedQuotation(null);
     setSubView("list");
@@ -412,8 +375,9 @@ export function BusinessDevelopment({ view: initialView = "contacts", onCreateIn
     setSubView("builder");
   };
 
-  const handleCreateInquiry = () => {
+  const handleCreateInquiry = (quotationType?: QuotationType) => {
     setSelectedQuotation(null);
+    setPendingQuotationType(quotationType || "project");
     setSubView("builder");
   };
 
@@ -529,6 +493,32 @@ export function BusinessDevelopment({ view: initialView = "contacts", onCreateIn
     }
   };
 
+  const handleDuplicateInquiry = (quotation: QuotationNew) => {
+    // 📋 CLONE & EDIT STRATEGY FOR BD
+    // Similar to Pricing but preserves inquiry-specific context
+    
+    const duplicatedData: Partial<QuotationNew> = {
+      ...quotation,
+      id: undefined, // Force new ID generation
+      quote_number: undefined, // Force new Number generation
+      quotation_name: `${quotation.quotation_name} (Copy)`,
+      status: "Draft", // Reset status to Draft
+      created_date: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      project_id: undefined, // Unlink from any project
+      project_number: undefined,
+      // Preserve: customer_id, services, etc.
+    };
+
+    console.log("🔄 Duplicating inquiry for new record:", duplicatedData);
+    
+    // Set selected quotation (will be used as initialData in builder)
+    setSelectedQuotation(duplicatedData as QuotationNew);
+    
+    // Switch to builder view
+    setSubView("builder");
+  };
+
   return (
     <div className="h-full flex flex-col" style={{ background: "var(--neuron-bg-page)" }}>
       {/* Main Content */}
@@ -597,6 +587,7 @@ export function BusinessDevelopment({ view: initialView = "contacts", onCreateIn
                   setSubView("builder");
                 }}
                 onViewInquiry={onViewInquiry}
+                onViewProject={handleViewProject}
               />
             )}
             {subView === "builder" && selectedCustomer && (
@@ -715,6 +706,7 @@ export function BusinessDevelopment({ view: initialView = "contacts", onCreateIn
                 userDepartment="BD"
                 onUpdate={handleUpdateQuotation}
                 onEdit={handleEditInquiry}
+                onDuplicate={handleDuplicateInquiry}
                 onCreateTicket={onCreateTicket}
                 onConvertToProject={async (projectId) => {
                   try {
@@ -729,7 +721,6 @@ export function BusinessDevelopment({ view: initialView = "contacts", onCreateIn
                     const result = await response.json();
 
                     if (result.success && result.data) {
-                      // Debug: Check if services_metadata is present
                       console.log(`Project ${result.data.project_number} has ${result.data.services_metadata?.length || 0} service specifications`);
                       
                       // Navigate directly to the project detail
@@ -747,11 +738,15 @@ export function BusinessDevelopment({ view: initialView = "contacts", onCreateIn
                     }
                   } catch (error) {
                     console.error('Error fetching created project:', error);
-                    // Fallback: navigate to projects list
                     await fetchProjects();
                     setView("projects");
                     setSubView("list");
                   }
+                }}
+                onConvertToContract={() => {
+                  // Contract activated — stay on detail view (locked state shows automatically)
+                  // User can navigate to Contracts module via sidebar
+                  handleBackFromInquiry();
                 }}
                 currentUser={currentUser}
                 onDelete={handleDeleteQuotation}
@@ -764,6 +759,7 @@ export function BusinessDevelopment({ view: initialView = "contacts", onCreateIn
                 onSave={handleSaveInquiry}
                 onClose={handleBackFromInquiry}
                 builderMode="inquiry"
+                initialQuotationType={selectedQuotation?.quotation_type || pendingQuotationType}
                 initialData={selectedQuotation || (customerData ? { 
                   customer_id: customerData.id,
                   customer_name: customerData.company_name,
@@ -784,6 +780,7 @@ export function BusinessDevelopment({ view: initialView = "contacts", onCreateIn
               department: currentUser.department
             } : undefined}
             onCreateTicket={onCreateTicket}
+            initialProject={selectedProject}
           />
         )}
       </div>

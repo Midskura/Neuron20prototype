@@ -1,9 +1,17 @@
 import { useState } from "react";
-import { ArrowLeft, MoreVertical, Lock, Edit3, Clock, ChevronRight, User } from "lucide-react";
+import { ArrowLeft, MoreVertical, Lock, Clock, ChevronRight, User } from "lucide-react";
 import type { ForwardingBooking, ExecutionStatus } from "../../../types/operations";
-import { BillingsTab } from "../shared/BillingsTab";
+import { UnifiedBillingsTab } from "../../shared/billings/UnifiedBillingsTab";
+import { BookingRateCardButton } from "../../contracts/BookingRateCardButton";
 import { ExpensesTab } from "../shared/ExpensesTab";
 import { BookingCommentsTab } from "../../shared/BookingCommentsTab";
+import { useProjectFinancials } from "../../../hooks/useProjectFinancials";
+import { StatusSelector } from "../../StatusSelector";
+import { projectId, publicAnonKey } from "../../../utils/supabase/info";
+import { toast } from "../../ui/toast-utils";
+import { EditableMultiInputField } from "../../shared/EditableMultiInputField";
+import { EditableSectionCard, useSectionEdit } from "../../shared/EditableSectionCard";
+import { EditableField } from "../../shared/EditableField";
 
 interface ForwardingBookingDetailsProps {
   booking: ForwardingBooking;
@@ -87,6 +95,55 @@ export function ForwardingBookingDetails({
     setActivityLog(prev => [newActivity, ...prev]);
   };
 
+  const handleStatusUpdate = async (newStatus: ExecutionStatus) => {
+    const oldStatus = editedBooking.status;
+    if (oldStatus === newStatus) return;
+
+    // Optimistic Update
+    setEditedBooking(prev => ({
+      ...prev,
+      status: newStatus
+    }));
+
+    // Add activity log
+    const newActivity: ActivityLogEntry = {
+      id: `activity-${Date.now()}-${Math.random()}`,
+      timestamp: new Date(),
+      user: currentUser?.name || "Current User",
+      action: "status_changed",
+      statusFrom: oldStatus,
+      statusTo: newStatus
+    };
+    setActivityLog(prev => [newActivity, ...prev]);
+
+    // Persist to backend
+    try {
+      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-c142e950/forwarding-bookings/${booking.bookingId}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${publicAnonKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ status: newStatus })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update status');
+      }
+      
+      toast.success(`Status updated to ${newStatus}`);
+      onBookingUpdated();
+    } catch (error) {
+      console.error("Error updating status:", error);
+      toast.error("Failed to update status");
+      // Revert optimistic update
+      setEditedBooking(prev => ({ ...prev, status: oldStatus }));
+    }
+  };
+
+  const financials = useProjectFinancials(booking.projectNumber || "");
+  const bookingBillingItems = financials.billingItems.filter(item => item.booking_id === booking.bookingId);
+
   return (
     <div style={{ 
       backgroundColor: "white",
@@ -98,7 +155,7 @@ export function ForwardingBookingDetails({
       <div style={{
         padding: "20px 48px",
         borderBottom: "1px solid var(--neuron-ui-border)",
-        backgroundColor: "#F8FBFB",
+        backgroundColor: "white",
         display: "flex",
         justifyContent: "space-between",
         alignItems: "center"
@@ -142,7 +199,104 @@ export function ForwardingBookingDetails({
           </p>
         </div>
 
-        {/* Action Buttons */}
+        {/* Status Selector - Moved to Header */}
+        <StatusSelector 
+          status={editedBooking.status} 
+          onUpdateStatus={handleStatusUpdate}
+        />
+      </div>
+
+      {/* Merged Toolbar: Tabs + Actions */}
+      <div style={{
+        padding: "0 48px",
+        borderBottom: "1px solid var(--neuron-ui-border)",
+        backgroundColor: "white",
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        height: "56px"
+      }}>
+        {/* Tabs - Left Side */}
+        <div style={{ display: "flex", gap: "24px", height: "100%" }}>
+          <button
+            onClick={() => setActiveTab("booking-info")}
+            style={{
+              padding: "0 4px",
+              fontSize: "14px",
+              fontWeight: 500,
+              color: activeTab === "booking-info" ? "#0F766E" : "var(--neuron-ink-muted)",
+              background: "none",
+              borderTop: "none",
+              borderLeft: "none",
+              borderRight: "none",
+              borderBottom: activeTab === "booking-info" ? "2px solid #0F766E" : "2px solid transparent",
+              cursor: "pointer",
+              transition: "all 0.2s",
+              height: "100%"
+            }}
+          >
+            Booking Information
+          </button>
+          <button
+            onClick={() => setActiveTab("billings")}
+            style={{
+              padding: "0 4px",
+              fontSize: "14px",
+              fontWeight: 500,
+              color: activeTab === "billings" ? "#0F766E" : "var(--neuron-ink-muted)",
+              background: "none",
+              borderTop: "none",
+              borderLeft: "none",
+              borderRight: "none",
+              borderBottom: activeTab === "billings" ? "2px solid #0F766E" : "2px solid transparent",
+              cursor: "pointer",
+              transition: "all 0.2s",
+              height: "100%"
+            }}
+          >
+            Billings
+          </button>
+          <button
+            onClick={() => setActiveTab("expenses")}
+            style={{
+              padding: "0 4px",
+              fontSize: "14px",
+              fontWeight: 500,
+              color: activeTab === "expenses" ? "#0F766E" : "var(--neuron-ink-muted)",
+              background: "none",
+              borderTop: "none",
+              borderLeft: "none",
+              borderRight: "none",
+              borderBottom: activeTab === "expenses" ? "2px solid #0F766E" : "2px solid transparent",
+              cursor: "pointer",
+              transition: "all 0.2s",
+              height: "100%"
+            }}
+          >
+            Expenses
+          </button>
+          <button
+            onClick={() => setActiveTab("comments")}
+            style={{
+              padding: "0 4px",
+              fontSize: "14px",
+              fontWeight: 500,
+              color: activeTab === "comments" ? "#0F766E" : "var(--neuron-ink-muted)",
+              background: "none",
+              borderTop: "none",
+              borderLeft: "none",
+              borderRight: "none",
+              borderBottom: activeTab === "comments" ? "2px solid #0F766E" : "2px solid transparent",
+              cursor: "pointer",
+              transition: "all 0.2s",
+              height: "100%"
+            }}
+          >
+            Comments
+          </button>
+        </div>
+
+        {/* Action Buttons - Right Side */}
         <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
           {/* Activity Timeline Button */}
           <button
@@ -151,12 +305,12 @@ export function ForwardingBookingDetails({
               display: "flex",
               alignItems: "center",
               gap: "8px",
-              padding: "10px 20px",
+              padding: "8px 16px",
               backgroundColor: showTimeline ? "#E8F2EE" : "white",
-              border: `1.5px solid ${showTimeline ? "#0F766E" : "var(--neuron-ui-border)"}`,
-              borderRadius: "8px",
-              fontSize: "14px",
-              fontWeight: 600,
+              border: `1px solid ${showTimeline ? "#0F766E" : "var(--neuron-ui-border)"}`, // Thinner border to match other controls
+              borderRadius: "6px",
+              fontSize: "13px",
+              fontWeight: 500,
               color: showTimeline ? "#0F766E" : "var(--neuron-ink-secondary)",
               cursor: "pointer",
               transition: "all 0.2s ease"
@@ -176,26 +330,17 @@ export function ForwardingBookingDetails({
             Activity
           </button>
 
-          {/* Status Badge */}
+          {/* Movement Badge */}
           <div style={{
             padding: "8px 16px",
             borderRadius: "6px",
             fontSize: "13px",
-            fontWeight: 500,
-            backgroundColor: booking.status === "Draft" ? "#F3F4F6" : 
-                           booking.status === "In Progress" ? "#E8F2EE" :
-                           booking.status === "Completed" ? "#D1FAE5" :
-                           booking.status === "Cancelled" ? "#FEE2E2" : "#FFF3E0",
-            color: booking.status === "Draft" ? "#6B7280" :
-                   booking.status === "In Progress" ? "#0F766E" :
-                   booking.status === "Completed" ? "#10B981" :
-                   booking.status === "Cancelled" ? "#EF4444" : "#F59E0B",
-            border: `1px solid ${booking.status === "Draft" ? "#E5E7EB" : 
-                                 booking.status === "In Progress" ? "#0F766E33" :
-                                 booking.status === "Completed" ? "#10B98133" :
-                                 booking.status === "Cancelled" ? "#EF444433" : "#F59E0B33"}`
+            fontWeight: 600,
+            backgroundColor: booking.movement === "EXPORT" ? "#FFF7ED" : "#E6FFFA",
+            color: booking.movement === "EXPORT" ? "#C2410C" : "#0F766E",
+            border: `1px solid ${booking.movement === "EXPORT" ? "#FED7AA" : "#99F6E4"}`
           }}>
-            {booking.status}
+            {booking.movement || "IMPORT"}
           </div>
 
           {/* Kebab Menu */}
@@ -204,11 +349,11 @@ export function ForwardingBookingDetails({
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              width: "40px",
-              height: "40px",
+              width: "36px", // Slightly smaller
+              height: "36px", // Slightly smaller
               backgroundColor: "white",
-              border: "1.5px solid var(--neuron-ui-border)",
-              borderRadius: "8px",
+              border: "1px solid var(--neuron-ui-border)",
+              borderRadius: "6px",
               cursor: "pointer",
               transition: "all 0.2s ease"
             }}
@@ -222,84 +367,6 @@ export function ForwardingBookingDetails({
             <MoreVertical size={18} />
           </button>
         </div>
-      </div>
-
-      {/* Tabs */}
-      <div style={{
-        padding: "0 48px",
-        borderBottom: "1px solid var(--neuron-ui-border)",
-        backgroundColor: "white",
-        display: "flex",
-        gap: "32px"
-      }}>
-        <button
-          onClick={() => setActiveTab("booking-info")}
-          style={{
-            padding: "16px 0",
-            background: "none",
-            border: "none",
-            borderBottom: activeTab === "booking-info" ? "2px solid #0F766E" : "2px solid transparent",
-            color: activeTab === "booking-info" ? "#0F766E" : "#667085",
-            fontSize: "14px",
-            fontWeight: 600,
-            cursor: "pointer",
-            transition: "all 0.2s ease",
-            marginBottom: "-1px"
-          }}
-        >
-          Booking Information
-        </button>
-        <button
-          onClick={() => setActiveTab("billings")}
-          style={{
-            padding: "16px 0",
-            background: "none",
-            border: "none",
-            borderBottom: activeTab === "billings" ? "2px solid #0F766E" : "2px solid transparent",
-            color: activeTab === "billings" ? "#0F766E" : "#667085",
-            fontSize: "14px",
-            fontWeight: 600,
-            cursor: "pointer",
-            transition: "all 0.2s ease",
-            marginBottom: "-1px"
-          }}
-        >
-          Billings
-        </button>
-        <button
-          onClick={() => setActiveTab("expenses")}
-          style={{
-            padding: "16px 0",
-            background: "none",
-            border: "none",
-            borderBottom: activeTab === "expenses" ? "2px solid #0F766E" : "2px solid transparent",
-            color: activeTab === "expenses" ? "#0F766E" : "#667085",
-            fontSize: "14px",
-            fontWeight: 600,
-            cursor: "pointer",
-            transition: "all 0.2s ease",
-            marginBottom: "-1px"
-          }}
-        >
-          Expenses
-        </button>
-        <button
-          onClick={() => setActiveTab("comments")}
-          style={{
-            padding: "16px 0",
-            background: "none",
-            border: "none",
-            borderBottom: activeTab === "comments" ? "2px solid #0F766E" : "2px solid transparent",
-            color: activeTab === "comments" ? "#0F766E" : "#667085",
-            fontSize: "14px",
-            fontWeight: 600,
-            cursor: "pointer",
-            transition: "all 0.2s ease",
-            marginBottom: "-1px"
-          }}
-        >
-          Comments
-        </button>
       </div>
 
       {/* Content with Timeline Sidebar */}
@@ -323,11 +390,16 @@ export function ForwardingBookingDetails({
             />
           )}
           {activeTab === "billings" && (
-            <BillingsTab
-              bookingId={booking.bookingId}
-              bookingType="forwarding"
-              currentUser={currentUser}
-            />
+            <div className="flex flex-col bg-white p-12 min-h-[600px]">
+              <UnifiedBillingsTab
+                items={bookingBillingItems}
+                projectId={booking.projectNumber || ""}
+                bookingId={booking.bookingId}
+                onRefresh={financials.refresh}
+                isLoading={financials.isLoading}
+                extraActions={<BookingRateCardButton booking={booking} serviceType="Forwarding" existingBillingItems={bookingBillingItems} onRefresh={financials.refresh} />}
+              />
+            </div>
           )}
           {activeTab === "expenses" && (
             <ExpensesTab
@@ -586,249 +658,74 @@ function LockedField({ label, value, tooltip = "This field is locked because it'
   );
 }
 
-interface EditableFieldProps {
-  fieldName: string;
-  label: string;
-  value: string;
-  type?: "text" | "date" | "textarea" | "select";
-  options?: string[];
-  required?: boolean;
-  placeholder?: string;
-  status: ExecutionStatus;
-  onSave?: (value: string) => void;
-}
+// EditableField is now imported from shared/EditableField.tsx
 
-function EditableField({ 
-  fieldName,
-  label, 
-  value, 
-  type = "text", 
-  options = [],
-  required = false,
-  placeholder = "Click to add...",
-  status,
-  onSave
-}: EditableFieldProps) {
-  const [isEditing, setIsEditing] = useState(false);
-  const [editValue, setEditValue] = useState(value);
-  const [isSaving, setIsSaving] = useState(false);
-  const [saveSuccess, setSaveSuccess] = useState(false);
+// ── Field label mapping for activity log ──
+const FIELD_LABELS: Record<string, string> = {
+  accountHandler: "Account Handler",
+  typeOfEntry: "Type of Entry",
+  cargoType: "Cargo Type",
+  deliveryAddress: "Delivery Address",
+  consignee: "Consignee",
+  shipper: "Shipper",
+  mblMawb: "MBL/MAWB",
+  hblHawb: "HBL/HAWB",
+  bookingReferenceNumber: "Booking Reference No.",
+  registryNumber: "Registry Number",
+  carrier: "Carrier",
+  forwarder: "Forwarder",
+  countryOfOrigin: "Country of Origin",
+  aolPol: "AOL/POL",
+  aodPod: "AOD/POD",
+  eta: "ETA",
+  lct: "LCT",
+  transitTime: "Transit Time",
+  route: "Route",
+  grossWeight: "Gross Weight",
+  dimensions: "Dimensions",
+  commodityDescription: "Commodity Description",
+  preferentialTreatment: "Preferential Treatment",
+  warehouseLocation: "Warehouse Location",
+  containerNumbers: "Container Numbers",
+  detDemValidity: "Det/Dem Validity",
+  storageValidity: "Storage Validity",
+  croAvailability: "CRO Availability",
+  containerDeposit: "Container Deposit",
+  emptyReturn: "Empty Return",
+  tareWeight: "Tare Weight",
+  vgm: "VGM",
+  truckingName: "Trucking Name",
+  plateNumber: "Plate Number",
+  pickupLocation: "Pickup Location",
+  warehouseAddress: "Warehouse Address",
+};
 
-  const lockStatus = isFieldLocked(fieldName, status);
-  const isEmpty = !value || value.trim() === "";
-
-  const handleSave = async () => {
-    setIsSaving(true);
-    
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 300));
-    
-    if (onSave) {
-      onSave(editValue);
+/**
+ * Diffs a draft against the original booking for the given fields,
+ * logs activity for each changed field, and merges updates into editedBooking.
+ */
+function diffAndApply(
+  original: ForwardingBooking,
+  draft: ForwardingBooking,
+  fields: string[],
+  addActivity: (fieldName: string, oldValue: string, newValue: string) => void,
+  setEditedBooking: (fn: (prev: ForwardingBooking) => ForwardingBooking) => void,
+  onBookingUpdated: () => void,
+) {
+  const updates: Record<string, any> = {};
+  fields.forEach((field) => {
+    const oldVal = String((original as any)[field] ?? "");
+    const newVal = String((draft as any)[field] ?? "");
+    if (oldVal !== newVal) {
+      addActivity(FIELD_LABELS[field] || field, oldVal, newVal);
+      updates[field] = (draft as any)[field];
     }
-    
-    setIsSaving(false);
-    setSaveSuccess(true);
-    setIsEditing(false);
-    
-    setTimeout(() => setSaveSuccess(false), 2000);
-  };
-
-  const handleCancel = () => {
-    setEditValue(value);
-    setIsEditing(false);
-  };
-
-  // If field is locked by status, show as locked field
-  if (lockStatus.locked) {
-    return (
-      <div>
-        <label style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "6px",
-          fontSize: "13px",
-          fontWeight: 500,
-          color: "var(--neuron-ink-base)",
-          marginBottom: "8px"
-        }}>
-          {label}
-          {required && <span style={{ color: "#EF4444" }}>*</span>}
-          <Lock size={12} color="#9CA3AF" title={lockStatus.reason} style={{ cursor: "help" }} />
-        </label>
-        <div style={{
-          padding: "10px 14px",
-          backgroundColor: "#F9FAFB",
-          border: "1px solid #E5E7EB",
-          borderRadius: "6px",
-          fontSize: "14px",
-          color: "#6B7280",
-          cursor: "not-allowed"
-        }}>
-          {value || "—"}
-        </div>
-      </div>
-    );
+  });
+  if (Object.keys(updates).length > 0) {
+    setEditedBooking((prev: ForwardingBooking) => ({ ...prev, ...updates }));
+    onBookingUpdated();
+    toast.success("Changes saved");
   }
-
-  if (isEditing) {
-    return (
-      <div>
-        <label style={{
-          display: "block",
-          fontSize: "13px",
-          fontWeight: 500,
-          color: "var(--neuron-ink-base)",
-          marginBottom: "8px"
-        }}>
-          {label} {required && <span style={{ color: "#EF4444" }}>*</span>}
-        </label>
-        <div style={{ position: "relative" }}>
-          {type === "textarea" ? (
-            <textarea
-              value={editValue}
-              onChange={(e) => setEditValue(e.target.value)}
-              onBlur={handleSave}
-              autoFocus
-              rows={3}
-              style={{
-                width: "100%",
-                padding: "10px 14px",
-                backgroundColor: "white",
-                border: "2px solid #0F766E",
-                borderRadius: "6px",
-                fontSize: "14px",
-                color: "var(--neuron-ink-primary)",
-                outline: "none",
-                resize: "vertical"
-              }}
-            />
-          ) : type === "select" ? (
-            <select
-              value={editValue}
-              onChange={(e) => setEditValue(e.target.value)}
-              onBlur={handleSave}
-              autoFocus
-              style={{
-                width: "100%",
-                padding: "10px 14px",
-                backgroundColor: "white",
-                border: "2px solid #0F766E",
-                borderRadius: "6px",
-                fontSize: "14px",
-                color: "var(--neuron-ink-primary)",
-                outline: "none"
-              }}
-            >
-              <option value="">Select...</option>
-              {options.map(opt => (
-                <option key={opt} value={opt}>{opt}</option>
-              ))}
-            </select>
-          ) : (
-            <input
-              type={type}
-              value={editValue}
-              onChange={(e) => setEditValue(e.target.value)}
-              onBlur={handleSave}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleSave();
-                if (e.key === "Escape") handleCancel();
-              }}
-              autoFocus
-              style={{
-                width: "100%",
-                padding: "10px 14px",
-                backgroundColor: "white",
-                border: "2px solid #0F766E",
-                borderRadius: "6px",
-                fontSize: "14px",
-                color: "var(--neuron-ink-primary)",
-                outline: "none"
-              }}
-            />
-          )}
-          {isSaving && (
-            <span style={{
-              position: "absolute",
-              right: "14px",
-              top: "50%",
-              transform: "translateY(-50%)",
-              fontSize: "12px",
-              color: "#0F766E"
-            }}>
-              Saving...
-            </span>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div>
-      <label style={{
-        display: "block",
-        fontSize: "13px",
-        fontWeight: 500,
-        color: "var(--neuron-ink-base)",
-        marginBottom: "8px"
-      }}>
-        {label} {required && <span style={{ color: "#EF4444" }}>*</span>}
-      </label>
-      <div
-        onClick={() => setIsEditing(true)}
-        style={{
-          padding: "10px 14px",
-          backgroundColor: isEmpty ? "white" : "#FAFBFC",
-          border: isEmpty && required ? "2px dashed #FCD34D" : isEmpty ? "2px dashed #E5E7EB" : "1px solid #E5E7EB",
-          borderRadius: "6px",
-          fontSize: "14px",
-          color: isEmpty ? "#9CA3AF" : "var(--neuron-ink-primary)",
-          cursor: "pointer",
-          transition: "all 0.2s ease",
-          position: "relative",
-          minHeight: type === "textarea" ? "80px" : "auto"
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.borderColor = "#0F766E";
-          e.currentTarget.style.backgroundColor = "white";
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.borderColor = isEmpty && required ? "#FCD34D" : "#E5E7EB";
-          e.currentTarget.style.backgroundColor = isEmpty ? "white" : "#FAFBFC";
-        }}
-      >
-        {isEmpty ? (
-          <span style={{ color: "#9CA3AF" }}>{placeholder}</span>
-        ) : type === "date" && value ? (
-          new Date(value).toLocaleDateString()
-        ) : (
-          value
-        )}
-        {!isEmpty && (
-          <Edit3 
-            size={14} 
-            style={{ 
-              position: "absolute", 
-              right: "14px", 
-              top: "50%", 
-              transform: "translateY(-50%)",
-              color: "#9CA3AF",
-              opacity: 0
-            }}
-            className="edit-icon"
-          />
-        )}
-        {/* Removed "✓ Saved" indicator */}
-      </div>
-      <style>{`
-        div:hover .edit-icon {
-          opacity: 1 !important;
-        }
-      `}</style>
-    </div>
-  );
 }
 
 // Booking Information Tab Component
@@ -836,41 +733,39 @@ function BookingInformationTab({
   booking,
   onBookingUpdated,
   addActivity,
-  setEditedBooking
+  setEditedBooking,
 }: {
   booking: ForwardingBooking;
   onBookingUpdated: () => void;
   addActivity: (fieldName: string, oldValue: string, newValue: string) => void;
-  setEditedBooking: (booking: ForwardingBooking) => void;
+  setEditedBooking: (fn: any) => void;
 }) {
+  // Per-section edit state via shared hook
+  const generalSection = useSectionEdit(booking);
+  const shipmentSection = useSectionEdit(booking);
+  const containerSection = useSectionEdit(booking);
+  const warehouseSection = useSectionEdit(booking);
+
+  // Field lists per section (for diff on save)
+  const GENERAL_FIELDS = ["accountHandler", "typeOfEntry", "cargoType", "deliveryAddress"];
+  const SHIPMENT_FIELDS = [
+    "consignee", "shipper", "mblMawb", "hblHawb", "bookingReferenceNumber",
+    "registryNumber", "carrier", "forwarder", "countryOfOrigin",
+    "aolPol", "aodPod", "eta", "lct", "transitTime", "route",
+    "grossWeight", "dimensions", "commodityDescription", "preferentialTreatment",
+  ];
+  const CONTAINER_FIELDS = [
+    "containerNumbers", "detDemValidity", "storageValidity", "croAvailability",
+    "containerDeposit", "emptyReturn", "tareWeight", "vgm",
+    "truckingName", "plateNumber", "pickupLocation", "warehouseAddress",
+  ];
+  const WAREHOUSE_FIELDS = ["warehouseLocation"];
   
-  // Helper to format field names for activity log
-  const formatFieldName = (fieldName: string): string => {
-    const fieldLabels: Record<string, string> = {
-      accountHandler: "Account Handler",
-      typeOfEntry: "Type of Entry",
-      cargoType: "Cargo Type",
-      deliveryAddress: "Delivery Address",
-      consignee: "Consignee",
-      shipper: "Shipper",
-      mblMawb: "MBL/MAWB",
-      hblHawb: "HBL/HAWB",
-      registryNumber: "Registry Number",
-      carrier: "Carrier",
-      forwarder: "Forwarder",
-      countryOfOrigin: "Country of Origin",
-      aolPol: "AOL/POL",
-      aodPod: "AOD/POD",
-      eta: "ETA",
-      grossWeight: "Gross Weight",
-      dimensions: "Dimensions",
-      commodityDescription: "Commodity Description",
-      preferentialTreatment: "Preferential Treatment",
-      warehouseLocation: "Warehouse Location"
-    };
-    return fieldLabels[fieldName] || fieldName;
-  };
-  
+  const gMode = generalSection.isEditing ? "edit" : "view";
+  const sMode = shipmentSection.isEditing ? "edit" : "view";
+  const cMode = containerSection.isEditing ? "edit" : "view";
+  const wMode = warehouseSection.isEditing ? "edit" : "view";
+
   return (
     <div style={{ 
       padding: "32px 48px",
@@ -878,128 +773,71 @@ function BookingInformationTab({
       margin: "0 auto"
     }}>
       
-      {/* General Information Section */}
-      <div style={{
-        backgroundColor: "white",
-        border: "1px solid var(--neuron-ui-border)",
-        borderRadius: "8px",
-        padding: "24px",
-        marginBottom: "24px"
-      }}>
-        <div style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: "20px"
-        }}>
-          <h2 style={{
-            fontSize: "16px",
-            fontWeight: 600,
-            color: "var(--neuron-brand-green)",
-            margin: 0
-          }}>
-            General Information
-          </h2>
-          <span style={{
-            fontSize: "12px",
-            color: "var(--neuron-ink-muted)"
-          }}>
-            Last updated by {booking.accountHandler || "System"}, {new Date(booking.updatedAt).toLocaleString()}
-          </span>
-        </div>
-
+      {/* ── General Information ── */}
+      <EditableSectionCard
+        title="General Information"
+        subtitle={`Last updated by ${booking.accountHandler || "System"}, ${new Date(booking.updatedAt).toLocaleString()}`}
+        isEditing={generalSection.isEditing}
+        onEdit={generalSection.startEditing}
+        onCancel={generalSection.cancel}
+        onSave={() => {
+          const draft = generalSection.save();
+          diffAndApply(booking, draft, GENERAL_FIELDS, addActivity, setEditedBooking, onBookingUpdated);
+        }}
+      >
         <div style={{ display: "grid", gap: "20px" }}>
-          {/* Row 1: Customer Name, Account Owner */}
+          {/* Row 1: Customer Name, Account Owner (always locked) */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}>
-            <LockedField 
-              label="Customer Name" 
-              value={booking.customerName}
-            />
-            <LockedField 
-              label="Account Owner" 
-              value={booking.accountOwner || ""}
-            />
+            <LockedField label="Customer Name" value={booking.customerName} />
+            <LockedField label="Account Owner" value={booking.accountOwner || ""} />
           </div>
 
           {/* Row 2: Account Handler, Mode, Type of Entry */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "20px" }}>
             <EditableField
-              fieldName="accountHandler"
               label="Account Handler"
-              value={booking.accountHandler || ""}
-              status={booking.status}
+              value={generalSection.draft.accountHandler || ""}
+              mode={gMode}
               placeholder="Assign handler..."
-              onSave={(value) => {
-                console.log("Saving Account Handler:", value);
-                onBookingUpdated();
-                addActivity("accountHandler", booking.accountHandler || "", value);
-                setEditedBooking(prev => ({ ...prev, accountHandler: value }));
-              }}
+              onChange={(v) => generalSection.updateField("accountHandler", v)}
             />
-            <LockedField 
-              label="Mode" 
-              value={booking.mode}
-            />
+            <LockedField label="Mode" value={booking.mode} />
             <EditableField
-              fieldName="typeOfEntry"
               label="Type of Entry"
-              value={booking.typeOfEntry || ""}
-              status={booking.status}
+              value={generalSection.draft.typeOfEntry || ""}
+              mode={gMode}
               placeholder="Enter type..."
-              onSave={(value) => {
-                console.log("Saving Type of Entry:", value);
-                onBookingUpdated();
-                addActivity("typeOfEntry", booking.typeOfEntry || "", value);
-                setEditedBooking(prev => ({ ...prev, typeOfEntry: value }));
-              }}
+              onChange={(v) => generalSection.updateField("typeOfEntry", v)}
             />
           </div>
 
           {/* Row 3: Cargo Type, Quotation Reference, Project Number */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "20px" }}>
             <EditableField
-              fieldName="cargoType"
               label="Cargo Type"
-              value={booking.cargoType || ""}
-              status={booking.status}
+              value={generalSection.draft.cargoType || ""}
+              mode={gMode}
               placeholder="Enter cargo type..."
-              onSave={(value) => {
-                console.log("Saving Cargo Type:", value);
-                onBookingUpdated();
-                addActivity("cargoType", booking.cargoType || "", value);
-                setEditedBooking(prev => ({ ...prev, cargoType: value }));
-              }}
+              onChange={(v) => generalSection.updateField("cargoType", v)}
             />
-            <LockedField 
-              label="Quotation Reference" 
-              value={booking.quotationReferenceNumber || ""}
-            />
+            <LockedField label="Quotation Reference" value={booking.quotationReferenceNumber || ""} />
             {booking.projectNumber && (
-              <LockedField 
-                label="Project Number" 
-                value={booking.projectNumber}
-              />
+              <LockedField label="Project Number" value={booking.projectNumber} />
             )}
           </div>
 
           {/* Row 4: Delivery Address */}
           <EditableField
-            fieldName="deliveryAddress"
             label="Delivery Address"
-            value={booking.deliveryAddress || ""}
+            value={generalSection.draft.deliveryAddress || ""}
+            mode={gMode}
             type="textarea"
-            status={booking.status}
             placeholder="Enter delivery address..."
-            onSave={(value) => {
-              console.log("Saving Delivery Address:", value);
-              onBookingUpdated();
-              addActivity("deliveryAddress", booking.deliveryAddress || "", value);
-              setEditedBooking(prev => ({ ...prev, deliveryAddress: value }));
-            }}
+            onChange={(v) => generalSection.updateField("deliveryAddress", v)}
           />
         </div>
 
-        {/* Status-dependent fields */}
+        {/* Status-dependent fields (always visible, not editable via section) */}
         {booking.status === "Pending" && booking.pendingReason && (
           <div style={{ marginTop: "20px", padding: "16px", backgroundColor: "#FFF3E0", border: "1px solid #F59E0B33", borderRadius: "8px" }}>
             <label style={{ display: "block", fontSize: "13px", fontWeight: 500, color: "#F59E0B", marginBottom: "8px" }}>
@@ -1022,419 +860,385 @@ function BookingInformationTab({
             </p>
           </div>
         )}
-      </div>
+      </EditableSectionCard>
 
-      {/* Shipment Information Section */}
-      <div style={{
-        backgroundColor: "white",
-        border: "1px solid var(--neuron-ui-border)",
-        borderRadius: "8px",
-        padding: "24px",
-        marginBottom: "24px"
-      }}>
-        <div style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: "20px"
-        }}>
-          <h2 style={{
-            fontSize: "16px",
-            fontWeight: 600,
-            color: "var(--neuron-brand-green)",
-            margin: 0
-          }}>
-            Shipment Information
-          </h2>
-          <span style={{
-            fontSize: "12px",
-            color: "var(--neuron-ink-muted)"
-          }}>
-            {booking.status === "Completed" ? "All fields locked" : "Click any field to edit"}
-          </span>
-        </div>
-
+      {/* ── Shipment Information ── */}
+      <EditableSectionCard
+        title="Shipment Information"
+        isEditing={shipmentSection.isEditing}
+        onEdit={shipmentSection.startEditing}
+        onCancel={shipmentSection.cancel}
+        onSave={() => {
+          const draft = shipmentSection.save();
+          diffAndApply(booking, draft, SHIPMENT_FIELDS, addActivity, setEditedBooking, onBookingUpdated);
+        }}
+      >
         <div style={{ display: "grid", gap: "20px" }}>
           {/* Row 1: Consignee, Shipper */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}>
             <EditableField
-              fieldName="consignee"
               label="Consignee"
-              value={booking.consignee || ""}
-              status={booking.status}
-              placeholder="Click to add consignee..."
+              value={shipmentSection.draft.consignee || ""}
+              mode={sMode}
+              placeholder="Enter consignee..."
               required
-              onSave={(value) => {
-                console.log("Saving Consignee:", value);
-                onBookingUpdated();
-                addActivity("consignee", booking.consignee || "", value);
-                setEditedBooking(prev => ({ ...prev, consignee: value }));
-              }}
+              onChange={(v) => shipmentSection.updateField("consignee", v)}
             />
             <EditableField
-              fieldName="shipper"
               label="Shipper"
-              value={booking.shipper || ""}
-              status={booking.status}
-              placeholder="Click to add shipper..."
+              value={shipmentSection.draft.shipper || ""}
+              mode={sMode}
+              placeholder="Enter shipper..."
               required
-              onSave={(value) => {
-                console.log("Saving Shipper:", value);
-                onBookingUpdated();
-                addActivity("shipper", booking.shipper || "", value);
-                setEditedBooking(prev => ({ ...prev, shipper: value }));
-              }}
+              onChange={(v) => shipmentSection.updateField("shipper", v)}
             />
           </div>
 
-          {/* Row 2: MBL/MAWB, HBL/HAWB, Registry Number */}
+          {/* Row 2: MBL/MAWB or Booking Ref, HBL/HAWB, Registry */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "20px" }}>
-            <EditableField
-              fieldName="mblMawb"
-              label="MBL/MAWB"
-              value={booking.mblMawb || ""}
-              status={booking.status}
-              placeholder="Enter MBL/MAWB..."
-              onSave={(value) => {
-                console.log("Saving MBL/MAWB:", value);
-                onBookingUpdated();
-                addActivity("mblMawb", booking.mblMawb || "", value);
-                setEditedBooking(prev => ({ ...prev, mblMawb: value }));
-              }}
-            />
-            <EditableField
+            {booking.movement === "EXPORT" ? (
+              <EditableMultiInputField
+                fieldName="bookingReferenceNumber"
+                label="Booking Reference No."
+                value={shipmentSection.draft.bookingReferenceNumber || ""}
+                status={booking.status}
+                placeholder="Enter booking ref..."
+                addButtonText="Add Reference No."
+                mode={sMode}
+                onChange={(v) => shipmentSection.updateField("bookingReferenceNumber", v)}
+              />
+            ) : (
+              <EditableMultiInputField
+                fieldName="mblMawb"
+                label="MBL/MAWB"
+                value={shipmentSection.draft.mblMawb || ""}
+                status={booking.status}
+                placeholder="Enter MBL/MAWB..."
+                addButtonText="Add MBL/MAWB"
+                mode={sMode}
+                onChange={(v) => shipmentSection.updateField("mblMawb", v)}
+              />
+            )}
+            <EditableMultiInputField
               fieldName="hblHawb"
-              label="HBL/HAWB"
-              value={booking.hblHawb || ""}
+              label={booking.movement === "EXPORT" ? "House Bill of Lading" : "HBL/HAWB"}
+              value={shipmentSection.draft.hblHawb || ""}
               status={booking.status}
               placeholder="Enter HBL/HAWB..."
-              onSave={(value) => {
-                console.log("Saving HBL/HAWB:", value);
-                onBookingUpdated();
-                addActivity("hblHawb", booking.hblHawb || "", value);
-                setEditedBooking(prev => ({ ...prev, hblHawb: value }));
-              }}
+              addButtonText="Add HBL/HAWB"
+              mode={sMode}
+              onChange={(v) => shipmentSection.updateField("hblHawb", v)}
             />
-            <EditableField
+            <EditableMultiInputField
               fieldName="registryNumber"
               label="Registry Number"
-              value={booking.registryNumber || ""}
+              value={shipmentSection.draft.registryNumber || ""}
               status={booking.status}
               placeholder="Enter registry number..."
-              onSave={(value) => {
-                console.log("Saving Registry Number:", value);
-                onBookingUpdated();
-                addActivity("registryNumber", booking.registryNumber || "", value);
-                setEditedBooking(prev => ({ ...prev, registryNumber: value }));
-              }}
+              addButtonText="Add Registry"
+              mode={sMode}
+              onChange={(v) => shipmentSection.updateField("registryNumber", v)}
             />
           </div>
 
           {/* Row 3: Carrier, Forwarder, Country of Origin */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "20px" }}>
             <EditableField
-              fieldName="carrier"
               label="Carrier"
-              value={booking.carrier || ""}
-              status={booking.status}
+              value={shipmentSection.draft.carrier || ""}
+              mode={sMode}
               placeholder="Enter carrier..."
-              onSave={(value) => {
-                console.log("Saving Carrier:", value);
-                onBookingUpdated();
-                addActivity("carrier", booking.carrier || "", value);
-                setEditedBooking(prev => ({ ...prev, carrier: value }));
-              }}
+              onChange={(v) => shipmentSection.updateField("carrier", v)}
             />
             <EditableField
-              fieldName="forwarder"
               label="Forwarder"
-              value={booking.forwarder || ""}
-              status={booking.status}
+              value={shipmentSection.draft.forwarder || ""}
+              mode={sMode}
               placeholder="Enter forwarder..."
-              onSave={(value) => {
-                console.log("Saving Forwarder:", value);
-                onBookingUpdated();
-                addActivity("forwarder", booking.forwarder || "", value);
-                setEditedBooking(prev => ({ ...prev, forwarder: value }));
-              }}
+              onChange={(v) => shipmentSection.updateField("forwarder", v)}
             />
             <EditableField
-              fieldName="countryOfOrigin"
               label="Country of Origin"
-              value={booking.countryOfOrigin || ""}
-              status={booking.status}
+              value={shipmentSection.draft.countryOfOrigin || ""}
+              mode={sMode}
               placeholder="Enter country..."
-              onSave={(value) => {
-                console.log("Saving Country of Origin:", value);
-                onBookingUpdated();
-                addActivity("countryOfOrigin", booking.countryOfOrigin || "", value);
-                setEditedBooking(prev => ({ ...prev, countryOfOrigin: value }));
-              }}
+              onChange={(v) => shipmentSection.updateField("countryOfOrigin", v)}
             />
           </div>
 
           {/* Row 4: AOL/POL, AOD/POD, ETA */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "20px" }}>
             <EditableField
-              fieldName="aolPol"
               label="AOL/POL"
-              value={booking.aolPol || ""}
-              status={booking.status}
+              value={shipmentSection.draft.aolPol || ""}
+              mode={sMode}
               placeholder="Enter airport/port of loading..."
-              onSave={(value) => {
-                console.log("Saving AOL/POL:", value);
-                onBookingUpdated();
-                addActivity("aolPol", booking.aolPol || "", value);
-                setEditedBooking(prev => ({ ...prev, aolPol: value }));
-              }}
+              onChange={(v) => shipmentSection.updateField("aolPol", v)}
             />
             <EditableField
-              fieldName="aodPod"
               label="AOD/POD"
-              value={booking.aodPod || ""}
-              status={booking.status}
+              value={shipmentSection.draft.aodPod || ""}
+              mode={sMode}
               placeholder="Enter airport/port of discharge..."
-              onSave={(value) => {
-                console.log("Saving AOD/POD:", value);
-                onBookingUpdated();
-                addActivity("aodPod", booking.aodPod || "", value);
-                setEditedBooking(prev => ({ ...prev, aodPod: value }));
-              }}
+              onChange={(v) => shipmentSection.updateField("aodPod", v)}
             />
             <EditableField
-              fieldName="eta"
               label="ETA"
-              value={booking.eta ? new Date(booking.eta).toISOString().split('T')[0] : ""}
+              value={shipmentSection.draft.eta ? new Date(shipmentSection.draft.eta).toISOString().split('T')[0] : ""}
               type="date"
-              status={booking.status}
+              mode={sMode}
               placeholder="Set ETA..."
-              onSave={(value) => {
-                console.log("Saving ETA:", value);
-                onBookingUpdated();
-                addActivity("eta", booking.eta || "", value);
-                setEditedBooking(prev => ({ ...prev, eta: value }));
-              }}
+              onChange={(v) => shipmentSection.updateField("eta", v)}
             />
           </div>
+
+          {/* Export Specifics: LCT, Transit Time, Route */}
+          {booking.movement === "EXPORT" && (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "20px" }}>
+              <EditableField
+                label="LCT (Last Cargo Time)"
+                value={shipmentSection.draft.lct || ""}
+                type="date"
+                mode={sMode}
+                onChange={(v) => shipmentSection.updateField("lct", v)}
+              />
+              <EditableField
+                label="Transit Time"
+                value={shipmentSection.draft.transitTime || ""}
+                mode={sMode}
+                placeholder="e.g. 15 days"
+                onChange={(v) => shipmentSection.updateField("transitTime", v)}
+              />
+              <EditableField
+                label="Route"
+                value={shipmentSection.draft.route || ""}
+                mode={sMode}
+                placeholder="e.g. MNL-SIN-LAX"
+                onChange={(v) => shipmentSection.updateField("route", v)}
+              />
+            </div>
+          )}
 
           {/* Row 5: Gross Weight, Dimensions */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}>
             <EditableField
-              fieldName="grossWeight"
               label="Gross Weight"
-              value={booking.grossWeight || ""}
-              status={booking.status}
+              value={shipmentSection.draft.grossWeight || ""}
+              mode={sMode}
               placeholder="Enter weight (e.g., 1000 kg)..."
-              onSave={(value) => {
-                console.log("Saving Gross Weight:", value);
-                onBookingUpdated();
-                addActivity("grossWeight", booking.grossWeight || "", value);
-                setEditedBooking(prev => ({ ...prev, grossWeight: value }));
-              }}
+              onChange={(v) => shipmentSection.updateField("grossWeight", v)}
             />
             <EditableField
-              fieldName="dimensions"
               label="Dimensions"
-              value={booking.dimensions || ""}
-              status={booking.status}
+              value={shipmentSection.draft.dimensions || ""}
+              mode={sMode}
               placeholder="Enter dimensions (e.g., 120x80x100 cm)..."
-              onSave={(value) => {
-                console.log("Saving Dimensions:", value);
-                onBookingUpdated();
-                addActivity("dimensions", booking.dimensions || "", value);
-                setEditedBooking(prev => ({ ...prev, dimensions: value }));
-              }}
+              onChange={(v) => shipmentSection.updateField("dimensions", v)}
             />
           </div>
 
           {/* Row 6: Commodity Description */}
           <EditableField
-            fieldName="commodityDescription"
             label="Commodity Description"
-            value={booking.commodityDescription || ""}
+            value={shipmentSection.draft.commodityDescription || ""}
             type="textarea"
-            status={booking.status}
+            mode={sMode}
             placeholder="Enter detailed commodity description..."
-            onSave={(value) => {
-              console.log("Saving Commodity Description:", value);
-              onBookingUpdated();
-              addActivity("commodityDescription", booking.commodityDescription || "", value);
-              setEditedBooking(prev => ({ ...prev, commodityDescription: value }));
-            }}
+            onChange={(v) => shipmentSection.updateField("commodityDescription", v)}
           />
 
           {/* Preferential Treatment */}
           <EditableField
-            fieldName="preferentialTreatment"
             label="Preferential Treatment"
-            value={booking.preferentialTreatment || ""}
-            status={booking.status}
+            value={shipmentSection.draft.preferentialTreatment || ""}
+            mode={sMode}
             placeholder="Enter preferential treatment details..."
-            onSave={(value) => {
-              console.log("Saving Preferential Treatment:", value);
-              onBookingUpdated();
-              addActivity("preferentialTreatment", booking.preferentialTreatment || "", value);
-              setEditedBooking(prev => ({ ...prev, preferentialTreatment: value }));
-            }}
+            onChange={(v) => shipmentSection.updateField("preferentialTreatment", v)}
           />
         </div>
-      </div>
+      </EditableSectionCard>
 
-      {/* Container Details (FCL only) */}
+      {/* ── Container Details (FCL only) ── */}
       {booking.mode === "FCL" && (
-        <div style={{
-          backgroundColor: "white",
-          border: "1px solid var(--neuron-ui-border)",
-          borderRadius: "8px",
-          padding: "24px",
-          marginBottom: "24px"
-        }}>
-          <h2 style={{
-            fontSize: "16px",
-            fontWeight: 600,
-            color: "var(--neuron-brand-green)",
-            marginBottom: "20px"
-          }}>
-            Container Details
-          </h2>
-
+        <EditableSectionCard
+          title="Container Details"
+          isEditing={containerSection.isEditing}
+          onEdit={containerSection.startEditing}
+          onCancel={containerSection.cancel}
+          onSave={() => {
+            const draft = containerSection.save();
+            // Special handling: containerNumbers is stored as string[] but displayed as CSV
+            const cnOld = booking.containerNumbers?.join(", ") || "";
+            const cnNew = draft.containerNumbers
+              ? (Array.isArray(draft.containerNumbers)
+                  ? draft.containerNumbers.join(", ")
+                  : String(draft.containerNumbers))
+              : "";
+            if (cnOld !== cnNew) {
+              addActivity("Container Numbers", cnOld, cnNew);
+            }
+            // containerDeposit: convert "Yes"/"No" string back to boolean
+            const depositVal = (draft as any)._containerDepositStr;
+            if (depositVal !== undefined) {
+              (draft as any).containerDeposit = depositVal === "Yes";
+            }
+            // Diff remaining fields normally
+            const otherFields = CONTAINER_FIELDS.filter(f => f !== "containerNumbers" && f !== "containerDeposit");
+            diffAndApply(booking, draft, otherFields, addActivity, setEditedBooking, onBookingUpdated);
+            // Apply container-specific updates
+            const updates: any = {};
+            if (cnOld !== cnNew) {
+              updates.containerNumbers = cnNew.split(",").map((c: string) => c.trim()).filter(Boolean);
+            }
+            if (depositVal !== undefined && (booking.containerDeposit ? "Yes" : "No") !== depositVal) {
+              addActivity("Container Deposit", booking.containerDeposit ? "Yes" : "No", depositVal);
+              updates.containerDeposit = depositVal === "Yes";
+            }
+            if (Object.keys(updates).length > 0) {
+              setEditedBooking((prev: any) => ({ ...prev, ...updates }));
+              onBookingUpdated();
+            }
+          }}
+        >
           <div style={{ display: "grid", gap: "20px" }}>
-            <EditableField
+            <EditableMultiInputField
               fieldName="containerNumbers"
               label="Container Numbers"
-              value={booking.containerNumbers && booking.containerNumbers.length > 0
-                ? booking.containerNumbers.join(", ")
+              value={containerSection.draft.containerNumbers && containerSection.draft.containerNumbers.length > 0
+                ? containerSection.draft.containerNumbers.join(", ")
                 : ""}
-              type="textarea"
               status={booking.status}
-              placeholder="Enter container numbers separated by commas..."
-              onSave={(value) => {
-                console.log("Saving Container Numbers:", value);
-                const containerArray = value.split(",").map(c => c.trim()).filter(c => c !== "");
-                onBookingUpdated();
-                addActivity("containerNumbers", 
-                  booking.containerNumbers?.join(", ") || "", 
-                  value);
-                setEditedBooking(prev => ({ ...prev, containerNumbers: containerArray }));
-              }}
+              placeholder="Enter container number..."
+              addButtonText="Add Container"
+              mode={cMode}
+              onChange={(v) => containerSection.updateField("containerNumbers", v.split(",").map((c: string) => c.trim()).filter(Boolean) as any)}
             />
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "20px" }}>
               <EditableField
-                fieldName="detDemValidity"
                 label="Det/Dem Validity"
-                value={booking.detDemValidity || ""}
+                value={containerSection.draft.detDemValidity || ""}
                 type="date"
-                status={booking.status}
+                mode={cMode}
                 placeholder="Select date..."
-                onSave={(value) => {
-                  console.log("Saving Det/Dem Validity:", value);
-                  onBookingUpdated();
-                  addActivity("detDemValidity", booking.detDemValidity || "", value);
-                  setEditedBooking(prev => ({ ...prev, detDemValidity: value }));
-                }}
+                onChange={(v) => containerSection.updateField("detDemValidity", v)}
               />
-
               <EditableField
-                fieldName="storageValidity"
                 label="Storage Validity"
-                value={booking.storageValidity || ""}
+                value={containerSection.draft.storageValidity || ""}
                 type="date"
-                status={booking.status}
+                mode={cMode}
                 placeholder="Select date..."
-                onSave={(value) => {
-                  console.log("Saving Storage Validity:", value);
-                  onBookingUpdated();
-                  addActivity("storageValidity", booking.storageValidity || "", value);
-                  setEditedBooking(prev => ({ ...prev, storageValidity: value }));
-                }}
+                onChange={(v) => containerSection.updateField("storageValidity", v)}
               />
-
               <EditableField
-                fieldName="croAvailability"
                 label="CRO Availability"
-                value={booking.croAvailability || ""}
+                value={containerSection.draft.croAvailability || ""}
                 type="date"
-                status={booking.status}
+                mode={cMode}
                 placeholder="Select date..."
-                onSave={(value) => {
-                  console.log("Saving CRO Availability:", value);
-                  onBookingUpdated();
-                  addActivity("croAvailability", booking.croAvailability || "", value);
-                  setEditedBooking(prev => ({ ...prev, croAvailability: value }));
-                }}
+                onChange={(v) => containerSection.updateField("croAvailability", v)}
               />
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}>
               <EditableField
-                fieldName="containerDeposit"
                 label="Container Deposit"
-                value={booking.containerDeposit ? "Yes" : "No"}
+                value={containerSection.draft.containerDeposit ? "Yes" : "No"}
                 type="select"
                 options={["Yes", "No"]}
-                status={booking.status}
-                onSave={(value) => {
-                  console.log("Saving Container Deposit:", value);
-                  const boolValue = value === "Yes";
-                  onBookingUpdated();
-                  addActivity("containerDeposit", 
-                    booking.containerDeposit ? "Yes" : "No", 
-                    value);
-                  setEditedBooking(prev => ({ ...prev, containerDeposit: boolValue }));
+                mode={cMode}
+                onChange={(v) => {
+                  containerSection.updateField("_containerDepositStr" as any, v as any);
+                  containerSection.updateField("containerDeposit", (v === "Yes") as any);
                 }}
               />
-
               <EditableField
-                fieldName="emptyReturn"
                 label="Empty Return"
-                value={booking.emptyReturn || ""}
-                status={booking.status}
+                value={containerSection.draft.emptyReturn || ""}
+                mode={cMode}
                 placeholder="Enter empty return location..."
-                onSave={(value) => {
-                  console.log("Saving Empty Return:", value);
-                  onBookingUpdated();
-                  addActivity("emptyReturn", booking.emptyReturn || "", value);
-                  setEditedBooking(prev => ({ ...prev, emptyReturn: value }));
-                }}
+                onChange={(v) => containerSection.updateField("emptyReturn", v)}
               />
             </div>
+
+            {/* Export FCL Specifics */}
+            {booking.movement === "EXPORT" && (
+              <>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}>
+                  <EditableField
+                    label="Tare Weight"
+                    value={containerSection.draft.tareWeight || ""}
+                    mode={cMode}
+                    placeholder="Enter tare weight..."
+                    onChange={(v) => containerSection.updateField("tareWeight", v)}
+                  />
+                  <EditableField
+                    label="VGM"
+                    value={containerSection.draft.vgm || ""}
+                    mode={cMode}
+                    placeholder="Enter VGM..."
+                    onChange={(v) => containerSection.updateField("vgm", v)}
+                  />
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "20px" }}>
+                  <EditableField
+                    label="Trucking Name"
+                    value={containerSection.draft.truckingName || ""}
+                    mode={cMode}
+                    placeholder="Enter trucking name..."
+                    onChange={(v) => containerSection.updateField("truckingName", v)}
+                  />
+                  <EditableField
+                    label="Plate Number"
+                    value={containerSection.draft.plateNumber || ""}
+                    mode={cMode}
+                    placeholder="Enter plate number..."
+                    onChange={(v) => containerSection.updateField("plateNumber", v)}
+                  />
+                  <EditableField
+                    label="Pickup Location"
+                    value={containerSection.draft.pickupLocation || ""}
+                    mode={cMode}
+                    placeholder="Enter pickup location..."
+                    onChange={(v) => containerSection.updateField("pickupLocation", v)}
+                  />
+                </div>
+
+                <EditableField
+                  label="Warehouse Address"
+                  value={containerSection.draft.warehouseAddress || ""}
+                  mode={cMode}
+                  placeholder="Enter warehouse address..."
+                  onChange={(v) => containerSection.updateField("warehouseAddress", v)}
+                />
+              </>
+            )}
           </div>
-        </div>
+        </EditableSectionCard>
       )}
 
-      {/* Warehouse Details (LCL/AIR only) */}
+      {/* ── Warehouse Details (LCL/AIR only) ── */}
       {(booking.mode === "LCL" || booking.mode === "AIR") && (
-        <div style={{
-          backgroundColor: "white",
-          border: "1px solid var(--neuron-ui-border)",
-          borderRadius: "8px",
-          padding: "24px",
-          marginBottom: "24px"
-        }}>
-          <h2 style={{
-            fontSize: "16px",
-            fontWeight: 600,
-            color: "var(--neuron-brand-green)",
-            marginBottom: "20px"
-          }}>
-            Warehouse Details
-          </h2>
-
+        <EditableSectionCard
+          title="Warehouse Details"
+          isEditing={warehouseSection.isEditing}
+          onEdit={warehouseSection.startEditing}
+          onCancel={warehouseSection.cancel}
+          onSave={() => {
+            const draft = warehouseSection.save();
+            diffAndApply(booking, draft, WAREHOUSE_FIELDS, addActivity, setEditedBooking, onBookingUpdated);
+          }}
+        >
           <EditableField
-            fieldName="warehouseLocation"
             label="Warehouse Location"
-            value={booking.warehouseLocation || ""}
-            status={booking.status}
+            value={warehouseSection.draft.warehouseLocation || ""}
+            mode={wMode}
             placeholder="Enter warehouse location..."
-            onSave={(value) => {
-              console.log("Saving Warehouse Location:", value);
-              onBookingUpdated();
-              addActivity("warehouseLocation", booking.warehouseLocation || "", value);
-              setEditedBooking(prev => ({ ...prev, warehouseLocation: value }));
-            }}
+            onChange={(v) => warehouseSection.updateField("warehouseLocation", v)}
           />
-        </div>
+        </EditableSectionCard>
       )}
     </div>
   );

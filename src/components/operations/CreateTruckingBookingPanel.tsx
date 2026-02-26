@@ -1,8 +1,19 @@
-import { X, Truck, Package, MapPin } from "lucide-react";
-import { useState } from "react";
+import { Truck, Package, MapPin } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Plus, X } from "lucide-react";
 import { projectId, publicAnonKey } from "../../utils/supabase/info";
 import { toast } from "../ui/toast-utils";
 import { CustomDropdown } from "../bd/CustomDropdown";
+import { SearchableDropdown } from "../shared/SearchableDropdown";
+import { MovementToggle } from "./shared/MovementToggle";
+import { ContractDetectionBanner } from "./shared/ContractDetectionBanner";
+import { MultiInputField } from "../shared/MultiInputField";
+import { BookingCreationPanel } from "./shared/BookingCreationPanel";
+import { useCustomerOptions } from "./shared/useCustomerOptions";
+import type { TruckingLineItem } from "../../types/pricing";
+import { normalizeTruckingLineItems, extractContractDestinations } from "../../utils/contractQuantityExtractor";
+import { fetchFullContract } from "../../utils/contractLookup";
+import { FormComboBox } from "../pricing/quotations/FormComboBox";
 
 interface CreateTruckingBookingPanelProps {
   isOpen: boolean;
@@ -16,12 +27,43 @@ export function CreateTruckingBookingPanel({
   onSuccess,
 }: CreateTruckingBookingPanelProps) {
   const [loading, setLoading] = useState(false);
+  // ✨ CONTRACT: Detected contract ID for auto-linking
+  const [detectedContractId, setDetectedContractId] = useState<string | null>(null);
+  // ✨ DESTINATION COMBOBOX: Contract destinations for combobox dropdown
+  const [contractDestinations, setContractDestinations] = useState<string[]>([]);
+
+  // Fetch contract destinations when a contract is detected
+  useEffect(() => {
+    if (!detectedContractId) {
+      setContractDestinations([]);
+      return;
+    }
+    (async () => {
+      try {
+        const fullContract = await fetchFullContract(detectedContractId);
+        if (fullContract?.rate_matrices) {
+          setContractDestinations(extractContractDestinations(fullContract.rate_matrices));
+        } else {
+          setContractDestinations([]);
+        }
+      } catch (err) {
+        console.error("[CreateTruckingBookingPanel] Error fetching contract destinations:", err);
+        setContractDestinations([]);
+      }
+    })();
+  }, [detectedContractId]);
+  const customerOptions = useCustomerOptions(isOpen);
+  // ✨ Multi-line trucking: dispatch line items state
+  const [truckingLineItems, setTruckingLineItems] = useState<TruckingLineItem[]>([
+    { id: `li-init-${Date.now()}`, destination: "", truckType: "", quantity: 1 },
+  ]);
   const [formData, setFormData] = useState({
     customerName: "",
+    movement: "IMPORT",
     accountOwner: "",
     accountHandler: "",
     service: "",
-    truckType: "",
+    truckType: "",       // @deprecated — synced from first truckingLineItem on submit; kept for backward compat
     mode: "",
     preferredDeliveryDate: "",
     quotationReferenceNumber: "",
@@ -31,7 +73,7 @@ export function CreateTruckingBookingPanel({
     helper: "",
     vehicleReferenceNumber: "",
     pullOut: "",
-    deliveryAddress: "",
+    deliveryAddress: "", // @deprecated — synced from first truckingLineItem on submit; kept for backward compat
     deliveryInstructions: "",
     dateDelivered: "",
     tabsBooking: "",
@@ -42,6 +84,9 @@ export function CreateTruckingBookingPanel({
     detDemValidity: "",
     storageValidity: "",
     shippingLine: "",
+    warehouseAddress: "", // Export
+    withGps: false, // Export
+    gateIn: "", // Export
   });
 
   const handleChange = (
@@ -70,7 +115,15 @@ export function CreateTruckingBookingPanel({
             "Content-Type": "application/json",
             Authorization: `Bearer ${publicAnonKey}`,
           },
-          body: JSON.stringify(formData),
+          body: JSON.stringify({
+            ...formData,
+            // ✨ Multi-line trucking: persist line items + sync legacy fields from first item
+            // Filter out completely empty line items before saving
+            trucking_line_items: truckingLineItems.filter(li => li.destination || li.truckType || li.quantity > 0),
+            truckType: truckingLineItems[0]?.truckType || formData.truckType,
+            deliveryAddress: truckingLineItems[0]?.destination || formData.deliveryAddress,
+            ...(detectedContractId && { contract_id: detectedContractId }),
+          }),
         }
       );
 
@@ -99,69 +152,19 @@ export function CreateTruckingBookingPanel({
   const isFormValid = formData.customerName.trim() !== "";
 
   return (
-    <>
-      {/* Backdrop */}
-      <div
-        className="fixed inset-0 bg-black z-40"
-        onClick={onClose}
-        style={{
-          backdropFilter: "blur(2px)",
-          backgroundColor: "rgba(18, 51, 43, 0.15)"
-        }}
-      />
-
-      {/* Side Panel */}
-      <div
-        className="fixed right-0 top-0 h-full w-[680px] bg-white shadow-2xl z-50 flex flex-col animate-slide-in"
-        style={{
-          borderLeft: "1px solid var(--neuron-ui-border)",
-        }}
-      >
-        {/* Header */}
-        <div
-          className="px-12 py-8 border-b"
-          style={{
-            borderColor: "var(--neuron-ui-border)",
-            backgroundColor: "#FFFFFF",
-          }}
-        >
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-3">
-              <div
-                className="w-10 h-10 rounded-lg flex items-center justify-center"
-                style={{ backgroundColor: "#E8F2EE" }}
-              >
-                <Truck size={20} style={{ color: "#0F766E" }} />
-              </div>
-              <h2 style={{ fontSize: "24px", fontWeight: 600, color: "#12332B" }}>
-                New Trucking Booking
-              </h2>
-            </div>
-            <button
-              onClick={onClose}
-              className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors"
-              style={{
-                color: "var(--neuron-ink-muted)",
-                backgroundColor: "transparent",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = "var(--neuron-state-hover)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = "transparent";
-              }}
-            >
-              <X size={20} />
-            </button>
-          </div>
-          <p style={{ fontSize: "14px", color: "#667085" }}>
-            Create a new trucking booking for inland transportation
-          </p>
-        </div>
-
-        {/* Form Content */}
-        <div className="flex-1 overflow-auto px-12 py-8">
-          <form onSubmit={handleSubmit} id="create-trucking-form">
+    <BookingCreationPanel
+      isOpen={isOpen}
+      onClose={onClose}
+      icon={<Truck size={20} />}
+      title="New Trucking Booking"
+      subtitle="Create a new trucking booking for inland transportation"
+      formId="create-trucking-form"
+      onSubmit={handleSubmit}
+      isSubmitting={loading}
+      isFormValid={isFormValid}
+      submitLabel="Create Booking"
+      submitIcon={<Truck size={16} />}
+    >
             {/* General Information */}
             <div className="mb-8">
               <div className="flex items-center gap-2 mb-4">
@@ -172,26 +175,35 @@ export function CreateTruckingBookingPanel({
               </div>
 
               <div className="space-y-4">
+                {/* Movement Toggle */}
                 <div>
-                  <label
-                    className="block mb-1.5"
-                    style={{ fontSize: "13px", fontWeight: 500, color: "#12332B" }}
-                  >
-                    Customer Name <span style={{ color: "#C94F3D" }}>*</span>
+                  <label className="block mb-1.5" style={{ fontSize: "13px", fontWeight: 500, color: "#12332B" }}>
+                    Movement <span style={{ color: "#C94F3D" }}>*</span>
                   </label>
-                  <input
-                    type="text"
-                    name="customerName"
+                  <MovementToggle
+                    value={formData.movement as "IMPORT" | "EXPORT"}
+                    onChange={(value) => handleChange({ target: { name: "movement", value } } as any)}
+                    layoutIdPrefix="trucking-movement-pill"
+                  />
+                </div>
+
+                <div>
+                  <SearchableDropdown
+                    label="Customer Name"
                     required
                     value={formData.customerName}
-                    onChange={handleChange}
-                    placeholder="Enter customer name"
-                    className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
-                    style={{
-                      border: "1px solid var(--neuron-ui-border)",
-                      backgroundColor: "#FFFFFF",
-                      color: "var(--neuron-ink-primary)",
+                    onChange={(value) => {
+                      setFormData(prev => ({ ...prev, customerName: value }));
                     }}
+                    options={customerOptions}
+                    placeholder="Search customer..."
+                    fullWidth
+                  />
+                  {/* ✨ CONTRACT: Detection banner */}
+                  <ContractDetectionBanner
+                    customerName={formData.customerName}
+                    serviceType="Trucking"
+                    onContractDetected={setDetectedContractId}
                   />
                 </div>
 
@@ -206,7 +218,7 @@ export function CreateTruckingBookingPanel({
                       value={formData.accountOwner}
                       onChange={handleChange}
                       placeholder="Account owner"
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                      className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
                         backgroundColor: "#FFFFFF",
@@ -225,7 +237,7 @@ export function CreateTruckingBookingPanel({
                       value={formData.accountHandler}
                       onChange={handleChange}
                       placeholder="Account handler"
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                      className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
                         backgroundColor: "#FFFFFF",
@@ -246,7 +258,7 @@ export function CreateTruckingBookingPanel({
                       value={formData.service}
                       onChange={handleChange}
                       placeholder="e.g., Container Delivery"
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                      className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
                         backgroundColor: "#FFFFFF",
@@ -255,27 +267,6 @@ export function CreateTruckingBookingPanel({
                     />
                   </div>
 
-                  <div>
-                    <label className="block mb-1.5" style={{ fontSize: "13px", fontWeight: 500, color: "#12332B" }}>
-                      Truck Type
-                    </label>
-                    <input
-                      type="text"
-                      name="truckType"
-                      value={formData.truckType}
-                      onChange={handleChange}
-                      placeholder="e.g., 10-wheeler, Wing van"
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
-                      style={{
-                        border: "1px solid var(--neuron-ui-border)",
-                        backgroundColor: "#FFFFFF",
-                        color: "var(--neuron-ink-primary)",
-                      }}
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block mb-1.5" style={{ fontSize: "13px", fontWeight: 500, color: "#12332B" }}>
                       Mode
@@ -286,25 +277,7 @@ export function CreateTruckingBookingPanel({
                       value={formData.mode}
                       onChange={handleChange}
                       placeholder="e.g., FCL, LCL"
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
-                      style={{
-                        border: "1px solid var(--neuron-ui-border)",
-                        backgroundColor: "#FFFFFF",
-                        color: "var(--neuron-ink-primary)",
-                      }}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block mb-1.5" style={{ fontSize: "13px", fontWeight: 500, color: "#12332B" }}>
-                      Preferred Delivery Date
-                    </label>
-                    <input
-                      type="date"
-                      name="preferredDeliveryDate"
-                      value={formData.preferredDeliveryDate}
-                      onChange={handleChange}
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                      className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
                         backgroundColor: "#FFFFFF",
@@ -325,7 +298,7 @@ export function CreateTruckingBookingPanel({
                       value={formData.quotationReferenceNumber}
                       onChange={handleChange}
                       placeholder="Quotation reference"
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                      className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
                         backgroundColor: "#FFFFFF",
@@ -338,7 +311,22 @@ export function CreateTruckingBookingPanel({
                     label="Status"
                     value={formData.status}
                     onChange={(value) => handleChange({ target: { name: "status", value } } as any)}
-                    options={[
+                    options={formData.movement === "EXPORT" ? [
+                      { value: "Gate In (Origin)", label: "Gate In (Origin)" },
+                      { value: "Waiting Loading", label: "Waiting Loading" },
+                      { value: "Start Loading", label: "Start Loading" },
+                      { value: "End Loading", label: "End Loading" },
+                      { value: "Gate Out (Origin)", label: "Gate Out (Origin)" },
+                      { value: "Ongoing Delivery", label: "Ongoing Delivery" },
+                      { value: "Arrived Delivery", label: "Arrived Delivery" },
+                      { value: "Gate In (Destination)", label: "Gate In (Destination)" },
+                      { value: "Waiting Unloading", label: "Waiting Unloading" },
+                      { value: "Ongoing Unloading", label: "Ongoing Unloading" },
+                      { value: "Gate Out (Destination)", label: "Gate Out (Destination)" },
+                      { value: "Return Empty", label: "Return Empty" },
+                      { value: "Gate In (Depot)", label: "Gate In (Depot)" },
+                      { value: "Completed", label: "Completed" },
+                    ] : [
                       { value: "Draft", label: "Draft" },
                       { value: "Confirmed", label: "Confirmed" },
                       { value: "In Progress", label: "In Progress" },
@@ -375,7 +363,7 @@ export function CreateTruckingBookingPanel({
                       value={formData.consignee}
                       onChange={handleChange}
                       placeholder="Consignee name"
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                      className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
                         backgroundColor: "#FFFFFF",
@@ -394,7 +382,7 @@ export function CreateTruckingBookingPanel({
                       value={formData.driver}
                       onChange={handleChange}
                       placeholder="Driver name"
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                      className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
                         backgroundColor: "#FFFFFF",
@@ -415,7 +403,7 @@ export function CreateTruckingBookingPanel({
                       value={formData.helper}
                       onChange={handleChange}
                       placeholder="Helper name"
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                      className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
                         backgroundColor: "#FFFFFF",
@@ -424,24 +412,18 @@ export function CreateTruckingBookingPanel({
                     />
                   </div>
 
-                  <div>
-                    <label className="block mb-1.5" style={{ fontSize: "13px", fontWeight: 500, color: "#12332B" }}>
-                      Vehicle Reference Number
-                    </label>
-                    <input
-                      type="text"
-                      name="vehicleReferenceNumber"
-                      value={formData.vehicleReferenceNumber}
-                      onChange={handleChange}
-                      placeholder="Vehicle reference"
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
-                      style={{
-                        border: "1px solid var(--neuron-ui-border)",
-                        backgroundColor: "#FFFFFF",
-                        color: "var(--neuron-ink-primary)",
-                      }}
-                    />
-                  </div>
+                  <MultiInputField
+                    label="Vehicle Reference Number"
+                    value={formData.vehicleReferenceNumber}
+                    onChange={(v) => setFormData(prev => ({ ...prev, vehicleReferenceNumber: v }))}
+                    placeholder="Vehicle reference"
+                    addButtonText="Add Vehicle Ref."
+                    inputStyle={{
+                      border: "1px solid var(--neuron-ui-border)",
+                      backgroundColor: "#FFFFFF",
+                      color: "var(--neuron-ink-primary)",
+                    }}
+                  />
                 </div>
 
                 <div>
@@ -454,7 +436,7 @@ export function CreateTruckingBookingPanel({
                     value={formData.pullOut}
                     onChange={handleChange}
                     placeholder="Pull out location"
-                    className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                    className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                     style={{
                       border: "1px solid var(--neuron-ui-border)",
                       backgroundColor: "#FFFFFF",
@@ -463,24 +445,143 @@ export function CreateTruckingBookingPanel({
                   />
                 </div>
 
+                {/* ✨ Multi-line trucking: Destinations repeater */}
                 <div>
-                  <label className="block mb-1.5" style={{ fontSize: "13px", fontWeight: 500, color: "#12332B" }}>
-                    Delivery Address
+                  <label className="block mb-3" style={{ fontSize: "13px", fontWeight: 500, color: "#12332B" }}>
+                    Destinations <span style={{ color: "#C94F3D" }}>*</span>
                   </label>
-                  <textarea
-                    name="deliveryAddress"
-                    value={formData.deliveryAddress}
-                    onChange={handleChange}
-                    rows={2}
-                    placeholder="Enter delivery address"
-                    className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px] resize-none"
-                    style={{
-                      border: "1px solid var(--neuron-ui-border)",
-                      backgroundColor: "#FFFFFF",
-                      color: "var(--neuron-ink-primary)",
-                    }}
-                  />
+
+                  {/* Column headers — only when 2+ rows */}
+                  {truckingLineItems.length > 1 && (
+                    <div className="grid gap-2 mb-1.5" style={{ gridTemplateColumns: "5fr 3fr 2fr 28px" }}>
+                      <span className="text-[11px] font-semibold text-[#667085] uppercase tracking-wide pl-1">Destination</span>
+                      <span className="text-[11px] font-semibold text-[#667085] uppercase tracking-wide">Truck Type</span>
+                      <span className="text-[11px] font-semibold text-[#667085] uppercase tracking-wide">Qty</span>
+                      <span />
+                    </div>
+                  )}
+
+                  {/* Line item rows */}
+                  <div className="space-y-1.5">
+                    {truckingLineItems.map((li) => (
+                      <div
+                        key={li.id}
+                        className="grid gap-2 items-center group/row"
+                        style={{ gridTemplateColumns: truckingLineItems.length > 1 ? "5fr 3fr 2fr 28px" : "5fr 3fr 2fr" }}
+                      >
+                        {/* Destination — ComboBox when contract destinations available */}
+                        {contractDestinations.length > 0 ? (
+                          <FormComboBox
+                            value={li.destination}
+                            onChange={(value) => setTruckingLineItems(prev =>
+                              prev.map(item => item.id === li.id ? { ...item, destination: value } : item)
+                            )}
+                            options={contractDestinations.map(d => ({ value: d, label: d }))}
+                            placeholder="Select or type destination..."
+                          />
+                        ) : (
+                          <input
+                            type="text"
+                            value={li.destination}
+                            onChange={(e) => setTruckingLineItems(prev =>
+                              prev.map(item => item.id === li.id ? { ...item, destination: e.target.value } : item)
+                            )}
+                            placeholder="Delivery address"
+                            className="w-full px-3 py-2 rounded-lg text-[13px]"
+                            style={{ border: "1px solid var(--neuron-ui-border)", backgroundColor: "#FFFFFF", color: "var(--neuron-ink-primary)" }}
+                          />
+                        )}
+                        <input
+                          type="text"
+                          value={li.truckType}
+                          onChange={(e) => setTruckingLineItems(prev =>
+                            prev.map(item => item.id === li.id ? { ...item, truckType: e.target.value } : item)
+                          )}
+                          placeholder="e.g., 40ft"
+                          className="w-full px-3 py-2 rounded-lg text-[13px]"
+                          style={{ border: "1px solid var(--neuron-ui-border)", backgroundColor: "#FFFFFF", color: "var(--neuron-ink-primary)" }}
+                        />
+                        <input
+                          type="number"
+                          value={li.quantity || ""}
+                          onChange={(e) => setTruckingLineItems(prev =>
+                            prev.map(item => item.id === li.id ? { ...item, quantity: parseInt(e.target.value) || 0 } : item)
+                          )}
+                          placeholder="1"
+                          min="0"
+                          className="w-full px-2 py-2 rounded-lg text-[13px] text-center"
+                          style={{ border: "1px solid var(--neuron-ui-border)", backgroundColor: "#FFFFFF", color: "var(--neuron-ink-primary)" }}
+                        />
+                        {truckingLineItems.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => setTruckingLineItems(prev => prev.filter(item => item.id !== li.id))}
+                            className="flex items-center justify-center w-7 h-7 rounded-md border border-[#E5E9F0] bg-white opacity-0 group-hover/row:opacity-100 hover:border-[#FCA5A5] hover:text-[#EF4444] hover:bg-[#FEF2F2] transition-all text-[#9CA3AF]"
+                          >
+                            <X size={13} />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Ghost row — "+ Add destination" */}
+                  <button
+                    type="button"
+                    onClick={() => setTruckingLineItems(prev => [
+                      ...prev,
+                      { id: `li-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, destination: "", truckType: "", quantity: 1 },
+                    ])}
+                    className="flex items-center justify-center gap-1.5 w-full py-2.5 mt-1.5 rounded-md text-[13px] font-medium text-[#9CA3AF] bg-transparent border-[1.5px] border-dashed border-[#D1D5DB] cursor-pointer transition-all hover:border-[#0F766E] hover:text-[#0F766E] hover:bg-[#F0FDF9]"
+                  >
+                    <Plus size={14} />
+                    Add destination
+                  </button>
+
+                  {/* Total summary */}
+                  {truckingLineItems.length > 1 && (
+                    <div className="text-right mt-1.5 pr-10 text-[12px] text-[#667085]">
+                      Total: <strong className="text-[#12332B]">{truckingLineItems.reduce((sum, li) => sum + (li.quantity || 0), 0)}</strong> truck(s)
+                    </div>
+                  )}
                 </div>
+
+                {formData.movement === "EXPORT" && (
+                  <>
+                    <div>
+                      <label className="block mb-1.5" style={{ fontSize: "13px", fontWeight: 500, color: "#12332B" }}>
+                        Warehouse Address
+                      </label>
+                      <textarea
+                        name="warehouseAddress"
+                        value={formData.warehouseAddress}
+                        onChange={handleChange}
+                        rows={2}
+                        placeholder="Enter warehouse address"
+                        className="w-full px-3.5 py-2.5 rounded-lg text-[13px] resize-none"
+                        style={{
+                          border: "1px solid var(--neuron-ui-border)",
+                          backgroundColor: "#FFFFFF",
+                          color: "var(--neuron-ink-primary)",
+                        }}
+                      />
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        id="withGps"
+                        name="withGps"
+                        checked={formData.withGps}
+                        onChange={(e) => setFormData(prev => ({ ...prev, withGps: e.target.checked }))}
+                        className="w-4 h-4 text-[#0F766E] border-gray-300 rounded focus:ring-[#0F766E]"
+                      />
+                      <label htmlFor="withGps" style={{ fontSize: "13px", fontWeight: 500, color: "#12332B" }}>
+                        With GPS
+                      </label>
+                    </div>
+                  </>
+                )}
 
                 <div>
                   <label className="block mb-1.5" style={{ fontSize: "13px", fontWeight: 500, color: "#12332B" }}>
@@ -492,7 +593,7 @@ export function CreateTruckingBookingPanel({
                     onChange={handleChange}
                     rows={2}
                     placeholder="Special delivery instructions"
-                    className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px] resize-none"
+                    className="w-full px-3.5 py-2.5 rounded-lg text-[13px] resize-none"
                     style={{
                       border: "1px solid var(--neuron-ui-border)",
                       backgroundColor: "#FFFFFF",
@@ -510,7 +611,7 @@ export function CreateTruckingBookingPanel({
                     name="dateDelivered"
                     value={formData.dateDelivered}
                     onChange={handleChange}
-                    className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                    className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                     style={{
                       border: "1px solid var(--neuron-ui-border)",
                       backgroundColor: "#FFFFFF",
@@ -542,7 +643,7 @@ export function CreateTruckingBookingPanel({
                       value={formData.tabsBooking}
                       onChange={handleChange}
                       placeholder="TABS booking reference"
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                      className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
                         backgroundColor: "#FFFFFF",
@@ -561,7 +662,7 @@ export function CreateTruckingBookingPanel({
                       value={formData.emptyReturn}
                       onChange={handleChange}
                       placeholder="Empty return location"
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                      className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
                         backgroundColor: "#FFFFFF",
@@ -597,6 +698,26 @@ export function CreateTruckingBookingPanel({
                   />
                 </div>
 
+                {formData.movement === "EXPORT" && (
+                  <div>
+                    <label className="block mb-1.5" style={{ fontSize: "13px", fontWeight: 500, color: "#12332B" }}>
+                      Gate In
+                    </label>
+                    <input
+                      type="datetime-local"
+                      name="gateIn"
+                      value={formData.gateIn}
+                      onChange={handleChange}
+                      className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
+                      style={{
+                        border: "1px solid var(--neuron-ui-border)",
+                        backgroundColor: "#FFFFFF",
+                        color: "var(--neuron-ink-primary)",
+                      }}
+                    />
+                  </div>
+                )}
+
                 <div>
                   <label className="block mb-1.5" style={{ fontSize: "13px", fontWeight: 500, color: "#12332B" }}>
                     EIR Availability
@@ -606,7 +727,7 @@ export function CreateTruckingBookingPanel({
                     name="eirAvailability"
                     value={formData.eirAvailability}
                     onChange={handleChange}
-                    className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                    className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                     style={{
                       border: "1px solid var(--neuron-ui-border)",
                       backgroundColor: "#FFFFFF",
@@ -625,7 +746,7 @@ export function CreateTruckingBookingPanel({
                       name="detDemValidity"
                       value={formData.detDemValidity}
                       onChange={handleChange}
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                      className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
                         backgroundColor: "#FFFFFF",
@@ -643,7 +764,7 @@ export function CreateTruckingBookingPanel({
                       name="storageValidity"
                       value={formData.storageValidity}
                       onChange={handleChange}
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                      className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
                         backgroundColor: "#FFFFFF",
@@ -663,7 +784,7 @@ export function CreateTruckingBookingPanel({
                     value={formData.shippingLine}
                     onChange={handleChange}
                     placeholder="Shipping line name"
-                    className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                    className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                     style={{
                       border: "1px solid var(--neuron-ui-border)",
                       backgroundColor: "#FFFFFF",
@@ -673,67 +794,6 @@ export function CreateTruckingBookingPanel({
                 </div>
               </div>
             </div>
-          </form>
-        </div>
-
-        {/* Footer Actions */}
-        <div
-          className="px-12 py-6 border-t flex items-center justify-end gap-3"
-          style={{
-            borderColor: "var(--neuron-ui-border)",
-            backgroundColor: "#FFFFFF",
-          }}
-        >
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-6 py-2.5 rounded-lg transition-colors"
-            style={{
-              border: "1px solid var(--neuron-ui-border)",
-              backgroundColor: "#FFFFFF",
-              color: "var(--neuron-ink-secondary)",
-              fontSize: "14px",
-              fontWeight: 500,
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = "var(--neuron-state-hover)";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = "#FFFFFF";
-            }}
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            form="create-trucking-form"
-            disabled={!isFormValid || loading}
-            className="px-6 py-2.5 rounded-lg transition-all flex items-center gap-2"
-            style={{
-              backgroundColor: isFormValid && !loading ? "#0F766E" : "#D1D5DB",
-              color: "#FFFFFF",
-              fontSize: "14px",
-              fontWeight: 600,
-              border: "none",
-              cursor: isFormValid && !loading ? "pointer" : "not-allowed",
-              opacity: isFormValid && !loading ? 1 : 0.6,
-            }}
-            onMouseEnter={(e) => {
-              if (isFormValid && !loading) {
-                e.currentTarget.style.backgroundColor = "#0D6560";
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (isFormValid && !loading) {
-                e.currentTarget.style.backgroundColor = "#0F766E";
-              }
-            }}
-          >
-            <Truck size={16} />
-            {loading ? "Creating..." : "Create Booking"}
-          </button>
-        </div>
-      </div>
-    </>
+    </BookingCreationPanel>
   );
 }

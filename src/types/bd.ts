@@ -88,6 +88,7 @@ export interface Customer {
   status: CustomerStatus;
   lead_source?: string;
   owner_id?: string;
+  client_type?: "Local" | "International";
   credit_terms?: string;
   phone?: string;
   email?: string;
@@ -139,6 +140,7 @@ export interface Activity {
   user_id: string;
   created_at: string;
   updated_at?: string;
+  attachments?: Array<{ name: string; size: number; type: string; url?: string }>;
 }
 
 export interface Inquiry {

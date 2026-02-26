@@ -36,16 +36,20 @@ export function ContactsListWithFilters({ userDepartment, onViewContact }: Conta
   // Fetch users from backend
   const fetchUsers = async () => {
     try {
-      const response = await fetch(`${API_URL}/users?department=BD`, {
+      const response = await fetch(`${API_URL}/users?department=Business%20Development`, {
         headers: { Authorization: `Bearer ${publicAnonKey}` },
-        cache: 'no-store',
       });
-      const result = await response.json();
-      if (result.success) {
-        setUsers(result.data);
-        console.log('[ContactsListWithFilters] Fetched users:', result.data.length);
+      if (response.ok) {
+        const result = await response.json();
+        if (result.success) {
+          setUsers(result.data);
+          console.log('[ContactsListWithFilters] Fetched users:', result.data.length);
+        } else {
+          console.warn("Failed to fetch users:", result.error);
+          setUsers([]);
+        }
       } else {
-        console.error("Failed to fetch users:", result.error);
+        console.warn(`Error fetching users: ${response.status}`);
         setUsers([]);
       }
     } catch (error) {
@@ -166,30 +170,25 @@ export function ContactsListWithFilters({ userDepartment, onViewContact }: Conta
 
   const handleSaveContact = async (contactData: any) => {
     try {
-      // Transform BD Contact format to backend Contact format
-      // BD Contact has: company_id, first_name, last_name, lifecycle_stage, lead_status
-      // Backend Contact needs: customer_id, company (name), name, status
-      
-      let transformedData = contactData;
-      
-      // If data has company_id (from AddContactPanel), transform it
-      if (contactData.company_id) {
-        // Find the company name from customers state
-        const customer = customers.find(c => c.id === contactData.company_id);
-        
-        transformedData = {
-          name: `${contactData.first_name || ''} ${contactData.last_name || ''}`.trim(),
-          email: contactData.email || contactData.mobile_number || '',
-          phone: contactData.mobile_number || contactData.phone || '',
-          company: customer?.company_name || '',
-          customer_id: contactData.company_id, // Save customer_id for proper relationship
-          status: contactData.lifecycle_stage === "Lead" ? "Lead" : 
-                  contactData.lifecycle_stage === "MQL" ? "MQL" :
-                  contactData.lifecycle_stage === "SQL" ? "Prospect" :
-                  contactData.lifecycle_stage === "Customer" ? "Customer" : "Lead",
-          notes: contactData.notes || '',
-        };
-      }
+      // AddContactPanel sends: first_name, last_name, title, email, phone, customer_id,
+      //   owner_id, lifecycle_stage, lead_status, notes
+      // These map directly to the backend POST /contacts handler field names.
+      const customerId = contactData.customer_id || contactData.company_id || null;
+      const customer = customers.find((c: any) => c.id === customerId);
+
+      const transformedData = {
+        first_name: contactData.first_name || null,
+        last_name: contactData.last_name || null,
+        title: contactData.title || null,
+        email: contactData.email || null,
+        phone: contactData.phone || contactData.mobile_number || null,
+        customer_id: customerId,
+        company: customer?.name || customer?.company_name || '',
+        owner_id: contactData.owner_id || null,
+        lifecycle_stage: contactData.lifecycle_stage || "Lead",
+        lead_status: contactData.lead_status || "New",
+        notes: contactData.notes || null,
+      };
       
       const response = await fetch(`${API_URL}/contacts`, {
         method: "POST",

@@ -23,6 +23,7 @@ export function getDisplayStatus(internalStatus: QuotationStatus): DisplayStatus
     
     case "Accepted by Client":
     case "Converted to Project":
+    case "Converted to Contract":
       return "Approved";
     
     case "Rejected by Client":
@@ -94,6 +95,8 @@ export function getInternalStatusLabel(status: QuotationStatus): string {
       return "Needs Revision";
     case "Converted to Project":
       return "Converted to Project";
+    case "Converted to Contract":
+      return "Converted to Contract";
     case "Disapproved":
       return "Disapproved";
     case "Cancelled":

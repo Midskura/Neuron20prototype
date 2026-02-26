@@ -245,7 +245,7 @@ export function CollectionsContent() {
           context="collection"
           isOpen={showCreateModal}
           onClose={() => setShowCreateModal(false)}
-          onSave={handleCollectionCreated}
+          onSuccess={handleCollectionCreated}
           defaultRequestor={currentUser?.name || "Current User"}
         />
       )}

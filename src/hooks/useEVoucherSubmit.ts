@@ -27,14 +27,23 @@ interface EVoucherData {
   notes?: string;
   requestor: string;
   bookingId?: string;
+  transactionType?: string;
+  isBillable?: boolean;
+  sourceAccountId?: string;
 }
 
 export function useEVoucherSubmit(context: EVoucherContext = "bd") {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Map context to transaction_type
-  const getTransactionType = () => {
+  // Map context to transaction_type (Default fallback)
+  const getTransactionType = (data?: EVoucherData) => {
+    // If explicit transaction type provided, use it
+    if (data?.transactionType) {
+      return data.transactionType;
+    }
+    
+    // Fallback based on context
     switch (context) {
       case "bd":
         return "budget_request";
@@ -65,16 +74,19 @@ export function useEVoucherSubmit(context: EVoucherContext = "bd") {
     setError(null);
 
     try {
+      const descriptionPrefix = data.isBillable ? "[BILLABLE] " : "";
+
       const payload = {
-        transaction_type: getTransactionType(),
+        transaction_type: getTransactionType(data),
         source_module: getSourceModule(),
         purpose: data.requestName,
-        description: data.requestName,
+        description: descriptionPrefix + data.requestName,
         expense_category: data.expenseCategory,
         sub_category: data.subCategory,
         project_number: data.projectNumber || null,
         booking_id: data.bookingId || null,
         line_items: data.lineItems,
+        linked_billings: data.transactionType === "collection" ? (data as any).linkedBillings : undefined,
         total_amount: data.totalAmount,
         payment_method: data.preferredPayment,
         vendor_name: data.vendor,
@@ -82,6 +94,8 @@ export function useEVoucherSubmit(context: EVoucherContext = "bd") {
         due_date: data.paymentSchedule || null,
         notes: data.notes || null,
         requestor_name: data.requestor,
+        is_billable: data.isBillable,
+        source_account_id: data.sourceAccountId,
         status: "draft",
       };
 
@@ -148,16 +162,19 @@ export function useEVoucherSubmit(context: EVoucherContext = "bd") {
       }
       
       // Step 1: Create the E-Voucher in draft status
+      const descriptionPrefix = data.isBillable ? "[BILLABLE] " : "";
+      
       const payload = {
-        transaction_type: getTransactionType(),
+        transaction_type: getTransactionType(data),
         source_module: getSourceModule(),
         purpose: data.requestName,
-        description: data.requestName,
+        description: descriptionPrefix + data.requestName,
         expense_category: data.expenseCategory,
         sub_category: data.subCategory || '',
         project_number: data.projectNumber || null,
         booking_id: data.bookingId || null,
         line_items: data.lineItems,
+        linked_billings: data.transactionType === "collection" ? (data as any).linkedBillings : undefined,
         total_amount: data.totalAmount,
         amount: data.totalAmount, // Backend expects 'amount' field too
         payment_method: data.preferredPayment,
@@ -168,6 +185,8 @@ export function useEVoucherSubmit(context: EVoucherContext = "bd") {
         requestor_name: data.requestor,
         requestor_id: data.requestor, // Use requestor as ID for now
         requestor_department: context, // Add department context
+        is_billable: data.isBillable,
+        source_account_id: data.sourceAccountId,
         status: "draft",
       };
 
@@ -265,9 +284,136 @@ export function useEVoucherSubmit(context: EVoucherContext = "bd") {
     }
   };
 
+  /**
+   * Creates an E-Voucher and immediately approves and posts it
+   * (Accounting only feature)
+   */
+  const autoApprove = async (data: EVoucherData) => {
+    setIsSaving(true);
+    setError(null);
+
+    try {
+      const descriptionPrefix = data.isBillable ? "[BILLABLE] " : "";
+      
+      const payload = {
+        transaction_type: getTransactionType(data),
+        source_module: getSourceModule(),
+        purpose: data.requestName,
+        description: descriptionPrefix + data.requestName,
+        expense_category: data.expenseCategory,
+        sub_category: data.subCategory || '',
+        project_number: data.projectNumber || null,
+        booking_id: data.bookingId || null,
+        line_items: data.lineItems,
+        linked_billings: data.transactionType === "collection" ? (data as any).linkedBillings : undefined,
+        total_amount: data.totalAmount,
+        amount: data.totalAmount,
+        payment_method: data.preferredPayment,
+        vendor_name: data.vendor,
+        credit_terms: data.creditTerms,
+        due_date: data.paymentSchedule || null,
+        notes: data.notes || '',
+        requestor_name: data.requestor,
+        requestor_id: data.requestor,
+        requestor_department: context,
+        is_billable: data.isBillable,
+        source_account_id: data.sourceAccountId,
+        // Auto-approve endpoint usually handles status, but we send user info
+        user_id: data.requestor,
+        user_name: data.requestor,
+        user_role: context
+      };
+
+      console.log('⚡ Auto-approving E-Voucher:', payload);
+
+      const response = await fetch(`${API_URL}/evouchers/auto-approve`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${publicAnonKey}`,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        let errorData;
+        try {
+          errorData = JSON.parse(errorText);
+        } catch {
+          throw new Error(`Server error (${response.status}): ${errorText || 'Unknown error'}`);
+        }
+        throw new Error(errorData.error || 'Failed to auto-approve E-Voucher');
+      }
+
+      const result = await response.json();
+
+      if (result.success) {
+        console.log('✅ E-Voucher auto-approved:', result.data);
+        toast.success(`Voucher ${result.data.voucher_number} posted successfully!`);
+        return result.data;
+      } else {
+        throw new Error(result.error || 'Failed to auto-approve E-Voucher');
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred';
+      console.error('Error auto-approving E-Voucher:', err);
+      setError(errorMessage);
+      toast.error(`Failed to auto-approve: ${errorMessage}`);
+      throw err;
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  /**
+   * Deletes an E-Voucher
+   */
+  const deleteEVoucher = async (id: string) => {
+    setIsSaving(true);
+    setError(null);
+
+    try {
+      console.log('🗑️ Deleting E-Voucher:', id);
+
+      const response = await fetch(`${API_URL}/evouchers/${id}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${publicAnonKey}`,
+        },
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Server error (${response.status}): ${errorText || 'Unknown error'}`);
+      }
+
+      const result = await response.json();
+
+      if (result.success) {
+        console.log('✅ E-Voucher deleted:', id);
+        toast.success(`Expense deleted successfully`);
+        return true;
+      } else {
+        throw new Error(result.error || 'Failed to delete expense');
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred';
+      console.error('Error deleting expense:', err);
+      setError(errorMessage);
+      toast.error(`Failed to delete: ${errorMessage}`);
+      throw err;
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   return {
     createDraft,
     submitForApproval,
+    autoApprove,
+    deleteEVoucher,
     isSaving,
     error,
   };

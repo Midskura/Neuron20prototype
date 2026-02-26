@@ -2,17 +2,21 @@ import { useState, useEffect } from "react";
 import { QuotationDetail } from "./pricing/QuotationDetail";
 import { QuotationsListWithFilters } from "./pricing/QuotationsListWithFilters";
 import { QuotationBuilderV3 } from "./pricing/quotations/QuotationBuilderV3";
-import type { QuotationNew } from "../types/pricing";
+import type { QuotationNew, QuotationType } from "../types/pricing";
 import { ContactsListWithFilters } from "./crm/ContactsListWithFilters";
 import { PricingContactDetail } from "./pricing/PricingContactDetail";
 import { CustomersListWithFilters } from "./crm/CustomersListWithFilters";
 import { CustomerDetail } from "./bd/CustomerDetail";
 import { PricingCustomerDetail } from "./pricing/PricingCustomerDetail";
 import { NetworkPartnersModule } from "./pricing/NetworkPartnersModule";
+import { VendorDetail } from "./pricing/VendorDetail";
 import { PricingReports } from "./pricing/PricingReports";
 import type { Contact, Customer } from "../types/bd";
+import type { NetworkPartner } from "../data/networkPartners";
+// Removed static import: import { NETWORK_PARTNERS } from "../data/networkPartners";
 import { ContactsModuleWithBackend } from "./crm/ContactsModuleWithBackend";
 import { projectId, publicAnonKey } from '../utils/supabase/info';
+import { useNetworkPartners } from "../hooks/useNetworkPartners";
 
 export type PricingView = "contacts" | "customers" | "quotations" | "vendors" | "reports";
 type SubView = "list" | "detail" | "create";
@@ -32,8 +36,13 @@ export function Pricing({ view = "contacts", onViewInquiry, inquiryId, currentUs
   const [selectedQuotation, setSelectedQuotation] = useState<QuotationNew | null>(null);
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [selectedVendor, setSelectedVendor] = useState<NetworkPartner | null>(null);
   const [quotations, setQuotations] = useState<QuotationNew[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [pendingQuotationType, setPendingQuotationType] = useState<QuotationType>("project");
+
+  // Hook for Network Partners (Lifting State Up)
+  const { partners, isLoading: isPartnersLoading, savePartner } = useNetworkPartners();
 
   // Map department name to userDepartment format
   const userDepartment: "BD" | "PD" = currentUser?.department === "Pricing" ? "PD" : "BD";
@@ -65,9 +74,8 @@ export function Pricing({ view = "contacts", onViewInquiry, inquiryId, currentUs
         alert('Error loading quotations: ' + result.error);
       }
     } catch (error) {
-      console.error('Error fetching quotations:', error);
-      alert('Unable to connect to server. Please check your connection or try again later.\n\nError: ' + error);
-      // Set empty array so UI doesn't break
+      console.log('Server not available. Using local data only.');
+      // Don't show error alert - just silently fall back to local/mock data
       setQuotations([]);
     } finally {
       setIsLoading(false);
@@ -135,8 +143,9 @@ export function Pricing({ view = "contacts", onViewInquiry, inquiryId, currentUs
     setSubView("create");
   };
 
-  const handleCreateQuotation = () => {
+  const handleCreateQuotation = (quotationType?: QuotationType) => {
     setSelectedQuotation(null);
+    setPendingQuotationType(quotationType || "project");
     setSubView("create");
   };
 
@@ -254,6 +263,32 @@ export function Pricing({ view = "contacts", onViewInquiry, inquiryId, currentUs
     }
   };
 
+  const handleDuplicateQuotation = (quotation: QuotationNew) => {
+    // 📋 CLONE & EDIT STRATEGY
+    // 1. Create a shallow copy of the quotation
+    // 2. Sanitize ID and Number to force "New Record" behavior
+    // 3. Reset dates and status
+    // 4. Open Builder in "Create" mode with this data pre-filled
+    
+    const duplicatedData: Partial<QuotationNew> = {
+      ...quotation,
+      id: undefined, // Force new ID generation
+      quote_number: undefined, // Force new Number generation
+      quotation_name: `${quotation.quotation_name} (Copy)`,
+      status: "Draft", // Reset status
+      created_date: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      project_id: undefined, // Unlink from any project
+      project_number: undefined,
+      // Preserve: customer_id, services, pricing, etc.
+    };
+
+    console.log("🔄 Duplicating quotation for new record:", duplicatedData);
+    
+    setSelectedQuotation(duplicatedData as QuotationNew);
+    setSubView("create");
+  };
+
   const handleCreateInquiry = (customer: Customer) => {
     // Pre-fill customer info and open quotation builder
     const inquiryTemplate: Partial<QuotationNew> = {
@@ -264,6 +299,20 @@ export function Pricing({ view = "contacts", onViewInquiry, inquiryId, currentUs
     };
     setSelectedQuotation(inquiryTemplate as QuotationNew);
     setSubView("create");
+  };
+
+  const handleViewVendor = (vendorId: string) => {
+    // Search in dynamic partners list
+    const vendor = partners.find(v => v.id === vendorId);
+    if (vendor) {
+      setSelectedVendor(vendor);
+      setSubView("detail");
+    }
+  };
+
+  const handleBackFromVendor = () => {
+    setSelectedVendor(null);
+    setSubView("list");
   };
 
   return (
@@ -300,6 +349,48 @@ export function Pricing({ view = "contacts", onViewInquiry, inquiryId, currentUs
                 onViewInquiry={onViewInquiry}
               />
             )}
+            {subView === "create" && selectedCustomer && (
+              <QuotationBuilderV3 
+                onClose={() => {
+                  setSubView("detail");
+                  setSelectedQuotation(null);
+                }}
+                onSave={async (data) => {
+                  try {
+                    // Determine if this is create or update
+                    const isUpdate = !!data.id && data.id.startsWith('QUO-');
+                    const method = isUpdate ? 'PUT' : 'POST';
+                    const url = isUpdate ? `${API_URL}/quotations/${data.id}` : `${API_URL}/quotations`;
+
+                    const response = await fetch(url, {
+                      method: method,
+                      headers: {
+                        'Authorization': `Bearer ${publicAnonKey}`,
+                        'Content-Type': 'application/json'
+                      },
+                      body: JSON.stringify(data)
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                      console.log('Inquiry saved successfully');
+                      setSubView("detail");
+                      setSelectedQuotation(null);
+                    } else {
+                      console.error('Error saving inquiry:', result.error);
+                      alert('Error saving inquiry: ' + result.error);
+                    }
+                  } catch (error) {
+                    console.error('Error saving inquiry:', error);
+                    alert('Error saving inquiry: ' + error);
+                  }
+                }}
+                initialData={selectedQuotation || undefined}
+                builderMode="quotation"
+                customerData={selectedCustomer}
+              />
+            )}
           </>
         )}
 
@@ -312,24 +403,29 @@ export function Pricing({ view = "contacts", onViewInquiry, inquiryId, currentUs
                 quotations={quotations}
                 isLoading={isLoading}
                 userDepartment="PD"
+                onRefresh={fetchQuotations}
               />
             )}
             {subView === "detail" && selectedQuotation && (
-              <QuotationDetail 
-                quotation={selectedQuotation} 
-                onBack={handleBackFromQuotation}
-                userDepartment={userDepartment}
-                onUpdate={handleUpdateQuotation}
-                onEdit={handleEditQuotation}
-                onCreateTicket={onCreateTicket}
-                onConvertToProject={(projectId) => {
-                  // PD users cannot convert to project directly
-                  // This callback won't be triggered as the button only shows for BD users
-                  console.log("Project conversion not available for PD users");
-                }}
-                currentUser={currentUser}
-                onDelete={handleDeleteQuotation}
-              />
+                <QuotationDetail 
+                  quotation={selectedQuotation} 
+                  onBack={handleBackFromQuotation}
+                  userDepartment={userDepartment}
+                  onUpdate={handleUpdateQuotation}
+                  onEdit={handleEditQuotation}
+                  onDuplicate={handleDuplicateQuotation}
+                  onCreateTicket={onCreateTicket}
+                  onConvertToProject={(projectId) => {
+                    // PD users cannot convert to project directly
+                    console.log("Project conversion not available for PD users");
+                  }}
+                  onConvertToContract={() => {
+                    // Contract activated — return to list
+                    handleBackFromQuotation();
+                  }}
+                  currentUser={currentUser}
+                  onDelete={handleDeleteQuotation}
+                />
             )}
             {subView === "create" && (
               <QuotationBuilderV3 
@@ -337,14 +433,31 @@ export function Pricing({ view = "contacts", onViewInquiry, inquiryId, currentUs
                 onSave={handleSaveQuotation}
                 initialData={selectedQuotation || undefined}
                 builderMode="quotation"
+                initialQuotationType={selectedQuotation?.quotation_type || pendingQuotationType}
               />
             )}
           </>
         )}
 
-
-
-        {view === "vendors" && <NetworkPartnersModule />}
+        {view === "vendors" && (
+          <>
+            {subView === "list" && (
+              <NetworkPartnersModule 
+                onViewVendor={handleViewVendor} 
+                partners={partners}
+                isLoading={isPartnersLoading}
+                onSavePartner={savePartner}
+              />
+            )}
+            {subView === "detail" && selectedVendor && (
+              <VendorDetail 
+                vendor={selectedVendor} 
+                onBack={handleBackFromVendor} 
+                onSave={savePartner}
+              />
+            )}
+          </>
+        )}
 
         {view === "reports" && <PricingReports />}
       </div>

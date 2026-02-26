@@ -5,6 +5,9 @@ import { CreateOthersBookingPanel } from "./CreateOthersBookingPanel";
 import { OthersBookingDetails } from "./OthersBookingDetails";
 import { NeuronStatusPill } from "../NeuronStatusPill";
 import { toast } from "../ui/toast-utils";
+import { useCachedFetch, useInvalidateCache } from "../../hooks/useNeuronCache";
+import { SkeletonTable } from "../shared/NeuronSkeleton";
+import { NeuronRefreshButton } from "../shared/NeuronRefreshButton";
 
 interface OthersBooking {
   bookingId: string;
@@ -25,50 +28,35 @@ interface OthersBookingsProps {
 const API_URL = `https://${projectId}.supabase.co/functions/v1/make-server-c142e950`;
 
 export function OthersBookings({ currentUser }: OthersBookingsProps = {}) {
-  const [bookings, setBookings] = useState<OthersBooking[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [movementFilter, setMovementFilter] = useState<string>("all");
   const [activeTab, setActiveTab] = useState<"all" | "my" | "draft" | "in-progress" | "completed">("all");
   const [timePeriodFilter, setTimePeriodFilter] = useState<string>("all");
   const [ownerFilter, setOwnerFilter] = useState<string>("all");
   const [selectedBooking, setSelectedBooking] = useState<OthersBooking | null>(null);
+  const invalidateCache = useInvalidateCache();
 
-  useEffect(() => {
-    fetchBookings();
-  }, []);
-
-  const fetchBookings = async () => {
-    setIsLoading(true);
-    try {
-      const response = await fetch(`${API_URL}/others-bookings`, {
-        headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+  // ── Cached bookings fetch ─────────────────────────────────
+  const bookingsFetcher = async (): Promise<OthersBooking[]> => {
+    const response = await fetch(`${API_URL}/others-bookings`, {
+      headers: {
+        'Authorization': `Bearer ${publicAnonKey}`,
+        'Content-Type': 'application/json'
       }
-
-      const result = await response.json();
-
-      if (result.success) {
-        setBookings(result.data);
-      } else {
-        console.error('Error fetching bookings:', result.error);
-        toast.error('Error loading bookings: ' + result.error);
-      }
-    } catch (error) {
-      console.error('Error fetching bookings:', error);
-      toast.error('Unable to connect to server');
-      setBookings([]);
-    } finally {
-      setIsLoading(false);
-    }
+    });
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+    const result = await response.json();
+    if (result.success) return result.data;
+    throw new Error(result.error);
   };
+
+  const { data: bookings, isLoading, refresh: fetchBookings } = useCachedFetch<OthersBooking[]>(
+    "others-bookings",
+    bookingsFetcher,
+    [],
+  );
 
   const handleBookingCreated = () => {
     setShowCreateModal(false);
@@ -153,6 +141,10 @@ export function OthersBookings({ currentUser }: OthersBookingsProps = {}) {
     const matchesStatus = statusFilter === "all" || booking.status === statusFilter;
     if (!matchesStatus) return false;
 
+    // Movement filter
+    const matchesMovement = movementFilter === "all" || (booking.movement || "IMPORT") === movementFilter;
+    if (!matchesMovement) return false;
+
     // Owner filter
     if (ownerFilter !== "all" && booking.accountOwner !== ownerFilter) return false;
 
@@ -173,8 +165,7 @@ export function OthersBookings({ currentUser }: OthersBookingsProps = {}) {
       <OthersBookingDetails 
         booking={selectedBooking} 
         onBack={() => { 
-          setSelectedBooking(null); 
-          fetchBookings(); 
+          setSelectedBooking(null);
         }} 
         onUpdate={fetchBookings} 
       />
@@ -211,25 +202,31 @@ export function OthersBookings({ currentUser }: OthersBookingsProps = {}) {
             </div>
             
             {/* Action Button */}
-            <button
-              onClick={() => setShowCreateModal(true)}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "8px",
-                padding: "10px 20px",
-                fontSize: "14px",
-                fontWeight: 600,
-                border: "none",
-                borderRadius: "8px",
-                background: "#0F766E",
-                color: "white",
-                cursor: "pointer",
-              }}
-            >
-              <Plus size={16} />
-              New Booking
-            </button>
+            <div className="flex items-center gap-3">
+              <NeuronRefreshButton 
+                onRefresh={fetchBookings}
+                label="Refresh bookings"
+              />
+              <button
+                onClick={() => setShowCreateModal(true)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  padding: "10px 20px",
+                  fontSize: "14px",
+                  fontWeight: 600,
+                  border: "none",
+                  borderRadius: "8px",
+                  background: "#0F766E",
+                  color: "white",
+                  cursor: "pointer",
+                }}
+              >
+                <Plus size={16} />
+                New Booking
+              </button>
+            </div>
           </div>
 
           {/* Search Bar */}
@@ -265,7 +262,7 @@ export function OthersBookings({ currentUser }: OthersBookingsProps = {}) {
           {/* Filter Row */}
           <div style={{ 
             display: "grid", 
-            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", 
+            gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", 
             gap: "12px",
             marginBottom: "24px"
           }}>
@@ -313,6 +310,26 @@ export function OthersBookings({ currentUser }: OthersBookingsProps = {}) {
               <option value="On Hold">On Hold</option>
               <option value="Completed">Completed</option>
               <option value="Cancelled">Cancelled</option>
+            </select>
+
+            {/* Movement Filter */}
+            <select
+              value={movementFilter}
+              onChange={(e) => setMovementFilter(e.target.value)}
+              style={{
+                padding: "10px 12px",
+                border: "1px solid #E5E7EB",
+                borderRadius: "8px",
+                fontSize: "14px",
+                color: "#12332B",
+                backgroundColor: "#FFFFFF",
+                outline: "none",
+                cursor: "pointer",
+              }}
+            >
+              <option value="all">All Movements</option>
+              <option value="IMPORT">Import</option>
+              <option value="EXPORT">Export</option>
             </select>
 
             {/* Account Owner Filter */}
@@ -390,8 +407,8 @@ export function OthersBookings({ currentUser }: OthersBookingsProps = {}) {
         {/* Table */}
         <div style={{ padding: "0 48px 48px 48px" }}>
           {isLoading ? (
-            <div className="flex items-center justify-center h-64">
-              <div className="text-[#12332B]/60">Loading bookings...</div>
+            <div className="mt-2">
+              <SkeletonTable rows={10} cols={6} />
             </div>
           ) : filteredBookings.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-64">

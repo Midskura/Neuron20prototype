@@ -57,6 +57,7 @@ export function autofillForwardingFromProject(project: Project) {
     // From Project - Basic Info
     projectNumber: project.project_number,
     customerName: project.customer_name,
+    movement: project.movement,
     quotationReferenceNumber: project.quotation_number,
     
     // From Service Details (if available)
@@ -125,6 +126,7 @@ export function autofillBrokerageFromProject(project: Project) {
     // From Project - Basic Info
     projectNumber: project.project_number,
     customerName: project.customer_name,
+    movement: project.movement,
     quotationReferenceNumber: project.quotation_number,
     
     // From Service Details (if available)
@@ -165,6 +167,7 @@ export function autofillTruckingFromProject(project: Project) {
     // From Project
     projectNumber: project.project_number,
     customerName: project.customer_name,
+    movement: project.movement,
     quotationReferenceNumber: project.quotation_number,
     
     // From Service Details (if available)
@@ -186,6 +189,7 @@ export function autofillMarineInsuranceFromProject(project: Project) {
     // From Project
     projectNumber: project.project_number,
     customerName: project.customer_name,
+    movement: project.movement,
     quotationReferenceNumber: project.quotation_number,
     
     // From Service Details (if available)
@@ -241,6 +245,7 @@ export function autofillOthersFromProject(project: Project) {
     // From Project
     projectNumber: project.project_number,
     customerName: project.customer_name,
+    movement: project.movement,
     quotationReferenceNumber: project.quotation_number,
     
     // From Service Details (if available)

@@ -29,9 +29,9 @@ import {
   FileText,
   Settings,
   Bell,
-  Mail,
   Home
 } from "lucide-react";
+import { CustomCheckbox } from "./bd/CustomCheckbox";
 import { CustomDropdown } from "./bd/CustomDropdown";
 import { CustomDatePicker } from "./common/CustomDatePicker";
 
@@ -42,6 +42,9 @@ export function DesignSystemGuide() {
   const [sampleDropdownValue, setSampleDropdownValue] = useState("");
   const [sampleDateValue, setSampleDateValue] = useState("");
   const [sampleSearchValue, setSampleSearchValue] = useState("");
+  const [sampleCheckbox1, setSampleCheckbox1] = useState(false);
+  const [sampleCheckbox2, setSampleCheckbox2] = useState(true);
+  const [sampleCheckbox3, setSampleCheckbox3] = useState(false);
 
   const sections = [
     { id: "overview" as GuideSection, label: "Overview", icon: Layout },
@@ -171,6 +174,12 @@ export function DesignSystemGuide() {
               setSampleDateValue={setSampleDateValue}
               sampleSearchValue={sampleSearchValue}
               setSampleSearchValue={setSampleSearchValue}
+              sampleCheckbox1={sampleCheckbox1}
+              setSampleCheckbox1={setSampleCheckbox1}
+              sampleCheckbox2={sampleCheckbox2}
+              setSampleCheckbox2={setSampleCheckbox2}
+              sampleCheckbox3={sampleCheckbox3}
+              setSampleCheckbox3={setSampleCheckbox3}
             />
           )}
           {activeSection === "principles" && <PrinciplesSection />}
@@ -750,7 +759,13 @@ function ComponentsSection({
   sampleDateValue,
   setSampleDateValue,
   sampleSearchValue,
-  setSampleSearchValue
+  setSampleSearchValue,
+  sampleCheckbox1,
+  setSampleCheckbox1,
+  sampleCheckbox2,
+  setSampleCheckbox2,
+  sampleCheckbox3,
+  setSampleCheckbox3
 }: {
   sampleDropdownValue: string;
   setSampleDropdownValue: (value: string) => void;
@@ -758,6 +773,12 @@ function ComponentsSection({
   setSampleDateValue: (value: string) => void;
   sampleSearchValue: string;
   setSampleSearchValue: (value: string) => void;
+  sampleCheckbox1: boolean;
+  setSampleCheckbox1: (value: boolean) => void;
+  sampleCheckbox2: boolean;
+  setSampleCheckbox2: (value: boolean) => void;
+  sampleCheckbox3: boolean;
+  setSampleCheckbox3: (value: boolean) => void;
 }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "32px" }}>
@@ -1162,7 +1183,6 @@ function ComponentsSection({
               { icon: FileText, label: "File" },
               { icon: Settings, label: "Settings" },
               { icon: Bell, label: "Bell" },
-              { icon: Mail, label: "Mail" },
               { icon: Search, label: "Search" },
               { icon: Filter, label: "Filter" },
               { icon: Plus, label: "Plus" },
@@ -1347,6 +1367,62 @@ function ComponentsSection({
 }}>
   <Ship size={16} style={{ color: "#667085" }} />
   <span>Ocean Freight</span>
+</div>`} />
+        </div>
+      </ComponentCard>
+
+      {/* Checkboxes */}
+      <ComponentCard title="Checkboxes">
+        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+          <p style={{ fontSize: "14px", color: "#667085", lineHeight: "1.6", marginBottom: "8px" }}>
+            Custom checkboxes with Neuron branding. Unticked state shows white background with gray border,
+            ticked state shows Neuron green background with white checkmark.
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <CustomCheckbox
+                checked={sampleCheckbox1}
+                onChange={setSampleCheckbox1}
+              />
+              <label style={{ fontSize: "13px", color: "#12332B", cursor: "pointer" }}
+                onClick={() => setSampleCheckbox1(!sampleCheckbox1)}>
+                Include optional charges
+              </label>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <CustomCheckbox
+                checked={sampleCheckbox2}
+                onChange={setSampleCheckbox2}
+              />
+              <label style={{ fontSize: "13px", color: "#12332B", cursor: "pointer" }}
+                onClick={() => setSampleCheckbox2(!sampleCheckbox2)}>
+                Apply tax (Checked state example)
+              </label>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <CustomCheckbox
+                checked={sampleCheckbox3}
+                onChange={setSampleCheckbox3}
+              />
+              <label style={{ fontSize: "13px", color: "#12332B", cursor: "pointer" }}
+                onClick={() => setSampleCheckbox3(!sampleCheckbox3)}>
+                Send notification email
+              </label>
+            </div>
+          </div>
+          <CodeBlock code={`import { CustomCheckbox } from "./components/bd/CustomCheckbox";
+
+<div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+  <CustomCheckbox
+    checked={isChecked}
+    onChange={setIsChecked}
+  />
+  <label 
+    style={{ fontSize: "13px", color: "#12332B", cursor: "pointer" }}
+    onClick={() => setIsChecked(!isChecked)}
+  >
+    Label text
+  </label>
 </div>`} />
         </div>
       </ComponentCard>

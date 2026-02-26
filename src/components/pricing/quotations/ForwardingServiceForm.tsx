@@ -1,5 +1,6 @@
 import { FormSelect } from "./FormSelect";
 import { ContainerEntriesManager } from "./ContainerEntriesManager";
+import type { ReactNode } from "react";
 
 interface ContainerEntry {
   id: string;
@@ -42,12 +43,24 @@ interface ForwardingServiceFormProps {
   data: ForwardingFormData;
   onChange: (data: ForwardingFormData) => void;
   builderMode?: "inquiry" | "quotation"; // inquiry = BD users, quotation = PD users
+  viewMode?: boolean; // When true, all inputs are disabled
+  movement?: "IMPORT" | "EXPORT";
+  contractMode?: boolean; // When true, show only scope fields, hide shipment-specific
+  headerToolbar?: ReactNode; // Optional toolbar rendered right-aligned in header row
 }
 
-export function ForwardingServiceForm({ data, onChange, builderMode = "quotation" }: ForwardingServiceFormProps) {
+export function ForwardingServiceForm({ data, onChange, builderMode = "quotation", viewMode = false, movement = "IMPORT", contractMode = false, headerToolbar }: ForwardingServiceFormProps) {
   const updateField = (field: keyof ForwardingFormData, value: any) => {
     onChange({ ...data, [field]: value });
   };
+
+  const isExport = movement === "EXPORT";
+  const incoterm = data.incoterms || "";
+
+  // Address Logic
+  // Import: Always show Delivery Address
+  // Export: Show Delivery Address only if DAP, DDU, DDP
+  const showDeliveryAddress = !isExport || ["DAP", "DDU", "DDP"].includes(incoterm);
 
   return (
     <div style={{
@@ -57,14 +70,22 @@ export function ForwardingServiceForm({ data, onChange, builderMode = "quotation
       padding: "24px",
       marginBottom: "24px"
     }}>
-      <h2 style={{
-        fontSize: "16px",
-        fontWeight: 600,
-        color: "var(--neuron-brand-green)",
+      <div style={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
         marginBottom: "20px"
       }}>
-        Forwarding Service
-      </h2>
+        <h2 style={{
+          fontSize: "16px",
+          fontWeight: 600,
+          color: "var(--neuron-brand-green)",
+          margin: 0,
+        }}>
+          {contractMode ? "Forwarding — Contract Scope" : "Forwarding Service"}
+        </h2>
+        {headerToolbar}
+      </div>
 
       <div style={{ display: "grid", gap: "20px" }}>
         {/* Incoterms */}
@@ -94,33 +115,39 @@ export function ForwardingServiceForm({ data, onChange, builderMode = "quotation
               { value: "DDP", label: "DDP" }
             ]}
             placeholder="Select incoterm..."
+            disabled={viewMode}
           />
         </div>
 
-        {/* Cargo Type & Cargo Nature */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
-          <div>
-            <label style={{
-              display: "block",
-              fontSize: "13px",
-              fontWeight: 500,
-              color: "var(--neuron-ink-base)",
-              marginBottom: "8px"
-            }}>
-              Cargo Type
-            </label>
-            <FormSelect
-              value={data.cargoType || ""}
-              onChange={(value) => updateField("cargoType", value)}
-              options={[
-                { value: "Dry", label: "Dry" },
-                { value: "Reefer", label: "Reefer" },
-                { value: "Breakbulk", label: "Breakbulk" },
-                { value: "RORO", label: "RORO" }
-              ]}
-              placeholder="Select cargo type..."
-            />
-          </div>
+        {/* Cargo Type — hidden in contract mode (shipment-specific) */}
+        {!contractMode && (
+        <div>
+          <label style={{
+            display: "block",
+            fontSize: "13px",
+            fontWeight: 500,
+            color: "var(--neuron-ink-base)",
+            marginBottom: "8px"
+          }}>
+            Cargo Type
+          </label>
+          <FormSelect
+            value={data.cargoType || ""}
+            onChange={(value) => updateField("cargoType", value)}
+            options={[
+              { value: "Dry", label: "Dry" },
+              { value: "Reefer", label: "Reefer" },
+              { value: "Breakbulk", label: "Breakbulk" },
+              { value: "RORO", label: "RORO" }
+            ]}
+            placeholder="Select cargo type..."
+            disabled={viewMode}
+          />
+        </div>
+        )}
+
+        {/* Cargo Nature — scope field, shown in both modes (Hide for Export) */}
+        {!isExport && (
           <div>
             <label style={{
               display: "block",
@@ -142,12 +169,14 @@ export function ForwardingServiceForm({ data, onChange, builderMode = "quotation
                 { value: "Temperature Controlled", label: "Temperature Controlled" }
               ]}
               placeholder="Select cargo nature..."
+              disabled={viewMode}
             />
           </div>
-        </div>
+        )}
 
         {/* Commodity Description & Delivery Address */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+        {!contractMode && (
+        <div style={{ display: "grid", gridTemplateColumns: showDeliveryAddress ? "1fr 1fr" : "1fr", gap: "16px" }}>
           <div>
             <label style={{
               display: "block",
@@ -168,55 +197,62 @@ export function ForwardingServiceForm({ data, onChange, builderMode = "quotation
                 padding: "10px 12px",
                 fontSize: "13px",
                 color: "var(--neuron-ink-base)",
-                backgroundColor: "white",
+                backgroundColor: viewMode ? "#F9FAFB" : "white",
                 border: "1px solid var(--neuron-ui-border)",
                 borderRadius: "6px",
                 outline: "none",
-                transition: "border-color 0.15s ease"
+                transition: "border-color 0.15s ease",
+                cursor: viewMode ? "default" : "text"
               }}
               onFocus={(e) => {
-                e.currentTarget.style.borderColor = "var(--neuron-brand-teal)";
+                if (!viewMode) e.currentTarget.style.borderColor = "var(--neuron-brand-teal)";
               }}
               onBlur={(e) => {
-                e.currentTarget.style.borderColor = "var(--neuron-ui-border)";
+                if (!viewMode) e.currentTarget.style.borderColor = "var(--neuron-ui-border)";
               }}
+              disabled={viewMode}
             />
           </div>
-          <div>
-            <label style={{
-              display: "block",
-              fontSize: "13px",
-              fontWeight: 500,
-              color: "var(--neuron-ink-base)",
-              marginBottom: "8px"
-            }}>
-              Delivery Address
-            </label>
-            <input
-              type="text"
-              value={data.deliveryAddress || ""}
-              onChange={(e) => updateField("deliveryAddress", e.target.value)}
-              placeholder="Enter delivery address"
-              style={{
-                width: "100%",
-                padding: "10px 12px",
+          {showDeliveryAddress && (
+            <div>
+              <label style={{
+                display: "block",
                 fontSize: "13px",
+                fontWeight: 500,
                 color: "var(--neuron-ink-base)",
-                backgroundColor: "white",
-                border: "1px solid var(--neuron-ui-border)",
-                borderRadius: "6px",
-                outline: "none",
-                transition: "border-color 0.15s ease"
-              }}
-              onFocus={(e) => {
-                e.currentTarget.style.borderColor = "var(--neuron-brand-teal)";
-              }}
-              onBlur={(e) => {
-                e.currentTarget.style.borderColor = "var(--neuron-ui-border)";
-              }}
-            />
-          </div>
+                marginBottom: "8px"
+              }}>
+                Delivery Address
+              </label>
+              <input
+                type="text"
+                value={data.deliveryAddress || ""}
+                onChange={(e) => updateField("deliveryAddress", e.target.value)}
+                placeholder="Enter delivery address"
+                style={{
+                  width: "100%",
+                  padding: "10px 12px",
+                  fontSize: "13px",
+                  color: "var(--neuron-ink-base)",
+                  backgroundColor: viewMode ? "#F9FAFB" : "white",
+                  border: "1px solid var(--neuron-ui-border)",
+                  borderRadius: "6px",
+                  outline: "none",
+                  transition: "border-color 0.15s ease",
+                  cursor: viewMode ? "default" : "text"
+                }}
+                onFocus={(e) => {
+                  if (!viewMode) e.currentTarget.style.borderColor = "var(--neuron-brand-teal)";
+                }}
+                onBlur={(e) => {
+                  if (!viewMode) e.currentTarget.style.borderColor = "var(--neuron-ui-border)";
+                }}
+                disabled={viewMode}
+              />
+            </div>
+          )}
         </div>
+        )}
 
         {/* AOL/POL & AOD/POD */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
@@ -240,18 +276,20 @@ export function ForwardingServiceForm({ data, onChange, builderMode = "quotation
                 padding: "10px 12px",
                 fontSize: "13px",
                 color: "var(--neuron-ink-base)",
-                backgroundColor: "white",
+                backgroundColor: viewMode ? "#F9FAFB" : "white",
                 border: "1px solid var(--neuron-ui-border)",
                 borderRadius: "6px",
                 outline: "none",
-                transition: "border-color 0.15s ease"
+                transition: "border-color 0.15s ease",
+                cursor: viewMode ? "default" : "text"
               }}
               onFocus={(e) => {
-                e.currentTarget.style.borderColor = "var(--neuron-brand-teal)";
+                if (!viewMode) e.currentTarget.style.borderColor = "var(--neuron-brand-teal)";
               }}
               onBlur={(e) => {
-                e.currentTarget.style.borderColor = "var(--neuron-ui-border)";
+                if (!viewMode) e.currentTarget.style.borderColor = "var(--neuron-ui-border)";
               }}
+              disabled={viewMode}
             />
           </div>
           <div>
@@ -274,18 +312,20 @@ export function ForwardingServiceForm({ data, onChange, builderMode = "quotation
                 padding: "10px 12px",
                 fontSize: "13px",
                 color: "var(--neuron-ink-base)",
-                backgroundColor: "white",
+                backgroundColor: viewMode ? "#F9FAFB" : "white",
                 border: "1px solid var(--neuron-ui-border)",
                 borderRadius: "6px",
                 outline: "none",
-                transition: "border-color 0.15s ease"
+                transition: "border-color 0.15s ease",
+                cursor: viewMode ? "default" : "text"
               }}
               onFocus={(e) => {
-                e.currentTarget.style.borderColor = "var(--neuron-brand-teal)";
+                if (!viewMode) e.currentTarget.style.borderColor = "var(--neuron-brand-teal)";
               }}
               onBlur={(e) => {
-                e.currentTarget.style.borderColor = "var(--neuron-ui-border)";
+                if (!viewMode) e.currentTarget.style.borderColor = "var(--neuron-ui-border)";
               }}
+              disabled={viewMode}
             />
           </div>
         </div>
@@ -311,11 +351,12 @@ export function ForwardingServiceForm({ data, onChange, builderMode = "quotation
               { value: "Multi-modal", label: "Multi-modal" }
             ]}
             placeholder="Select mode..."
+            disabled={viewMode}
           />
         </div>
 
-        {/* Conditional Mode Fields */}
-        {data.mode === "FCL" && (
+        {/* Conditional Mode Fields — hidden in contract mode */}
+        {!contractMode && data.mode === "FCL" && (
           <div style={{
             padding: "16px",
             backgroundColor: "#F8FBFB",
@@ -325,11 +366,12 @@ export function ForwardingServiceForm({ data, onChange, builderMode = "quotation
             <ContainerEntriesManager
               containers={data.containers || []}
               onChange={(containers) => updateField("containers", containers)}
+              disabled={viewMode}
             />
           </div>
         )}
 
-        {data.mode === "LCL" && (
+        {!contractMode && data.mode === "LCL" && (
           <div style={{
             padding: "16px",
             backgroundColor: "#F8FBFB",
@@ -357,18 +399,20 @@ export function ForwardingServiceForm({ data, onChange, builderMode = "quotation
                     padding: "8px 10px",
                     fontSize: "13px",
                     color: "var(--neuron-ink-base)",
-                    backgroundColor: "white",
+                    backgroundColor: viewMode ? "#F9FAFB" : "white",
                     border: "1px solid var(--neuron-ui-border)",
                     borderRadius: "6px",
                     outline: "none",
-                    transition: "border-color 0.15s ease"
+                    transition: "border-color 0.15s ease",
+                    cursor: viewMode ? "default" : "text"
                   }}
                   onFocus={(e) => {
-                    e.currentTarget.style.borderColor = "var(--neuron-brand-teal)";
+                    if (!viewMode) e.currentTarget.style.borderColor = "var(--neuron-brand-teal)";
                   }}
                   onBlur={(e) => {
-                    e.currentTarget.style.borderColor = "var(--neuron-ui-border)";
+                    if (!viewMode) e.currentTarget.style.borderColor = "var(--neuron-ui-border)";
                   }}
+                  disabled={viewMode}
                 />
               </div>
               <div>
@@ -391,25 +435,27 @@ export function ForwardingServiceForm({ data, onChange, builderMode = "quotation
                     padding: "8px 10px",
                     fontSize: "13px",
                     color: "var(--neuron-ink-base)",
-                    backgroundColor: "white",
+                    backgroundColor: viewMode ? "#F9FAFB" : "white",
                     border: "1px solid var(--neuron-ui-border)",
                     borderRadius: "6px",
                     outline: "none",
-                    transition: "border-color 0.15s ease"
+                    transition: "border-color 0.15s ease",
+                    cursor: viewMode ? "default" : "text"
                   }}
                   onFocus={(e) => {
-                    e.currentTarget.style.borderColor = "var(--neuron-brand-teal)";
+                    if (!viewMode) e.currentTarget.style.borderColor = "var(--neuron-brand-teal)";
                   }}
                   onBlur={(e) => {
-                    e.currentTarget.style.borderColor = "var(--neuron-ui-border)";
+                    if (!viewMode) e.currentTarget.style.borderColor = "var(--neuron-ui-border)";
                   }}
+                  disabled={viewMode}
                 />
               </div>
             </div>
           </div>
         )}
 
-        {data.mode === "AIR" && (
+        {!contractMode && data.mode === "AIR" && (
           <div style={{
             padding: "16px",
             backgroundColor: "#F8FBFB",
@@ -437,18 +483,20 @@ export function ForwardingServiceForm({ data, onChange, builderMode = "quotation
                     padding: "8px 10px",
                     fontSize: "13px",
                     color: "var(--neuron-ink-base)",
-                    backgroundColor: "white",
+                    backgroundColor: viewMode ? "#F9FAFB" : "white",
                     border: "1px solid var(--neuron-ui-border)",
                     borderRadius: "6px",
                     outline: "none",
-                    transition: "border-color 0.15s ease"
+                    transition: "border-color 0.15s ease",
+                    cursor: viewMode ? "default" : "text"
                   }}
                   onFocus={(e) => {
-                    e.currentTarget.style.borderColor = "var(--neuron-brand-teal)";
+                    if (!viewMode) e.currentTarget.style.borderColor = "var(--neuron-brand-teal)";
                   }}
                   onBlur={(e) => {
-                    e.currentTarget.style.borderColor = "var(--neuron-ui-border)";
+                    if (!viewMode) e.currentTarget.style.borderColor = "var(--neuron-ui-border)";
                   }}
+                  disabled={viewMode}
                 />
               </div>
               <div>
@@ -471,26 +519,28 @@ export function ForwardingServiceForm({ data, onChange, builderMode = "quotation
                     padding: "8px 10px",
                     fontSize: "13px",
                     color: "var(--neuron-ink-base)",
-                    backgroundColor: "white",
+                    backgroundColor: viewMode ? "#F9FAFB" : "white",
                     border: "1px solid var(--neuron-ui-border)",
                     borderRadius: "6px",
                     outline: "none",
-                    transition: "border-color 0.15s ease"
+                    transition: "border-color 0.15s ease",
+                    cursor: viewMode ? "default" : "text"
                   }}
                   onFocus={(e) => {
-                    e.currentTarget.style.borderColor = "var(--neuron-brand-teal)";
+                    if (!viewMode) e.currentTarget.style.borderColor = "var(--neuron-brand-teal)";
                   }}
                   onBlur={(e) => {
-                    e.currentTarget.style.borderColor = "var(--neuron-ui-border)";
+                    if (!viewMode) e.currentTarget.style.borderColor = "var(--neuron-ui-border)";
                   }}
+                  disabled={viewMode}
                 />
               </div>
             </div>
           </div>
         )}
 
-        {/* Conditional Incoterm-based Fields */}
-        {data.incoterms === "EXW" && (
+        {/* Conditional Incoterm-based Fields — hidden in contract mode */}
+        {!contractMode && data.incoterms === "EXW" && (
           <div style={{
             padding: "16px",
             backgroundColor: "#F8FBFB",
@@ -516,23 +566,26 @@ export function ForwardingServiceForm({ data, onChange, builderMode = "quotation
                 padding: "10px 12px",
                 fontSize: "13px",
                 color: "var(--neuron-ink-base)",
-                backgroundColor: "white",
+                backgroundColor: viewMode ? "#F9FAFB" : "white",
                 border: "1px solid var(--neuron-ui-border)",
                 borderRadius: "6px",
                 outline: "none",
-                transition: "border-color 0.15s ease"
+                transition: "border-color 0.15s ease",
+                cursor: viewMode ? "default" : "text"
               }}
               onFocus={(e) => {
-                e.currentTarget.style.borderColor = "var(--neuron-brand-teal)";
+                if (!viewMode) e.currentTarget.style.borderColor = "var(--neuron-brand-teal)";
               }}
               onBlur={(e) => {
-                e.currentTarget.style.borderColor = "var(--neuron-ui-border)";
+                if (!viewMode) e.currentTarget.style.borderColor = "var(--neuron-ui-border)";
               }}
+              disabled={viewMode}
             />
           </div>
         )}
 
-        {(data.incoterms === "EXW" || data.incoterms === "FOB" || data.incoterms === "FCA") && (
+        {/* Carrier/Transit/Route/Stackable - Hide for Export — hidden in contract mode */}
+        {!contractMode && !isExport && (data.incoterms === "EXW" || data.incoterms === "FOB" || data.incoterms === "FCA") && (
           <div style={{
             padding: "16px",
             backgroundColor: "#F8FBFB",
@@ -562,11 +615,13 @@ export function ForwardingServiceForm({ data, onChange, builderMode = "quotation
                       padding: "8px 10px",
                       fontSize: "13px",
                       color: "var(--neuron-ink-base)",
-                      backgroundColor: "white",
+                      backgroundColor: viewMode ? "#F9FAFB" : "white",
                       border: "1px solid var(--neuron-ui-border)",
                       borderRadius: "6px",
-                      outline: "none"
+                      outline: "none",
+                      cursor: viewMode ? "default" : "text"
                     }}
+                    disabled={viewMode}
                   />
                 </div>
                 <div>
@@ -582,37 +637,41 @@ export function ForwardingServiceForm({ data, onChange, builderMode = "quotation
                   <div style={{ display: "flex", gap: "8px" }}>
                     <button
                       type="button"
-                      onClick={() => updateField("stackable", true)}
+                      onClick={() => !viewMode && updateField("stackable", true)}
                       style={{
                         flex: 1,
                         padding: "8px 12px",
                         fontSize: "12px",
                         fontWeight: 500,
                         color: data.stackable === true ? "#FFFFFF" : "var(--neuron-ink-secondary)",
-                        backgroundColor: data.stackable === true ? "#0F766E" : "#FFFFFF",
-                        border: `1px solid ${data.stackable === true ? "#0F766E" : "var(--neuron-ui-border)"}`,
+                        backgroundColor: data.stackable === true ? (viewMode ? "#9CA3AF" : "#0F766E") : (viewMode ? "#F3F4F6" : "#FFFFFF"),
+                        border: `1px solid ${data.stackable === true ? (viewMode ? "#9CA3AF" : "#0F766E") : "var(--neuron-ui-border)"}`,
                         borderRadius: "6px",
-                        cursor: "pointer",
-                        transition: "all 0.2s ease"
+                        cursor: viewMode ? "default" : "pointer",
+                        transition: "all 0.2s ease",
+                        opacity: viewMode ? 0.7 : 1
                       }}
+                      disabled={viewMode}
                     >
                       Yes
                     </button>
                     <button
                       type="button"
-                      onClick={() => updateField("stackable", false)}
+                      onClick={() => !viewMode && updateField("stackable", false)}
                       style={{
                         flex: 1,
                         padding: "8px 12px",
                         fontSize: "12px",
                         fontWeight: 500,
                         color: data.stackable === false ? "#FFFFFF" : "var(--neuron-ink-secondary)",
-                        backgroundColor: data.stackable === false ? "#0F766E" : "#FFFFFF",
-                        border: `1px solid ${data.stackable === false ? "#0F766E" : "var(--neuron-ui-border)"}`,
+                        backgroundColor: data.stackable === false ? (viewMode ? "#9CA3AF" : "#0F766E") : (viewMode ? "#F3F4F6" : "#FFFFFF"),
+                        border: `1px solid ${data.stackable === false ? (viewMode ? "#9CA3AF" : "#0F766E") : "var(--neuron-ui-border)"}`,
                         borderRadius: "6px",
-                        cursor: "pointer",
-                        transition: "all 0.2s ease"
+                        cursor: viewMode ? "default" : "pointer",
+                        transition: "all 0.2s ease",
+                        opacity: viewMode ? 0.7 : 1
                       }}
+                      disabled={viewMode}
                     >
                       No
                     </button>
@@ -637,24 +696,19 @@ export function ForwardingServiceForm({ data, onChange, builderMode = "quotation
                       type="text"
                       value={data.carrierAirline || ""}
                       onChange={(e) => updateField("carrierAirline", e.target.value)}
-                      placeholder="Enter carrier/airline"
+                      placeholder="Enter carrier"
                       style={{
                         width: "100%",
                         padding: "8px 10px",
                         fontSize: "13px",
                         color: "var(--neuron-ink-base)",
-                        backgroundColor: "white",
+                        backgroundColor: viewMode ? "#F9FAFB" : "white",
                         border: "1px solid var(--neuron-ui-border)",
                         borderRadius: "6px",
                         outline: "none",
-                        transition: "border-color 0.15s ease"
+                        cursor: viewMode ? "default" : "text"
                       }}
-                      onFocus={(e) => {
-                        e.currentTarget.style.borderColor = "var(--neuron-brand-teal)";
-                      }}
-                      onBlur={(e) => {
-                        e.currentTarget.style.borderColor = "var(--neuron-ui-border)";
-                      }}
+                      disabled={viewMode}
                     />
                   </div>
                   <div>
@@ -671,28 +725,23 @@ export function ForwardingServiceForm({ data, onChange, builderMode = "quotation
                       type="text"
                       value={data.transitTime || ""}
                       onChange={(e) => updateField("transitTime", e.target.value)}
-                      placeholder="e.g., 10 days"
+                      placeholder="e.g., 10 Days"
                       style={{
                         width: "100%",
                         padding: "8px 10px",
                         fontSize: "13px",
                         color: "var(--neuron-ink-base)",
-                        backgroundColor: "white",
+                        backgroundColor: viewMode ? "#F9FAFB" : "white",
                         border: "1px solid var(--neuron-ui-border)",
                         borderRadius: "6px",
                         outline: "none",
-                        transition: "border-color 0.15s ease"
+                        cursor: viewMode ? "default" : "text"
                       }}
-                      onFocus={(e) => {
-                        e.currentTarget.style.borderColor = "var(--neuron-brand-teal)";
-                      }}
-                      onBlur={(e) => {
-                        e.currentTarget.style.borderColor = "var(--neuron-ui-border)";
-                      }}
+                      disabled={viewMode}
                     />
                   </div>
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "12px" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 140px", gap: "12px" }}>
                   <div>
                     <label style={{
                       display: "block",
@@ -707,24 +756,19 @@ export function ForwardingServiceForm({ data, onChange, builderMode = "quotation
                       type="text"
                       value={data.route || ""}
                       onChange={(e) => updateField("route", e.target.value)}
-                      placeholder="Enter route"
+                      placeholder="e.g., MNL-SIN-LAX"
                       style={{
                         width: "100%",
                         padding: "8px 10px",
                         fontSize: "13px",
                         color: "var(--neuron-ink-base)",
-                        backgroundColor: "white",
+                        backgroundColor: viewMode ? "#F9FAFB" : "white",
                         border: "1px solid var(--neuron-ui-border)",
                         borderRadius: "6px",
                         outline: "none",
-                        transition: "border-color 0.15s ease"
+                        cursor: viewMode ? "default" : "text"
                       }}
-                      onFocus={(e) => {
-                        e.currentTarget.style.borderColor = "var(--neuron-brand-teal)";
-                      }}
-                      onBlur={(e) => {
-                        e.currentTarget.style.borderColor = "var(--neuron-ui-border)";
-                      }}
+                      disabled={viewMode}
                     />
                   </div>
                   <div>
@@ -740,37 +784,41 @@ export function ForwardingServiceForm({ data, onChange, builderMode = "quotation
                     <div style={{ display: "flex", gap: "8px" }}>
                       <button
                         type="button"
-                        onClick={() => updateField("stackable", true)}
+                        onClick={() => !viewMode && updateField("stackable", true)}
                         style={{
                           flex: 1,
                           padding: "8px 12px",
                           fontSize: "12px",
                           fontWeight: 500,
                           color: data.stackable === true ? "#FFFFFF" : "var(--neuron-ink-secondary)",
-                          backgroundColor: data.stackable === true ? "#0F766E" : "#FFFFFF",
-                          border: `1px solid ${data.stackable === true ? "#0F766E" : "var(--neuron-ui-border)"}`,
+                          backgroundColor: data.stackable === true ? (viewMode ? "#9CA3AF" : "#0F766E") : (viewMode ? "#F3F4F6" : "#FFFFFF"),
+                          border: `1px solid ${data.stackable === true ? (viewMode ? "#9CA3AF" : "#0F766E") : "var(--neuron-ui-border)"}`,
                           borderRadius: "6px",
-                          cursor: "pointer",
-                          transition: "all 0.2s ease"
+                          cursor: viewMode ? "default" : "pointer",
+                          transition: "all 0.2s ease",
+                          opacity: viewMode ? 0.7 : 1
                         }}
+                        disabled={viewMode}
                       >
                         Yes
                       </button>
                       <button
                         type="button"
-                        onClick={() => updateField("stackable", false)}
+                        onClick={() => !viewMode && updateField("stackable", false)}
                         style={{
                           flex: 1,
                           padding: "8px 12px",
                           fontSize: "12px",
                           fontWeight: 500,
                           color: data.stackable === false ? "#FFFFFF" : "var(--neuron-ink-secondary)",
-                          backgroundColor: data.stackable === false ? "#0F766E" : "#FFFFFF",
-                          border: `1px solid ${data.stackable === false ? "#0F766E" : "var(--neuron-ui-border)"}`,
+                          backgroundColor: data.stackable === false ? (viewMode ? "#9CA3AF" : "#0F766E") : (viewMode ? "#F3F4F6" : "#FFFFFF"),
+                          border: `1px solid ${data.stackable === false ? (viewMode ? "#9CA3AF" : "#0F766E") : "var(--neuron-ui-border)"}`,
                           borderRadius: "6px",
-                          cursor: "pointer",
-                          transition: "all 0.2s ease"
+                          cursor: viewMode ? "default" : "pointer",
+                          transition: "all 0.2s ease",
+                          opacity: viewMode ? 0.7 : 1
                         }}
+                        disabled={viewMode}
                       >
                         No
                       </button>
@@ -781,112 +829,6 @@ export function ForwardingServiceForm({ data, onChange, builderMode = "quotation
             )}
           </div>
         )}
-
-        {(data.incoterms === "DAP" || data.incoterms === "DDU" || data.incoterms === "DDP") && (
-          <div style={{
-            padding: "16px",
-            backgroundColor: "#FEF3F2",
-            border: "1px solid #FEE4E2",
-            borderRadius: "6px"
-          }}>
-            <label style={{
-              display: "block",
-              fontSize: "13px",
-              fontWeight: 500,
-              color: "var(--neuron-ink-base)",
-              marginBottom: "8px"
-            }}>
-              Delivery Address (DAP/DDU/DDP)
-            </label>
-            <input
-              type="text"
-              value={data.deliveryAddress || ""}
-              onChange={(e) => updateField("deliveryAddress", e.target.value)}
-              placeholder="Enter delivery address"
-              style={{
-                width: "100%",
-                padding: "10px 12px",
-                fontSize: "13px",
-                color: "var(--neuron-ink-base)",
-                backgroundColor: "white",
-                border: "1px solid var(--neuron-ui-border)",
-                borderRadius: "6px",
-                outline: "none",
-                transition: "border-color 0.15s ease"
-              }}
-              onFocus={(e) => {
-                e.currentTarget.style.borderColor = "var(--neuron-brand-teal)";
-              }}
-              onBlur={(e) => {
-                e.currentTarget.style.borderColor = "var(--neuron-ui-border)";
-              }}
-            />
-          </div>
-        )}
-
-        {/* Country of Origin & Preferential Treatment */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-          <div>
-            <label style={{
-              display: "block",
-              fontSize: "12px",
-              fontWeight: 500,
-              color: "var(--neuron-ink-base)",
-              marginBottom: "6px"
-            }}>
-              Country of Origin
-            </label>
-            <input
-              type="text"
-              value={data.countryOfOrigin || ""}
-              onChange={(e) => updateField("countryOfOrigin", e.target.value)}
-              placeholder="Enter country of origin"
-              style={{
-                width: "100%",
-                padding: "8px 10px",
-                fontSize: "13px",
-                color: "var(--neuron-ink-base)",
-                backgroundColor: "white",
-                border: "1px solid var(--neuron-ui-border)",
-                borderRadius: "6px",
-                outline: "none",
-                transition: "border-color 0.15s ease"
-              }}
-              onFocus={(e) => {
-                e.currentTarget.style.borderColor = "var(--neuron-brand-teal)";
-              }}
-              onBlur={(e) => {
-                e.currentTarget.style.borderColor = "var(--neuron-ui-border)";
-              }}
-            />
-          </div>
-          <div>
-            <label style={{
-              display: "block",
-              fontSize: "12px",
-              fontWeight: 500,
-              color: "var(--neuron-ink-base)",
-              marginBottom: "6px"
-            }}>
-              Preferential Treatment
-            </label>
-            <FormSelect
-              value={data.preferentialTreatment || ""}
-              onChange={(value) => updateField("preferentialTreatment", value)}
-              options={[
-                { value: "ATIGA", label: "ATIGA" },
-                { value: "AJCEP", label: "AJCEP" },
-                { value: "AKFTA", label: "AKFTA" },
-                { value: "AANZFTA", label: "AANZFTA" },
-                { value: "ACFTA", label: "ACFTA" },
-                { value: "AIFTA", label: "AIFTA" },
-                { value: "RCEP", label: "RCEP" },
-                { value: "None", label: "None" }
-              ]}
-              placeholder="Select preferential treatment..."
-            />
-          </div>
-        </div>
       </div>
     </div>
   );

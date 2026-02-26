@@ -328,7 +328,7 @@ export function ExecutiveDashboard({ currentUser }: ExecutiveDashboardProps) {
               </div>
               
               <div style={{ width: '100%', height: 350, contain: 'strict' }}>
-                <ResponsiveContainer width="100%" height="100%" debounce={300}>
+                <ResponsiveContainer width="100%" height={350} debounce={300}>
                   <ComposedChart data={cashFlowData}>
                     {/* CartesianGrid removed for better performance */}
                     <XAxis 
@@ -454,7 +454,7 @@ export function ExecutiveDashboard({ currentUser }: ExecutiveDashboardProps) {
               </div>
               
               <div style={{ width: '100%', height: 300, contain: 'strict' }}>
-                <ResponsiveContainer width="100%" height="100%" debounce={300}>
+                <ResponsiveContainer width="100%" height={300} debounce={300}>
                   <BarChart data={bookingTrendsData}>
                     {/* CartesianGrid removed for better performance */}
                     <XAxis 

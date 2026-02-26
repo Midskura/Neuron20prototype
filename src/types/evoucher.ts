@@ -19,6 +19,7 @@ export type EVoucherStatus =
 export type EVoucherTransactionType = 
   | "expense"           // General expense voucher
   | "budget_request"    // Budget request from BD module
+  | "cash_advance"      // Cash Advance for operations/staff
   | "collection"        // Collection entry
   | "billing"           // Billing adjustment
   | "adjustment"        // General adjustment
@@ -104,6 +105,14 @@ export type PaymentType = "Full" | "Partial";
 
 export type LiquidationStatus = "Yes" | "No" | "Pending";
 
+// New Types for Billing Architecture
+export type BillingStatus = "unbilled" | "billed" | "paid" | "partial";
+
+export interface LinkedBilling {
+  id: string; // The ID of the billing EVoucher being paid
+  amount: number; // The amount applied to this billing
+}
+
 export interface EVoucherApprover {
   id: string;
   name: string;
@@ -152,17 +161,27 @@ export interface EVoucher {
   customer_name?: string;
   budget_request_id?: string;
   budget_request_number?: string;
+  parent_voucher_id?: string; // For linking liquidations/returns to original request
   
+  // Billing & Collections Architecture (New Fields)
+  statement_reference?: string; // ID for grouping billings (SOA)
+  billing_status?: BillingStatus; // Lifecycle of a billing item
+  remaining_balance?: number; // Amount left to be paid
+  linked_billings?: LinkedBilling[]; // For collections: which billings this pays
+  billable_item_reference?: string; // ID of source item (e.g. Quotation Charge ID)
+
   // Vendor Information (filled by requestor)
   vendor_id?: string;
   vendor_name: string;
   vendor_contact?: string;
+  is_billable?: boolean; // Is this expense billable to the client?
   
   // Payment Terms (filled by requestor)
   credit_terms?: string;
   due_date?: string;
   payment_method?: PaymentMethod;
   payment_type?: PaymentType;
+  source_account_id?: string; // ID of the bank/cash account
   
   // Approval Flow
   status: EVoucherStatus;

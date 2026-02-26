@@ -10,9 +10,10 @@ interface ContainerEntry {
 interface ContainerEntriesManagerProps {
   containers: ContainerEntry[];
   onChange: (containers: ContainerEntry[]) => void;
+  disabled?: boolean;
 }
 
-export function ContainerEntriesManager({ containers, onChange }: ContainerEntriesManagerProps) {
+export function ContainerEntriesManager({ containers, onChange, disabled = false }: ContainerEntriesManagerProps) {
   const addContainer = () => {
     const newContainer: ContainerEntry = {
       id: `container-${Date.now()}`,
@@ -49,6 +50,7 @@ export function ContainerEntriesManager({ containers, onChange }: ContainerEntri
         }}>
           Container Types & Quantities
         </label>
+        {!disabled && (
         <button
           type="button"
           onClick={addContainer}
@@ -69,6 +71,7 @@ export function ContainerEntriesManager({ containers, onChange }: ContainerEntri
           <Plus size={14} />
           Add Container
         </button>
+        )}
       </div>
 
       <div style={{ display: "grid", gap: "8px" }}>
@@ -90,7 +93,7 @@ export function ContainerEntriesManager({ containers, onChange }: ContainerEntri
               key={container.id}
               style={{
                 display: "grid",
-                gridTemplateColumns: "1fr 120px 40px",
+                gridTemplateColumns: disabled ? "1fr 120px" : "1fr 120px 40px",
                 gap: "12px",
                 padding: "12px",
                 backgroundColor: "#F8FBFB",
@@ -110,6 +113,7 @@ export function ContainerEntriesManager({ containers, onChange }: ContainerEntri
                     { value: "45ft", label: "45ft Container" }
                   ]}
                   placeholder="Select container type..."
+                  disabled={disabled}
                 />
               </div>
 
@@ -121,27 +125,30 @@ export function ContainerEntriesManager({ containers, onChange }: ContainerEntri
                   onChange={(e) => updateContainer(container.id, "qty", parseInt(e.target.value) || 0)}
                   placeholder="QTY"
                   min="0"
+                  disabled={disabled}
                   style={{
                     width: "100%",
                     padding: "10px 12px",
                     fontSize: "13px",
                     color: "var(--neuron-ink-base)",
-                    backgroundColor: "white",
+                    backgroundColor: disabled ? "#F9FAFB" : "white",
                     border: "1px solid var(--neuron-ui-border)",
                     borderRadius: "6px",
                     outline: "none",
-                    transition: "border-color 0.15s ease"
+                    transition: "border-color 0.15s ease",
+                    cursor: disabled ? "default" : "text"
                   }}
                   onFocus={(e) => {
-                    e.currentTarget.style.borderColor = "var(--neuron-brand-teal)";
+                    if (!disabled) e.currentTarget.style.borderColor = "var(--neuron-brand-teal)";
                   }}
                   onBlur={(e) => {
-                    e.currentTarget.style.borderColor = "var(--neuron-ui-border)";
+                    if (!disabled) e.currentTarget.style.borderColor = "var(--neuron-ui-border)";
                   }}
                 />
               </div>
 
-              {/* Delete Button */}
+              {/* Delete Button - hidden in view mode */}
+              {!disabled && (
               <button
                 type="button"
                 onClick={() => removeContainer(container.id)}
@@ -167,6 +174,7 @@ export function ContainerEntriesManager({ containers, onChange }: ContainerEntri
               >
                 <Trash2 size={16} />
               </button>
+              )}
             </div>
           ))
         )}

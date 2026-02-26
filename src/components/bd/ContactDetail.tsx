@@ -1,8 +1,9 @@
 import { ArrowLeft, Mail, Phone, Building2, User, Edit, Trash2, Paperclip, Download, FileText, Image as ImageIcon, File, Upload, CheckCircle2, AlertCircle, MessageSquare, Send, Plus, Users, MessageCircle, Linkedin, StickyNote, Flag, CheckSquare } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import type { Contact, LifecycleStage, LeadStatus, Task, Activity, Customer } from "../../types/bd";
 import type { QuotationNew } from "../../types/pricing";
 import { CustomDropdown } from "./CustomDropdown";
+import { ActivityTimelineTable } from "./ActivityTimelineTable";
 import { projectId, publicAnonKey } from "../../utils/supabase/info";
 
 const API_URL = `https://${projectId}.supabase.co/functions/v1/make-server-c142e950`;
@@ -11,6 +12,7 @@ interface ContactDetailProps {
   contact: Contact;
   onBack: () => void;
   onCreateInquiry?: (customer: Customer, contact?: Contact) => void;
+  variant?: "bd" | "pricing";
 }
 
 // Mock attachment data
@@ -111,8 +113,8 @@ const mockComments: Comment[] = [
   }
 ];
 
-export function ContactDetail({ contact, onBack, onCreateInquiry }: ContactDetailProps) {
-  const [activeTab, setActiveTab] = useState<"activities" | "tasks" | "inquiries" | "attachments" | "comments">("activities");
+export function ContactDetail({ contact, onBack, onCreateInquiry, variant = "bd" }: ContactDetailProps) {
+  const [activeTab, setActiveTab] = useState<"activities" | "tasks" | "inquiries" | "attachments" | "comments">(variant === "pricing" ? "inquiries" : "activities");
   const [newComment, setNewComment] = useState("");
   const [isEditing, setIsEditing] = useState(false);
   const [editedContact, setEditedContact] = useState(contact);
@@ -134,6 +136,26 @@ export function ContactDetail({ contact, onBack, onCreateInquiry }: ContactDetai
     contact_id: contact.id
   });
   const [activityAttachments, setActivityAttachments] = useState<Attachment[]>([]);
+  const [attachments, setAttachments] = useState<Attachment[]>(mockAttachments);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const newAttachment: Attachment = {
+      id: `att-${Date.now()}`,
+      name: file.name,
+      type: file.name.endsWith('.pdf') ? 'pdf' : file.name.match(/\.(jpg|jpeg|png|gif)$/i) ? 'image' : file.name.endsWith('.xlsx') ? 'spreadsheet' : 'document',
+      size: `${(file.size / 1024 / 1024).toFixed(1)} MB`,
+      uploadedAt: new Date().toISOString(),
+      source: "Activity", // Defaulting to Activity for manual uploads
+      sourceId: "manual-upload",
+      sourceName: "Manual Upload"
+    };
+
+    setAttachments([newAttachment, ...attachments]);
+  };
   
   // Backend data state
   const [customer, setCustomer] = useState<Customer | null>(null);
@@ -144,19 +166,23 @@ export function ContactDetail({ contact, onBack, onCreateInquiry }: ContactDetai
   const [isLoadingData, setIsLoadingData] = useState(true);
 
   // Fetch customer (company) data
+  // Backend uses 'customer_id', frontend alias is 'company_id' — support both
+  const effectiveCustomerId = contact.customer_id || contact.company_id;
   useEffect(() => {
-    if (contact.company_id) {
-      fetchCustomer(contact.company_id);
+    if (effectiveCustomerId) {
+      fetchCustomer(effectiveCustomerId);
     }
-  }, [contact.company_id]);
+  }, [effectiveCustomerId]);
 
   // Fetch all related data on mount
   useEffect(() => {
-    fetchActivities();
-    fetchTasks();
+    if (variant === "bd") {
+      fetchActivities();
+      fetchTasks();
+    }
     fetchQuotations();
     fetchUsers();
-  }, [contact.id]);
+  }, [contact.id, variant]);
 
   const fetchCustomer = async (customerId: string) => {
     try {
@@ -220,8 +246,9 @@ export function ContactDetail({ contact, onBack, onCreateInquiry }: ContactDetai
   const fetchQuotations = async () => {
     try {
       const params = new URLSearchParams();
-      if (contact.company_id) {
-        params.append("customer_id", contact.company_id);
+      const custId = contact.customer_id || contact.company_id;
+      if (custId) {
+        params.append("customer_id", custId);
       }
       params.append("contact_id", contact.id);
       
@@ -278,8 +305,9 @@ export function ContactDetail({ contact, onBack, onCreateInquiry }: ContactDetai
 
   const getContactInquiries = () => {
     // Get inquiries for this contact's customer or inquiries with this contact_id
+    const custId = contact.customer_id || contact.company_id;
     return quotations.filter(q => 
-        q.customer_id === contact.company_id ||
+        (custId && q.customer_id === custId) ||
         q.contact_id === contact.id
       )
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
@@ -359,8 +387,46 @@ export function ContactDetail({ contact, onBack, onCreateInquiry }: ContactDetai
     }
   };
 
-  const handleSave = () => {
-    // In real app, this would save to backend
+  const handleSave = async () => {
+    try {
+      // Map frontend field names to backend field names
+      const updatePayload: any = {
+        first_name: editedContact.first_name,
+        last_name: editedContact.last_name,
+        title: editedContact.title ?? editedContact.job_title ?? null,
+        email: editedContact.email,
+        phone: editedContact.phone ?? editedContact.mobile_number ?? null,
+        customer_id: editedContact.customer_id ?? editedContact.company_id ?? null,
+        lifecycle_stage: editedContact.lifecycle_stage,
+        lead_status: editedContact.lead_status,
+        notes: editedContact.notes,
+      };
+
+      const response = await fetch(`${API_URL}/contacts/${contact.id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${publicAnonKey}`,
+        },
+        body: JSON.stringify(updatePayload),
+      });
+
+      const result = await response.json();
+      if (result.success) {
+        console.log("Contact updated successfully:", result.data);
+        // Update local state with the response data, keeping frontend aliases in sync
+        Object.assign(contact, result.data, {
+          job_title: result.data.title,
+          mobile_number: result.data.phone,
+          company_id: result.data.customer_id,
+        });
+        setEditedContact({ ...contact });
+      } else {
+        console.error("Failed to update contact:", result.error);
+      }
+    } catch (error) {
+      console.error("Error saving contact:", error);
+    }
     setIsEditing(false);
   };
 
@@ -445,16 +511,19 @@ export function ContactDetail({ contact, onBack, onCreateInquiry }: ContactDetai
                           {contact.lead_status}
                         </span>
                       </div>
-                      <p style={{ fontSize: "14px", color: "#667085" }}>
-                        {contact.job_title}
-                      </p>
+                      {variant === "bd" && (
+                        <p style={{ fontSize: "14px", color: "#667085" }}>
+                          {contact.title || contact.job_title}
+                        </p>
+                      )}
                     </div>
                   </div>
                 </div>
 
                 {/* Action Buttons */}
-                <div className="flex items-center gap-2">
-                  {!isEditing ? (
+                {variant === "bd" && (
+                  <div className="flex items-center gap-2">
+                    {!isEditing ? (
                     <>
                       <button
                         onClick={() => setIsEditing(true)}
@@ -512,10 +581,13 @@ export function ContactDetail({ contact, onBack, onCreateInquiry }: ContactDetai
                       </button>
                     </>
                   )}
-                </div>
+                  </div>
+                )}
               </div>
 
               {/* Contact Details Section */}
+              {variant === "bd" && (
+              <>
               <h2 style={{ fontSize: "14px", fontWeight: 600, color: "#12332B", marginBottom: "20px" }}>
                 Contact Details
               </h2>
@@ -532,7 +604,7 @@ export function ContactDetail({ contact, onBack, onCreateInquiry }: ContactDetai
                   {isEditing ? (
                     <input
                       type="text"
-                      value={editedContact.first_name}
+                      value={editedContact.first_name || ""}
                       onChange={(e) => setEditedContact({ ...editedContact, first_name: e.target.value })}
                       className="w-full px-3 py-2 text-[14px] rounded-lg transition-colors"
                       style={{
@@ -565,7 +637,7 @@ export function ContactDetail({ contact, onBack, onCreateInquiry }: ContactDetai
                   {isEditing ? (
                     <input
                       type="text"
-                      value={editedContact.last_name}
+                      value={editedContact.last_name || ""}
                       onChange={(e) => setEditedContact({ ...editedContact, last_name: e.target.value })}
                       className="w-full px-3 py-2 text-[14px] rounded-lg transition-colors"
                       style={{
@@ -598,8 +670,8 @@ export function ContactDetail({ contact, onBack, onCreateInquiry }: ContactDetai
                   {isEditing ? (
                     <input
                       type="text"
-                      value={editedContact.job_title}
-                      onChange={(e) => setEditedContact({ ...editedContact, job_title: e.target.value })}
+                      value={editedContact.title ?? editedContact.job_title ?? ""}
+                      onChange={(e) => setEditedContact({ ...editedContact, title: e.target.value, job_title: e.target.value })}
                       className="w-full px-3 py-2 text-[14px] rounded-lg transition-colors"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
@@ -615,7 +687,7 @@ export function ContactDetail({ contact, onBack, onCreateInquiry }: ContactDetai
                     />
                   ) : (
                     <div className="text-[14px]" style={{ color: "#12332B" }}>
-                      {contact.job_title}
+                      {contact.title || contact.job_title}
                     </div>
                   )}
                 </div>
@@ -631,7 +703,7 @@ export function ContactDetail({ contact, onBack, onCreateInquiry }: ContactDetai
                   {isEditing ? (
                     <input
                       type="email"
-                      value={editedContact.email}
+                      value={editedContact.email || ""}
                       onChange={(e) => setEditedContact({ ...editedContact, email: e.target.value })}
                       className="w-full px-3 py-2 text-[14px] rounded-lg transition-colors"
                       style={{
@@ -674,8 +746,8 @@ export function ContactDetail({ contact, onBack, onCreateInquiry }: ContactDetai
                   {isEditing ? (
                     <input
                       type="tel"
-                      value={editedContact.mobile_number}
-                      onChange={(e) => setEditedContact({ ...editedContact, mobile_number: e.target.value })}
+                      value={editedContact.phone ?? editedContact.mobile_number ?? ""}
+                      onChange={(e) => setEditedContact({ ...editedContact, phone: e.target.value, mobile_number: e.target.value })}
                       className="w-full px-3 py-2 text-[14px] rounded-lg transition-colors"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
@@ -691,7 +763,7 @@ export function ContactDetail({ contact, onBack, onCreateInquiry }: ContactDetai
                     />
                   ) : (
                     <a 
-                      href={`tel:${contact.mobile_number}`}
+                      href={`tel:${contact.phone || contact.mobile_number}`}
                       className="text-[14px] transition-colors"
                       style={{ color: "#0F766E" }}
                       onMouseEnter={(e) => {
@@ -701,11 +773,15 @@ export function ContactDetail({ contact, onBack, onCreateInquiry }: ContactDetai
                         e.currentTarget.style.color = "#0F766E";
                       }}
                     >
-                      {contact.mobile_number}
+                      {contact.phone || contact.mobile_number}
                     </a>
                   )}
                 </div>
+              </div>
+              </>
+              )}
 
+              <div className="space-y-4">
                 {/* Company */}
                 <div>
                   <div className="flex items-center gap-2 mb-1.5">
@@ -851,36 +927,40 @@ export function ContactDetail({ contact, onBack, onCreateInquiry }: ContactDetai
           <div className="flex flex-col h-full">
             {/* Tabs */}
             <div className="flex items-center gap-6 mb-6" style={{ borderBottom: "1px solid var(--neuron-ui-divider)" }}>
-              <button
-                onClick={() => setActiveTab("activities")}
-                className="px-1 pb-3 text-[13px] font-medium transition-colors relative"
-                style={{
-                  color: activeTab === "activities" ? "#0F766E" : "#667085"
-                }}
-              >
-                Activities
-                {activeTab === "activities" && (
-                  <div 
-                    className="absolute bottom-0 left-0 right-0 h-0.5"
-                    style={{ backgroundColor: "#0F766E" }}
-                  />
-                )}
-              </button>
-              <button
-                onClick={() => setActiveTab("tasks")}
-                className="px-1 pb-3 text-[13px] font-medium transition-colors relative"
-                style={{
-                  color: activeTab === "tasks" ? "#0F766E" : "#667085"
-                }}
-              >
-                Tasks
-                {activeTab === "tasks" && (
-                  <div 
-                    className="absolute bottom-0 left-0 right-0 h-0.5"
-                    style={{ backgroundColor: "#0F766E" }}
-                  />
-                )}
-              </button>
+              {variant === "bd" && (
+                <>
+                  <button
+                    onClick={() => setActiveTab("activities")}
+                    className="px-1 pb-3 text-[13px] font-medium transition-colors relative"
+                    style={{
+                      color: activeTab === "activities" ? "#0F766E" : "#667085"
+                    }}
+                  >
+                    Activities
+                    {activeTab === "activities" && (
+                      <div 
+                        className="absolute bottom-0 left-0 right-0 h-0.5"
+                        style={{ backgroundColor: "#0F766E" }}
+                      />
+                    )}
+                  </button>
+                  <button
+                    onClick={() => setActiveTab("tasks")}
+                    className="px-1 pb-3 text-[13px] font-medium transition-colors relative"
+                    style={{
+                      color: activeTab === "tasks" ? "#0F766E" : "#667085"
+                    }}
+                  >
+                    Tasks
+                    {activeTab === "tasks" && (
+                      <div 
+                        className="absolute bottom-0 left-0 right-0 h-0.5"
+                        style={{ backgroundColor: "#0F766E" }}
+                      />
+                    )}
+                  </button>
+                </>
+              )}
               <button
                 onClick={() => setActiveTab("inquiries")}
                 className="px-1 pb-3 text-[13px] font-medium transition-colors relative"
@@ -1161,20 +1241,50 @@ export function ContactDetail({ contact, onBack, onCreateInquiry }: ContactDetai
                             {/* Action Buttons */}
                             <div className="flex items-center gap-2 pt-6" style={{ borderTop: "1px solid var(--neuron-ui-divider)" }}>
                               <button
-                                onClick={() => {
+                                onClick={async () => {
                                   // Validate required fields
                                   if (!newActivity.title || !newActivity.description || !newActivity.type || !newActivity.date) {
-                                    alert("Please fill in all required fields (Activity Name, Description, Type, Date & Time)");
+                                    // alert("Please fill in all required fields (Activity Name, Description, Type, Date & Time)");
+                                    // using toast instead
                                     return;
                                   }
-                                  // Save activity logic here
-                                  console.log("Logging activity:", newActivity);
-                                  setIsLoggingActivity(false);
-                                  setNewActivity({
-                                    type: "Call",
-                                    contact_id: contact.id
-                                  });
-                                  setActivityAttachments([]);
+                                  
+                                  try {
+                                    const activityToSave = {
+                                      ...newActivity,
+                                      contact_id: contact.id,
+                                      customer_id: contact.customer_id || contact.company_id || undefined, // Attach customer ID if available
+                                      user_id: contact.owner_id || 'user-1' // Fallback to current user or owner
+                                    };
+
+                                    const response = await fetch(`${API_URL}/activities`, {
+                                      method: 'POST',
+                                      headers: {
+                                        'Authorization': `Bearer ${publicAnonKey}`,
+                                        'Content-Type': 'application/json'
+                                      },
+                                      body: JSON.stringify(activityToSave)
+                                    });
+
+                                    const result = await response.json();
+
+                                    if (result.success) {
+                                      // In real app, this would save to backend
+                                      // toast.success("Activity logged successfully");
+                                      setIsLoggingActivity(false);
+                                      setNewActivity({
+                                        type: "Call",
+                                        contact_id: contact.id
+                                      });
+                                      setActivityAttachments([]);
+                                      // Refresh activities list
+                                      fetchActivities();
+                                    } else {
+                                      console.error("Error saving activity:", result.error);
+                                    }
+                                  } catch (error) {
+                                    console.error("Error saving activity:", error);
+                                  }
                                 }}
                                 className="px-4 py-2.5 rounded-lg text-[13px] font-medium transition-colors"
                                 style={{
@@ -1252,62 +1362,27 @@ export function ContactDetail({ contact, onBack, onCreateInquiry }: ContactDetai
                         </button>
                       </div>
 
-                      {activities.length === 0 ? (
+                      {isLoadingData ? (
                         <div className="text-center py-12">
-                          <p className="text-[14px]" style={{ color: "#667085" }}>No activities yet</p>
+                          <p className="text-[14px]" style={{ color: "#667085" }}>Loading activities...</p>
                         </div>
                       ) : (
-                        <div className="space-y-4">
-                          {activities.map((activity) => (
-                            <div 
-                              key={activity.id}
-                              onClick={() => {
-                                // If activity is linked to a task, find and show the task
-                                if (activity.task_id) {
-                                  const linkedTask = tasks.find(t => t.id === activity.task_id);
-                                  if (linkedTask) {
-                                    setSelectedTask(linkedTask);
-                                    setActiveTab("tasks");
-                                  }
-                                } else {
-                                  // Show activity detail view
-                                  setSelectedActivity(activity);
-                                }
-                              }}
-                              className="p-4 rounded-lg cursor-pointer transition-all"
-                              style={{
-                                border: "1px solid var(--neuron-ui-border)",
-                                backgroundColor: "#FFFFFF"
-                              }}
-                              onMouseEnter={(e) => {
-                                e.currentTarget.style.backgroundColor = "#F9FAFB";
-                                e.currentTarget.style.borderColor = "#0F766E";
-                              }}
-                              onMouseLeave={(e) => {
-                                e.currentTarget.style.backgroundColor = "#FFFFFF";
-                                e.currentTarget.style.borderColor = "var(--neuron-ui-border)";
-                              }}
-                            >
-                              <div className="flex items-start justify-between mb-2">
-                                <div className="flex items-center gap-2">
-                                  <div 
-                                    className="w-2 h-2 rounded-full"
-                                    style={{ backgroundColor: "#0F766E" }}
-                                  />
-                                  <span className="text-[12px] font-medium uppercase tracking-wide" style={{ color: "#0F766E" }}>
-                                    {activity.type}
-                                  </span>
-                                  <span className="text-[12px]" style={{ color: "#667085" }}>
-                                    {formatDateTime(activity.date)}
-                                  </span>
-                                </div>
-                              </div>
-                              <p className="text-[14px]" style={{ color: "#12332B" }}>
-                                {activity.description}
-                              </p>
-                            </div>
-                          ))}
-                        </div>
+                        <ActivityTimelineTable 
+                          activities={activities}
+                          onViewActivity={(activity) => {
+                            if (activity.task_id) {
+                              const linkedTask = tasks.find(t => t.id === activity.task_id);
+                              if (linkedTask) {
+                                setSelectedTask(linkedTask);
+                                setActiveTab("tasks");
+                              }
+                            } else {
+                              setSelectedActivity(activity);
+                            }
+                          }}
+                          contacts={[contact]}
+                          users={users}
+                        />
                       )}
                     </>
                   ) : (
@@ -1788,22 +1863,50 @@ export function ContactDetail({ contact, onBack, onCreateInquiry }: ContactDetai
                             {/* Action Buttons */}
                             <div className="flex items-center gap-2 pt-6" style={{ borderTop: "1px solid var(--neuron-ui-divider)" }}>
                               <button
-                                onClick={() => {
+                                onClick={async () => {
                                   // Validate required fields
                                   if (!newTask.title || !newTask.description || !newTask.type || !newTask.due_date || !newTask.priority) {
-                                    alert("Please fill in all required fields (Task Name, Description, Type, Due Date, Priority)");
+                                    // toast.error("Please fill in all required fields (Task Name, Description, Type, Due Date, Priority)");
                                     return;
                                   }
-                                  // Task will be saved to backend via API
-                                  console.log("Creating task:", newTask);
-                                  setIsCreatingTask(false);
-                                  setNewTask({
-                                    type: "Call",
-                                    priority: "Medium",
-                                    status: "Pending",
-                                    contact_id: contact.id
-                                  });
-                                  setTaskAttachments([]);
+                                  
+                                  try {
+                                    const taskToSave = {
+                                      ...newTask,
+                                      contact_id: contact.id,
+                                      customer_id: contact.customer_id || contact.company_id || undefined,
+                                      owner_id: contact.owner_id || 'user-1',
+                                      status: newTask.status || "Pending"
+                                    };
+
+                                    const response = await fetch(`${API_URL}/tasks`, {
+                                      method: 'POST',
+                                      headers: {
+                                        'Authorization': `Bearer ${publicAnonKey}`,
+                                        'Content-Type': 'application/json'
+                                      },
+                                      body: JSON.stringify(taskToSave)
+                                    });
+
+                                    const result = await response.json();
+
+                                    if (result.success) {
+                                      setIsCreatingTask(false);
+                                      setNewTask({
+                                        type: "Call",
+                                        priority: "Medium",
+                                        status: "Pending",
+                                        contact_id: contact.id
+                                      });
+                                      setTaskAttachments([]);
+                                      // Refresh tasks list
+                                      fetchTasks();
+                                    } else {
+                                      console.error("Error saving task:", result.error);
+                                    }
+                                  } catch (error) {
+                                    console.error("Error creating task:", error);
+                                  }
                                 }}
                                 className="px-4 py-2.5 rounded-lg text-[13px] font-medium transition-colors"
                                 style={{
@@ -1919,7 +2022,7 @@ export function ContactDetail({ contact, onBack, onCreateInquiry }: ContactDetai
                             </div>
                             {isEditingTask && editedTask ? (
                               <textarea
-                                value={editedTask.title}
+                                value={editedTask.title || ""}
                                 onChange={(e) => setEditedTask({ ...editedTask, title: e.target.value })}
                                 placeholder="Enter task description..."
                                 rows={3}
@@ -1991,7 +2094,7 @@ export function ContactDetail({ contact, onBack, onCreateInquiry }: ContactDetai
                             {isEditingTask && editedTask ? (
                               <input
                                 type="date"
-                                value={editedTask.due_date}
+                                value={editedTask.due_date || ""}
                                 onChange={(e) => setEditedTask({ ...editedTask, due_date: e.target.value })}
                                 className="w-full px-3 py-2 text-[14px] rounded-lg transition-colors"
                                 style={{
@@ -2414,15 +2517,40 @@ export function ContactDetail({ contact, onBack, onCreateInquiry }: ContactDetai
                     <h3 style={{ fontSize: "16px", fontWeight: 600, color: "#12332B" }}>
                       Attachments
                     </h3>
+                    <div>
+                      <input
+                        type="file"
+                        ref={fileInputRef}
+                        className="hidden"
+                        onChange={handleFileUpload}
+                      />
+                      <button
+                        onClick={() => fileInputRef.current?.click()}
+                        className="flex items-center gap-2 px-3 py-2 rounded-lg text-[13px] font-medium transition-colors"
+                        style={{
+                          backgroundColor: "#0F766E",
+                          color: "#FFFFFF"
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = "#0D6560";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.backgroundColor = "#0F766E";
+                        }}
+                      >
+                        <Upload size={14} />
+                        Upload File
+                      </button>
+                    </div>
                   </div>
 
-                  {mockAttachments.length === 0 ? (
+                  {attachments.length === 0 ? (
                     <div className="text-center py-12">
                       <p className="text-[14px]" style={{ color: "#667085" }}>No attachments yet</p>
                     </div>
                   ) : (
                     <div className="space-y-4">
-                      {mockAttachments.map((attachment) => (
+                      {attachments.map((attachment) => (
                         <div 
                           key={attachment.id}
                           className="p-4 rounded-lg"

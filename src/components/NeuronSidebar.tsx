@@ -23,17 +23,19 @@ import {
   Ship,
   Building,
   Briefcase,
-  Palette
+  Palette,
+  CreditCard,
+  Handshake
 } from "lucide-react";
 import logoImage from "figma:asset/28c84ed117b026fbf800de0882eb478561f37f4f.png";
 import { useUser } from "../hooks/useUser";
 
-type Page = "dashboard" | "bd-contacts" | "bd-customers" | "bd-inquiries" | "projects" | "bd-projects" | "bd-tasks" | "bd-activities" | "bd-budget-requests" | "bd-reports" | "pricing-contacts" | "pricing-customers" | "pricing-quotations" | "pricing-projects" | "pricing-vendors" | "pricing-reports" | "ops-forwarding" | "ops-brokerage" | "ops-trucking" | "ops-marine-insurance" | "ops-others" | "ops-reports" | "operations" | "acct-evouchers" | "acct-billings" | "acct-collections" | "acct-expenses" | "acct-ledger" | "acct-reports" | "hr" | "calendar" | "inbox" | "ticket-queue" | "profile" | "admin" | "ticket-testing" | "activity-log" | "design-system";
+type Page = "dashboard" | "bd-contacts" | "bd-customers" | "bd-inquiries" | "projects" | "bd-projects" | "bd-contracts" | "bd-tasks" | "bd-activities" | "bd-budget-requests" | "bd-reports" | "pricing-contacts" | "pricing-customers" | "pricing-quotations" | "pricing-projects" | "pricing-contracts" | "pricing-vendors" | "pricing-reports" | "ops-forwarding" | "ops-brokerage" | "ops-trucking" | "ops-marine-insurance" | "ops-others" | "ops-reports" | "operations" | "acct-transactions" | "acct-evouchers" | "acct-billings" | "acct-collections" | "acct-expenses" | "acct-ledger" | "acct-coa" | "acct-reports" | "acct-projects" | "acct-customers" | "hr" | "calendar" | "inbox" | "ticket-queue" | "profile" | "admin" | "ticket-testing" | "activity-log" | "design-system";
 
 // SVG for Philippine Peso icon
 const Vector = () => (
-  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <path d="M5.83333 16.6667V3.33333M5.83333 10H11.6667C12.5507 10 13.3986 9.64881 14.0237 9.02369C14.6488 8.39857 15 7.55072 15 6.66667C15 5.78261 14.6488 4.93477 14.0237 4.30964C13.3986 3.68452 12.5507 3.33333 11.6667 3.33333H5.83333M3.33333 13.3333H8.33333" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
+    <path d="M20 11H4"/><path d="M20 7H4"/><path d="M7 21V4a1 1 0 0 1 1-1h4a1 1 0 0 1 0 12H7"/>
   </svg>
 );
 
@@ -46,7 +48,7 @@ const PesoIcon = ({ size = 20, style }: { size?: number; style?: React.CSSProper
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      '--stroke-0': style?.color || 'currentColor' 
+      color: style?.color || 'currentColor'
     } as React.CSSProperties}
   >
     <Vector />
@@ -129,10 +131,12 @@ export function NeuronSidebar({ currentPage, onNavigate, currentUser }: NeuronSi
   const showPricing = isExecutive || userDepartment === "Pricing";
   const showOperations = isExecutive || userDepartment === "Operations";
   const showAccounting = isExecutive || userDepartment === "Accounting";
+  const showTransactions = isExecutive || userDepartment === "Accounting" || userDepartment === "Operations";
   const showHR = isExecutive || userDepartment === "HR";
   
   // Dashboard - standalone
   const dashboardItem = { id: "dashboard" as Page, label: "Dashboard", icon: Home };
+  // const transactionsItem = { id: "transactions" as Page, label: "Transactions", icon: CreditCard };
   
   // Business Development sub-items
   const bdSubItems = [
@@ -140,6 +144,7 @@ export function NeuronSidebar({ currentPage, onNavigate, currentUser }: NeuronSi
     { id: "bd-customers" as Page, label: "Customers", icon: Building },
     { id: "bd-inquiries" as Page, label: "Inquiries", icon: ShoppingCart },
     { id: "bd-projects" as Page, label: "Projects", icon: Briefcase },
+    { id: "bd-contracts" as Page, label: "Contracts", icon: Handshake },
     { id: "bd-tasks" as Page, label: "Tasks", icon: Package },
     { id: "bd-activities" as Page, label: "Activities", icon: Activity },
     { id: "bd-budget-requests" as Page, label: "Budget Requests", icon: Banknote },
@@ -152,6 +157,7 @@ export function NeuronSidebar({ currentPage, onNavigate, currentUser }: NeuronSi
     { id: "pricing-customers" as Page, label: "Customers", icon: Building },
     { id: "pricing-quotations" as Page, label: "Quotations", icon: FileText },
     { id: "pricing-projects" as Page, label: "Projects", icon: Briefcase },
+    { id: "pricing-contracts" as Page, label: "Contracts", icon: Handshake },
     { id: "pricing-vendors" as Page, label: "Vendor", icon: Palette },
     { id: "pricing-reports" as Page, label: "Reports", icon: BarChart3 },
   ];
@@ -168,11 +174,14 @@ export function NeuronSidebar({ currentPage, onNavigate, currentUser }: NeuronSi
 
   // Accounting sub-items
   const acctSubItems = [
+    { id: "acct-transactions" as Page, label: "Transactions", icon: CreditCard },
+    { id: "acct-customers" as Page, label: "Customers", icon: Users },
+    { id: "acct-projects" as Page, label: "Projects", icon: Briefcase },
     { id: "acct-evouchers" as Page, label: "E-Vouchers", icon: FileText },
     { id: "acct-billings" as Page, label: "Billings", icon: Banknote },
     { id: "acct-collections" as Page, label: "Collections", icon: Palette },
     { id: "acct-expenses" as Page, label: "Expenses", icon: Palette },
-    { id: "acct-ledger" as Page, label: "Client Ledger", icon: Palette },
+    { id: "acct-coa" as Page, label: "Chart of Accounts", icon: ListTodo },
     { id: "acct-reports" as Page, label: "Reports", icon: BarChart3 },
   ];
   
@@ -484,7 +493,7 @@ export function NeuronSidebar({ currentPage, onNavigate, currentUser }: NeuronSi
             {/* Pricing Sub-items */}
             <div 
               style={{
-                maxHeight: isPricingExpanded ? "240px" : "0px",
+                maxHeight: isPricingExpanded ? "280px" : "0px",
                 opacity: isPricingExpanded ? 1 : 0,
                 overflow: "hidden",
                 transition: "max-height 0.3s ease-in-out, opacity 0.25s ease-in-out",
@@ -576,7 +585,7 @@ export function NeuronSidebar({ currentPage, onNavigate, currentUser }: NeuronSi
         <div className="space-y-1">
           {showHR && renderNavButton({ id: "hr" as Page, label: "HR", icon: User })}
         </div>
-        
+
         {/* Accounting with sub-items */}
         {showAccounting && (
           <div style={{ marginBottom: isAcctExpanded ? "8px" : "0px" }}>
@@ -639,7 +648,7 @@ export function NeuronSidebar({ currentPage, onNavigate, currentUser }: NeuronSi
             {/* Accounting Sub-items */}
             <div 
               style={{
-                maxHeight: isAcctExpanded ? "240px" : "0px",
+                maxHeight: isAcctExpanded ? "360px" : "0px",
                 opacity: isAcctExpanded ? 1 : 0,
                 overflow: "hidden",
                 transition: "max-height 0.3s ease-in-out, opacity 0.25s ease-in-out",

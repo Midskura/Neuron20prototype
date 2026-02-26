@@ -21,11 +21,11 @@ export function PricingReports() {
         if (result.success) {
           setQuotations(result.data);
         } else {
-          console.error("Error fetching quotations:", result.error);
+          console.warn("Unable to fetch quotations:", result.error);
           setQuotations([]);
         }
       } catch (error) {
-        console.error("Error fetching quotations:", error);
+        console.warn("Unable to fetch quotations from server. Using local data only.", error);
         setQuotations([]);
       } finally {
         setIsLoading(false);

@@ -1,9 +1,16 @@
 import { useState } from "react";
-import { ArrowLeft, MoreVertical, Lock, Edit3, Clock, ChevronRight } from "lucide-react";
+import { ArrowLeft, MoreVertical, Lock, Clock, ChevronRight } from "lucide-react";
 import type { MarineInsuranceBooking, ExecutionStatus } from "../../types/operations";
-import { BillingsTab } from "./shared/BillingsTab";
+import { UnifiedBillingsTab } from "../shared/billings/UnifiedBillingsTab";
+import { BookingRateCardButton } from "../contracts/BookingRateCardButton";
 import { ExpensesTab } from "./shared/ExpensesTab";
 import { BookingCommentsTab } from "../shared/BookingCommentsTab";
+import { useProjectFinancials } from "../../hooks/useProjectFinancials";
+import { StatusSelector } from "../StatusSelector";
+import { projectId, publicAnonKey } from "../../utils/supabase/info";
+import { toast } from "../ui/toast-utils";
+import { EditableSectionCard, useSectionEdit } from "../shared/EditableSectionCard";
+import { EditableField } from "../shared/EditableField";
 
 interface MarineInsuranceBookingDetailsProps {
   booking: MarineInsuranceBooking;
@@ -13,16 +20,6 @@ interface MarineInsuranceBookingDetailsProps {
 }
 
 type DetailTab = "booking-info" | "billings" | "expenses" | "comments";
-
-const STATUS_COLORS: Record<ExecutionStatus, string> = {
-  "Draft": "bg-gray-100 text-gray-700 border-gray-300",
-  "Confirmed": "bg-blue-50 text-blue-700 border-blue-300",
-  "In Progress": "bg-[#0F766E]/10 text-[#0F766E] border-[#0F766E]/30",
-  "Pending": "bg-amber-50 text-amber-700 border-amber-300",
-  "On Hold": "bg-orange-50 text-orange-700 border-orange-300",
-  "Completed": "bg-emerald-50 text-emerald-700 border-emerald-300",
-  "Cancelled": "bg-red-50 text-red-700 border-red-300",
-};
 
 interface ActivityLogEntry {
   id: string;
@@ -34,433 +31,102 @@ interface ActivityLogEntry {
   newValue?: string;
   statusFrom?: ExecutionStatus;
   statusTo?: ExecutionStatus;
-  note?: string;
 }
 
 const initialActivityLog: ActivityLogEntry[] = [
-  {
-    id: "init-1",
-    timestamp: new Date(),
-    user: "System",
-    action: "created"
-  },
+  { id: "init-1", timestamp: new Date(), user: "System", action: "created" },
 ];
 
-// NOTE: All fields are now editable regardless of status since changes are tracked in activity log
-function isFieldLocked(fieldName: string, status: ExecutionStatus): { locked: boolean; reason: string } {
-  // All fields are editable - changes will be tracked in the activity log
-  return { locked: false, reason: "" };
+const FIELD_LABELS: Record<string, string> = {
+  accountHandler: "Account Handler",
+  policyNumber: "Policy Number",
+  insuranceCompany: "Insurance Company",
+  coverageType: "Coverage Type",
+  insuredValue: "Insured Value",
+  currency: "Currency",
+  effectiveDate: "Effective Date",
+  expiryDate: "Expiry Date",
+  commodityDescription: "Commodity Description",
+  hsCode: "HS Code",
+  invoiceNumber: "Invoice Number",
+  invoiceValue: "Invoice Value",
+  packagingType: "Packaging Type",
+  numberOfPackages: "Number of Packages",
+  grossWeight: "Gross Weight",
+  aol: "AOL",
+  pol: "POL",
+  mode: "Mode",
+  aod: "AOD",
+  pod: "POD",
+  vesselVoyage: "Vessel/Voyage",
+  specialConditions: "Special Conditions",
+  remarks: "Remarks",
+};
+
+function diffAndApply(
+  original: MarineInsuranceBooking,
+  draft: MarineInsuranceBooking,
+  fields: string[],
+  addActivity: (fieldName: string, oldValue: string, newValue: string) => void,
+  setEditedBooking: (fn: (prev: MarineInsuranceBooking) => MarineInsuranceBooking) => void,
+  onBookingUpdated: () => void,
+) {
+  const updates: Record<string, any> = {};
+  fields.forEach((field) => {
+    const oldVal = String((original as any)[field] ?? "");
+    const newVal = String((draft as any)[field] ?? "");
+    if (oldVal !== newVal) {
+      addActivity(FIELD_LABELS[field] || field, oldVal, newVal);
+      updates[field] = (draft as any)[field];
+    }
+  });
+  if (Object.keys(updates).length > 0) {
+    setEditedBooking((prev: MarineInsuranceBooking) => ({ ...prev, ...updates }));
+    onBookingUpdated();
+    toast.success("Changes saved");
+  }
 }
 
-export function MarineInsuranceBookingDetails({
-  booking,
-  onBack,
-  onUpdate,
-  currentUser
-}: MarineInsuranceBookingDetailsProps) {
-  const [activeTab, setActiveTab] = useState<DetailTab>("booking-info");
-  const [showTimeline, setShowTimeline] = useState(false);
-  const [activityLog, setActivityLog] = useState<ActivityLogEntry[]>(initialActivityLog);
-  const [editedBooking, setEditedBooking] = useState<MarineInsuranceBooking>(booking);
-
-  const addActivity = (
-    fieldName: string,
-    oldValue: string,
-    newValue: string
-  ) => {
-    const newActivity: ActivityLogEntry = {
-      id: `activity-${Date.now()}-${Math.random()}`,
-      timestamp: new Date(),
-      user: currentUser?.name || "Current User",
-      action: "field_updated",
-      fieldName,
-      oldValue,
-      newValue
-    };
-
-    setActivityLog(prev => [newActivity, ...prev]);
-  };
-
+function LockedField({ label, value, tooltip }: { label: string; value: string; tooltip?: string }) {
   return (
-    <div style={{ 
-      backgroundColor: "white",
-      display: "flex",
-      flexDirection: "column",
-      height: "100vh"
-    }}>
-      {/* Header Bar */}
-      <div style={{
-        padding: "20px 48px",
-        borderBottom: "1px solid var(--neuron-ui-border)",
-        backgroundColor: "#F8FBFB",
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center"
-      }}>
-        <div>
-          <button
-            onClick={onBack}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "8px",
-              background: "none",
-              border: "none",
-              color: "var(--neuron-ink-secondary)",
-              cursor: "pointer",
-              fontSize: "13px",
-              marginBottom: "12px",
-              padding: "0"
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.color = "var(--neuron-brand-green)";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.color = "var(--neuron-ink-secondary)";
-            }}
-          >
-            <ArrowLeft size={16} />
-            Back to Marine Insurance Bookings
-          </button>
-          
-          <h1 style={{ 
-            fontSize: "20px",
-            fontWeight: 600,
-            color: "var(--neuron-ink-primary)",
-            marginBottom: "4px"
-          }}>
-            {booking.customerName}
-          </h1>
-          <p style={{ fontSize: "13px", color: "var(--neuron-ink-muted)", margin: 0 }}>
-            {booking.bookingId}
-          </p>
-        </div>
-
-        {/* Action Buttons */}
-        <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
-          <button
-            onClick={() => setShowTimeline(!showTimeline)}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "8px",
-              padding: "10px 20px",
-              backgroundColor: showTimeline ? "#E8F2EE" : "white",
-              border: `1.5px solid ${showTimeline ? "#0F766E" : "var(--neuron-ui-border)"}`,
-              borderRadius: "8px",
-              fontSize: "14px",
-              fontWeight: 600,
-              color: showTimeline ? "#0F766E" : "var(--neuron-ink-secondary)",
-              cursor: "pointer",
-              transition: "all 0.2s ease"
-            }}
-            onMouseEnter={(e) => {
-              if (!showTimeline) {
-                e.currentTarget.style.backgroundColor = "#F9FAFB";
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (!showTimeline) {
-                e.currentTarget.style.backgroundColor = "white";
-              }
-            }}
-          >
-            <Clock size={16} />
-            Activity
-          </button>
-
-          <div style={{
-            padding: "8px 16px",
-            borderRadius: "6px",
-            fontSize: "13px",
-            fontWeight: 500,
-            backgroundColor: booking.status === "Draft" ? "#F3F4F6" : 
-                           booking.status === "In Progress" ? "#E8F2EE" :
-                           booking.status === "Completed" ? "#D1FAE5" :
-                           booking.status === "Cancelled" ? "#FEE2E2" : "#FFF3E0",
-            color: booking.status === "Draft" ? "#6B7280" :
-                   booking.status === "In Progress" ? "#0F766E" :
-                   booking.status === "Completed" ? "#10B981" :
-                   booking.status === "Cancelled" ? "#EF4444" : "#F59E0B",
-            border: `1px solid ${booking.status === "Draft" ? "#E5E7EB" : 
-                                 booking.status === "In Progress" ? "#0F766E33" :
-                                 booking.status === "Completed" ? "#10B98133" :
-                                 booking.status === "Cancelled" ? "#EF444433" : "#F59E0B33"}`
-          }}>
-            {booking.status}
-          </div>
-
-          <button
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              width: "40px",
-              height: "40px",
-              backgroundColor: "white",
-              border: "1.5px solid var(--neuron-ui-border)",
-              borderRadius: "8px",
-              cursor: "pointer",
-              transition: "all 0.2s ease"
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = "#F9FAFB";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = "white";
-            }}
-          >
-            <MoreVertical size={18} />
-          </button>
-        </div>
-      </div>
-
-      {/* Tabs */}
-      <div style={{
-        padding: "0 48px",
-        borderBottom: "1px solid var(--neuron-ui-border)",
-        backgroundColor: "white",
-        display: "flex",
-        gap: "32px"
-      }}>
-        <button
-          onClick={() => setActiveTab("booking-info")}
-          style={{
-            padding: "16px 0",
-            background: "none",
-            border: "none",
-            borderBottom: activeTab === "booking-info" ? "2px solid #0F766E" : "2px solid transparent",
-            color: activeTab === "booking-info" ? "#0F766E" : "#667085",
-            fontSize: "14px",
-            fontWeight: 600,
-            cursor: "pointer",
-            transition: "all 0.2s ease",
-            marginBottom: "-1px"
-          }}
-        >
-          Booking Information
-        </button>
-        <button
-          onClick={() => setActiveTab("billings")}
-          style={{
-            padding: "16px 0",
-            background: "none",
-            border: "none",
-            borderBottom: activeTab === "billings" ? "2px solid #0F766E" : "2px solid transparent",
-            color: activeTab === "billings" ? "#0F766E" : "#667085",
-            fontSize: "14px",
-            fontWeight: 600,
-            cursor: "pointer",
-            transition: "all 0.2s ease",
-            marginBottom: "-1px"
-          }}
-        >
-          Billings
-        </button>
-        <button
-          onClick={() => setActiveTab("expenses")}
-          style={{
-            padding: "16px 0",
-            background: "none",
-            border: "none",
-            borderBottom: activeTab === "expenses" ? "2px solid #0F766E" : "2px solid transparent",
-            color: activeTab === "expenses" ? "#0F766E" : "#667085",
-            fontSize: "14px",
-            fontWeight: 600,
-            cursor: "pointer",
-            transition: "all 0.2s ease",
-            marginBottom: "-1px"
-          }}
-        >
-          Expenses
-        </button>
-        <button
-          onClick={() => setActiveTab("comments")}
-          style={{
-            padding: "16px 0",
-            background: "none",
-            border: "none",
-            borderBottom: activeTab === "comments" ? "2px solid #0F766E" : "2px solid transparent",
-            color: activeTab === "comments" ? "#0F766E" : "#667085",
-            fontSize: "14px",
-            fontWeight: 600,
-            cursor: "pointer",
-            transition: "all 0.2s ease",
-            marginBottom: "-1px"
-          }}
-        >
-          Comments
-        </button>
-      </div>
-
-      {/* Content with Timeline Sidebar */}
-      <div style={{ 
-        flex: 1,
-        overflow: "hidden",
-        display: "flex"
-      }}>
-        <div style={{ 
-          flex: showTimeline ? "0 0 65%" : "1",
-          overflow: "auto",
-          transition: "flex 0.3s ease"
-        }}>
-          {activeTab === "booking-info" && (
-            <BookingInformationTab
-              booking={editedBooking}
-              onBookingUpdated={onUpdate}
-              addActivity={addActivity}
-              setEditedBooking={setEditedBooking}
-            />
-          )}
-          {activeTab === "billings" && (
-            <BillingsTab
-              bookingId={booking.bookingId}
-              bookingType="marine-insurance"
-              currentUser={currentUser}
-            />
-          )}
-          {activeTab === "expenses" && (
-            <ExpensesTab
-              bookingId={booking.bookingId}
-              bookingType="marine-insurance"
-              currentUser={currentUser}
-            />
-          )}
-          {activeTab === "comments" && (
-            <BookingCommentsTab
-              bookingId={booking.bookingId}
-              currentUserId={currentUser?.email || "unknown"}
-              currentUserName={currentUser?.name || "Unknown User"}
-              currentUserDepartment={currentUser?.department || "Operations"}
-            />
-          )}
-        </div>
-
-        {showTimeline && (
-          <div style={{
-            flex: "0 0 35%",
-            borderLeft: "1px solid var(--neuron-ui-border)",
-            backgroundColor: "#FAFBFC",
-            overflow: "auto"
-          }}>
-            <ActivityTimeline activities={activityLog} />
-          </div>
-        )}
+    <div>
+      <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", fontWeight: 500, color: "var(--neuron-ink-base)", marginBottom: "8px" }}>
+        {label}
+        <Lock size={12} color="#9CA3AF" title={tooltip} style={{ cursor: "help" }} />
+      </label>
+      <div style={{ padding: "10px 14px", backgroundColor: "#F9FAFB", border: "1px solid #E5E7EB", borderRadius: "6px", fontSize: "14px", color: "#6B7280", cursor: "not-allowed" }}>
+        {value || "—"}
       </div>
     </div>
   );
 }
 
-// Activity Timeline Component
 function ActivityTimeline({ activities }: { activities: ActivityLogEntry[] }) {
   return (
     <div style={{ padding: "24px" }}>
-      <h3 style={{
-        fontSize: "16px",
-        fontWeight: 600,
-        color: "var(--neuron-brand-green)",
-        marginBottom: "20px"
-      }}>
-        Activity Timeline
-      </h3>
-
+      <h3 style={{ fontSize: "16px", fontWeight: 600, color: "var(--neuron-brand-green)", marginBottom: "20px" }}>Activity Timeline</h3>
       <div style={{ position: "relative" }}>
-        <div style={{
-          position: "absolute",
-          left: "15px",
-          top: "0",
-          bottom: "0",
-          width: "2px",
-          backgroundColor: "#E5E7EB"
-        }} />
-
+        <div style={{ position: "absolute", left: "15px", top: "0", bottom: "0", width: "2px", backgroundColor: "#E5E7EB" }} />
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
           {activities.map((activity) => (
             <div key={activity.id} style={{ position: "relative", paddingLeft: "40px" }}>
-              <div style={{
-                position: "absolute",
-                left: "8px",
-                top: "4px",
-                width: "16px",
-                height: "16px",
-                borderRadius: "50%",
-                backgroundColor: activity.action === "status_changed" ? "#0F766E" :
-                               activity.action === "created" ? "#6B7280" :
-                               activity.action === "field_updated" ? "#3B82F6" : "#F59E0B",
-                border: "3px solid #FAFBFC"
-              }} />
-
-              <div style={{
-                backgroundColor: "white",
-                border: "1px solid var(--neuron-ui-border)",
-                borderRadius: "8px",
-                padding: "12px 16px"
-              }}>
-                <div style={{
-                  fontSize: "11px",
-                  color: "var(--neuron-ink-muted)",
-                  marginBottom: "6px"
-                }}>
-                  {activity.timestamp.toLocaleString()}
-                </div>
-
+              <div style={{ position: "absolute", left: "8px", top: "4px", width: "16px", height: "16px", borderRadius: "50%", backgroundColor: activity.action === "status_changed" ? "#0F766E" : activity.action === "created" ? "#6B7280" : "#3B82F6", border: "3px solid #FAFBFC" }} />
+              <div style={{ backgroundColor: "white", border: "1px solid var(--neuron-ui-border)", borderRadius: "8px", padding: "12px 16px" }}>
+                <div style={{ fontSize: "11px", color: "var(--neuron-ink-muted)", marginBottom: "6px" }}>{activity.timestamp.toLocaleString()}</div>
                 {activity.action === "field_updated" && (
                   <div>
-                    <div style={{
-                      fontSize: "13px",
-                      color: "var(--neuron-ink-base)",
-                      marginBottom: "4px"
-                    }}>
-                      <span style={{ fontWeight: 600 }}>{activity.fieldName}</span> updated
-                    </div>
+                    <div style={{ fontSize: "13px", color: "var(--neuron-ink-base)", marginBottom: "4px" }}><span style={{ fontWeight: 600 }}>{activity.fieldName}</span> updated</div>
                     {activity.oldValue && activity.newValue && (
-                      <div style={{
-                        fontSize: "12px",
-                        color: "var(--neuron-ink-secondary)",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "8px",
-                        marginTop: "6px"
-                      }}>
-                        <span style={{
-                          padding: "2px 8px",
-                          backgroundColor: "#FEE2E2",
-                          borderRadius: "4px",
-                          textDecoration: "line-through",
-                          color: "#EF4444"
-                        }}>
-                          {activity.oldValue || "(empty)"}
-                        </span>
+                      <div style={{ fontSize: "12px", display: "flex", alignItems: "center", gap: "8px", marginTop: "6px" }}>
+                        <span style={{ padding: "2px 8px", backgroundColor: "#FEE2E2", borderRadius: "4px", textDecoration: "line-through", color: "#EF4444" }}>{activity.oldValue}</span>
                         <ChevronRight size={12} />
-                        <span style={{
-                          padding: "2px 8px",
-                          backgroundColor: "#D1FAE5",
-                          borderRadius: "4px",
-                          color: "#10B981"
-                        }}>
-                          {activity.newValue}
-                        </span>
+                        <span style={{ padding: "2px 8px", backgroundColor: "#D1FAE5", borderRadius: "4px", color: "#10B981" }}>{activity.newValue}</span>
                       </div>
                     )}
                   </div>
                 )}
-
-                {activity.action === "created" && (
-                  <div style={{
-                    fontSize: "13px",
-                    color: "var(--neuron-ink-base)"
-                  }}>
-                    Booking created
-                  </div>
-                )}
-
-                <div style={{
-                  fontSize: "11px",
-                  color: "var(--neuron-ink-muted)",
-                  marginTop: "8px"
-                }}>
-                  by {activity.user}
-                </div>
+                {activity.action === "created" && <div style={{ fontSize: "13px", color: "var(--neuron-ink-base)" }}>Booking created</div>}
+                <div style={{ fontSize: "11px", color: "var(--neuron-ink-muted)", marginTop: "8px" }}>by {activity.user}</div>
               </div>
             </div>
           ))}
@@ -470,730 +136,223 @@ function ActivityTimeline({ activities }: { activities: ActivityLogEntry[] }) {
   );
 }
 
-// Locked Field Component
-function LockedField({ label, value, tooltip }: { label: string; value: string; tooltip?: string }) {
-  return (
-    <div>
-      <label style={{
-        display: "flex",
-        alignItems: "center",
-        gap: "6px",
-        fontSize: "13px",
-        fontWeight: 500,
-        color: "var(--neuron-ink-base)",
-        marginBottom: "8px"
-      }}>
-        {label}
-        <Lock size={12} color="#9CA3AF" title={tooltip} style={{ cursor: "help" }} />
-      </label>
-      <div style={{
-        padding: "10px 14px",
-        backgroundColor: "#F9FAFB",
-        border: "1px solid #E5E7EB",
-        borderRadius: "6px",
-        fontSize: "14px",
-        color: "#6B7280",
-        cursor: "not-allowed"
-      }}>
-        {value || "—"}
-      </div>
-    </div>
-  );
-}
+export function MarineInsuranceBookingDetails({ booking, onBack, onUpdate, currentUser }: MarineInsuranceBookingDetailsProps) {
+  const [activeTab, setActiveTab] = useState<DetailTab>("booking-info");
+  const [showTimeline, setShowTimeline] = useState(false);
+  const [activityLog, setActivityLog] = useState<ActivityLogEntry[]>(initialActivityLog);
+  const [editedBooking, setEditedBooking] = useState<MarineInsuranceBooking>(booking);
 
-interface EditableFieldProps {
-  fieldName: string;
-  label: string;
-  value: string;
-  type?: "text" | "date" | "textarea" | "select";
-  options?: string[];
-  required?: boolean;
-  placeholder?: string;
-  status: ExecutionStatus;
-  onSave?: (value: string) => void;
-}
+  const addActivity = (fieldName: string, oldValue: string, newValue: string) => {
+    setActivityLog(prev => [{ id: `activity-${Date.now()}-${Math.random()}`, timestamp: new Date(), user: currentUser?.name || "Current User", action: "field_updated", fieldName, oldValue, newValue }, ...prev]);
+  };
 
-function EditableField({ 
-  fieldName,
-  label, 
-  value, 
-  type = "text", 
-  options = [],
-  required = false,
-  placeholder = "Click to add...",
-  status,
-  onSave
-}: EditableFieldProps) {
-  const [isEditing, setIsEditing] = useState(false);
-  const [editValue, setEditValue] = useState(value);
-  const [isSaving, setIsSaving] = useState(false);
-  const [saveSuccess, setSaveSuccess] = useState(false);
-
-  const lockStatus = isFieldLocked(fieldName, status);
-  const isEmpty = !value || value.trim() === "";
-
-  const handleSave = async () => {
-    setIsSaving(true);
-    await new Promise(resolve => setTimeout(resolve, 300));
-    
-    if (onSave) {
-      onSave(editValue);
+  const handleStatusUpdate = async (newStatus: ExecutionStatus) => {
+    const oldStatus = editedBooking.status;
+    if (oldStatus === newStatus) return;
+    setEditedBooking(prev => ({ ...prev, status: newStatus }));
+    setActivityLog(prev => [{ id: `activity-${Date.now()}`, timestamp: new Date(), user: currentUser?.name || "Current User", action: "status_changed", statusFrom: oldStatus, statusTo: newStatus }, ...prev]);
+    try {
+      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-c142e950/marine-insurance-bookings/${booking.bookingId}`, {
+        method: 'PUT', headers: { 'Authorization': `Bearer ${publicAnonKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus })
+      });
+      if (!response.ok) throw new Error('Failed to update status');
+      toast.success(`Status updated to ${newStatus}`);
+      onUpdate();
+    } catch (error) {
+      console.error("Error updating status:", error);
+      toast.error("Failed to update status");
+      setEditedBooking(prev => ({ ...prev, status: oldStatus }));
     }
-    
-    setIsSaving(false);
-    setSaveSuccess(true);
-    setIsEditing(false);
-    setTimeout(() => setSaveSuccess(false), 2000);
   };
 
-  const handleCancel = () => {
-    setEditValue(value);
-    setIsEditing(false);
-  };
+  const financials = useProjectFinancials(booking.projectNumber || "");
+  const bookingBillingItems = financials.billingItems.filter(item => item.booking_id === booking.bookingId);
 
-  if (lockStatus.locked) {
-    return (
-      <div>
-        <label style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "6px",
-          fontSize: "13px",
-          fontWeight: 500,
-          color: "var(--neuron-ink-base)",
-          marginBottom: "8px"
-        }}>
-          {label}
-          {required && <span style={{ color: "#EF4444" }}>*</span>}
-          <Lock size={12} color="#9CA3AF" title={lockStatus.reason} style={{ cursor: "help" }} />
-        </label>
-        <div style={{
-          padding: "10px 14px",
-          backgroundColor: "#F9FAFB",
-          border: "1px solid #E5E7EB",
-          borderRadius: "6px",
-          fontSize: "14px",
-          color: "#6B7280",
-          cursor: "not-allowed"
-        }}>
-          {value || "—"}
-        </div>
-      </div>
-    );
-  }
-
-  if (isEditing) {
-    return (
-      <div>
-        <label style={{
-          display: "block",
-          fontSize: "13px",
-          fontWeight: 500,
-          color: "var(--neuron-ink-base)",
-          marginBottom: "8px"
-        }}>
-          {label} {required && <span style={{ color: "#EF4444" }}>*</span>}
-        </label>
-        <div style={{ position: "relative" }}>
-          {type === "textarea" ? (
-            <textarea
-              value={editValue}
-              onChange={(e) => setEditValue(e.target.value)}
-              onBlur={handleSave}
-              autoFocus
-              rows={3}
-              style={{
-                width: "100%",
-                padding: "10px 14px",
-                backgroundColor: "white",
-                border: "2px solid #0F766E",
-                borderRadius: "6px",
-                fontSize: "14px",
-                color: "var(--neuron-ink-primary)",
-                outline: "none",
-                resize: "vertical"
-              }}
-            />
-          ) : (
-            <input
-              type={type}
-              value={editValue}
-              onChange={(e) => setEditValue(e.target.value)}
-              onBlur={handleSave}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleSave();
-                if (e.key === "Escape") handleCancel();
-              }}
-              autoFocus
-              style={{
-                width: "100%",
-                padding: "10px 14px",
-                backgroundColor: "white",
-                border: "2px solid #0F766E",
-                borderRadius: "6px",
-                fontSize: "14px",
-                color: "var(--neuron-ink-primary)",
-                outline: "none"
-              }}
-            />
-          )}
-          {isSaving && (
-            <span style={{
-              position: "absolute",
-              right: "14px",
-              top: "50%",
-              transform: "translateY(-50%)",
-              fontSize: "12px",
-              color: "#0F766E"
-            }}>
-              Saving...
-            </span>
-          )}
-        </div>
-      </div>
-    );
-  }
+  const tabStyle = (tab: DetailTab) => ({
+    padding: "0 4px", fontSize: "14px", fontWeight: 500,
+    color: activeTab === tab ? "#0F766E" : "var(--neuron-ink-muted)",
+    background: "none", borderTop: "none", borderLeft: "none", borderRight: "none",
+    borderBottom: activeTab === tab ? "2px solid #0F766E" : "2px solid transparent",
+    cursor: "pointer" as const, transition: "all 0.2s", height: "100%"
+  });
 
   return (
-    <div>
-      <label style={{
-        display: "block",
-        fontSize: "13px",
-        fontWeight: 500,
-        color: "var(--neuron-ink-base)",
-        marginBottom: "8px"
-      }}>
-        {label} {required && <span style={{ color: "#EF4444" }}>*</span>}
-      </label>
-      <div
-        onClick={() => setIsEditing(true)}
-        style={{
-          position: "relative",
-          padding: "10px 14px",
-          backgroundColor: isEmpty ? "white" : "#FAFBFC",
-          border: `1px solid ${isEmpty && required ? "#FCD34D" : "#E5E7EB"}`,
-          borderRadius: "6px",
-          fontSize: "14px",
-          color: isEmpty ? "#9CA3AF" : "var(--neuron-ink-primary)",
-          cursor: "pointer",
-          transition: "all 0.2s ease",
-          minHeight: type === "textarea" ? "80px" : "42px"
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.borderColor = "#0F766E";
-          e.currentTarget.style.backgroundColor = "white";
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.borderColor = isEmpty && required ? "#FCD34D" : "#E5E7EB";
-          e.currentTarget.style.backgroundColor = isEmpty ? "white" : "#FAFBFC";
-        }}
-      >
-        {isEmpty ? (
-          <span style={{ color: "#9CA3AF" }}>{placeholder}</span>
-        ) : type === "date" && value ? (
-          new Date(value).toLocaleDateString()
-        ) : (
-          value
-        )}
-        {!isEmpty && (
-          <Edit3 
-            size={14} 
-            style={{ 
-              position: "absolute", 
-              right: "14px", 
-              top: "50%", 
-              transform: "translateY(-50%)",
-              color: "#9CA3AF",
-              opacity: 0
-            }}
-            className="edit-icon"
-          />
-        )}
-        {/* Removed "✓ Saved" indicator */}
+    <div style={{ backgroundColor: "white", display: "flex", flexDirection: "column", height: "100vh" }}>
+      <div style={{ padding: "20px 48px", borderBottom: "1px solid var(--neuron-ui-border)", backgroundColor: "white", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div>
+          <button onClick={onBack} style={{ display: "flex", alignItems: "center", gap: "8px", background: "none", border: "none", color: "var(--neuron-ink-secondary)", cursor: "pointer", fontSize: "13px", marginBottom: "12px", padding: "0" }}
+            onMouseEnter={(e) => { e.currentTarget.style.color = "var(--neuron-brand-green)"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.color = "var(--neuron-ink-secondary)"; }}>
+            <ArrowLeft size={16} /> Back to Marine Insurance Bookings
+          </button>
+          <h1 style={{ fontSize: "20px", fontWeight: 600, color: "var(--neuron-ink-primary)", marginBottom: "4px" }}>{booking.customerName}</h1>
+          <p style={{ fontSize: "13px", color: "var(--neuron-ink-muted)", margin: 0 }}>{booking.bookingId}</p>
+        </div>
+        <StatusSelector status={editedBooking.status} onUpdateStatus={handleStatusUpdate} />
       </div>
-      <style>{`
-        div:hover .edit-icon {
-          opacity: 1 !important;
-        }
-      `}</style>
+
+      <div style={{ padding: "0 48px", borderBottom: "1px solid var(--neuron-ui-border)", backgroundColor: "white", display: "flex", justifyContent: "space-between", alignItems: "center", height: "56px" }}>
+        <div style={{ display: "flex", gap: "24px", height: "100%" }}>
+          <button onClick={() => setActiveTab("booking-info")} style={tabStyle("booking-info")}>Booking Information</button>
+          <button onClick={() => setActiveTab("billings")} style={tabStyle("billings")}>Billings</button>
+          <button onClick={() => setActiveTab("expenses")} style={tabStyle("expenses")}>Expenses</button>
+          <button onClick={() => setActiveTab("comments")} style={tabStyle("comments")}>Comments</button>
+        </div>
+        <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+          <button onClick={() => setShowTimeline(!showTimeline)} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 16px", backgroundColor: showTimeline ? "#E8F2EE" : "white", border: `1px solid ${showTimeline ? "#0F766E" : "var(--neuron-ui-border)"}`, borderRadius: "6px", fontSize: "13px", fontWeight: 500, color: showTimeline ? "#0F766E" : "var(--neuron-ink-secondary)", cursor: "pointer" }}>
+            <Clock size={16} /> Activity
+          </button>
+          <button style={{ display: "flex", alignItems: "center", justifyContent: "center", width: "36px", height: "36px", backgroundColor: "white", border: "1px solid var(--neuron-ui-border)", borderRadius: "6px", cursor: "pointer" }}>
+            <MoreVertical size={18} />
+          </button>
+        </div>
+      </div>
+
+      <div style={{ flex: 1, overflow: "hidden", display: "flex" }}>
+        <div style={{ flex: showTimeline ? "0 0 65%" : "1", overflow: "auto", transition: "flex 0.3s ease" }}>
+          {activeTab === "booking-info" && <BookingInformationTab booking={editedBooking} onBookingUpdated={onUpdate} addActivity={addActivity} setEditedBooking={setEditedBooking} />}
+          {activeTab === "billings" && <div className="flex flex-col bg-white p-12 min-h-[600px]"><UnifiedBillingsTab items={bookingBillingItems} projectId={booking.projectNumber || ""} bookingId={booking.bookingId} onRefresh={financials.refresh} isLoading={financials.isLoading} extraActions={<BookingRateCardButton booking={booking} serviceType="Marine Insurance" existingBillingItems={bookingBillingItems} onRefresh={financials.refresh} />} /></div>}
+          {activeTab === "expenses" && <ExpensesTab bookingId={booking.bookingId} bookingType="marine-insurance" currentUser={currentUser} />}
+          {activeTab === "comments" && <BookingCommentsTab bookingId={booking.bookingId} currentUserId={currentUser?.email || "unknown"} currentUserName={currentUser?.name || "Unknown User"} currentUserDepartment={currentUser?.department || "Operations"} />}
+        </div>
+        {showTimeline && <div style={{ flex: "0 0 35%", borderLeft: "1px solid var(--neuron-ui-border)", backgroundColor: "#FAFBFC", overflow: "auto" }}><ActivityTimeline activities={activityLog} /></div>}
+      </div>
     </div>
   );
 }
 
-// Booking Information Tab Component
-function BookingInformationTab({
-  booking,
-  onBookingUpdated,
-  addActivity,
-  setEditedBooking
-}: {
-  booking: MarineInsuranceBooking;
-  onBookingUpdated: () => void;
-  addActivity: (fieldName: string, oldValue: string, newValue: string) => void;
-  setEditedBooking: (booking: MarineInsuranceBooking) => void;
+function BookingInformationTab({ booking, onBookingUpdated, addActivity, setEditedBooking }: {
+  booking: MarineInsuranceBooking; onBookingUpdated: () => void;
+  addActivity: (fieldName: string, oldValue: string, newValue: string) => void; setEditedBooking: any;
 }) {
-  
+  const generalSection = useSectionEdit(booking);
+  const policySection = useSectionEdit(booking);
+  const shipmentSection = useSectionEdit(booking);
+  const routeSection = useSectionEdit(booking);
+  const additionalSection = useSectionEdit(booking);
+
+  const GENERAL_FIELDS = ["accountHandler"];
+  const POLICY_FIELDS = ["policyNumber", "insuranceCompany", "coverageType", "insuredValue", "currency", "effectiveDate", "expiryDate"];
+  const SHIPMENT_FIELDS = ["commodityDescription", "hsCode", "invoiceNumber", "invoiceValue", "packagingType", "numberOfPackages", "grossWeight"];
+  const ROUTE_FIELDS = ["aol", "pol", "mode", "aod", "pod", "vesselVoyage"];
+  const ADDITIONAL_FIELDS = ["specialConditions", "remarks"];
+
+  const gMode = generalSection.isEditing ? "edit" : "view";
+  const pMode = policySection.isEditing ? "edit" : "view";
+  const sMode = shipmentSection.isEditing ? "edit" : "view";
+  const rMode = routeSection.isEditing ? "edit" : "view";
+  const aMode = additionalSection.isEditing ? "edit" : "view";
+
   return (
-    <div style={{ 
-      padding: "32px 48px",
-      maxWidth: "1400px",
-      margin: "0 auto"
-    }}>
-      
-      {/* General Information Section */}
-      <div style={{
-        backgroundColor: "white",
-        border: "1px solid var(--neuron-ui-border)",
-        borderRadius: "8px",
-        padding: "24px",
-        marginBottom: "24px"
-      }}>
-        <div style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: "20px"
-        }}>
-          <h2 style={{
-            fontSize: "16px",
-            fontWeight: 600,
-            color: "var(--neuron-brand-green)",
-            margin: 0
-          }}>
-            General Information
-          </h2>
-          <span style={{
-            fontSize: "12px",
-            color: "var(--neuron-ink-muted)"
-          }}>
-            Last updated by {booking.accountHandler || "System"}, {new Date(booking.updatedAt).toLocaleString()}
-          </span>
-        </div>
+    <div style={{ padding: "32px 48px", maxWidth: "1400px", margin: "0 auto" }}>
 
+      {/* ── General Information ── */}
+      <EditableSectionCard
+        title="General Information"
+        subtitle={`Last updated by ${booking.accountHandler || "System"}, ${new Date(booking.updatedAt).toLocaleString()}`}
+        isEditing={generalSection.isEditing}
+        onEdit={generalSection.startEditing}
+        onCancel={generalSection.cancel}
+        onSave={() => { const draft = generalSection.save(); diffAndApply(booking, draft, GENERAL_FIELDS, addActivity, setEditedBooking, onBookingUpdated); }}
+      >
         <div style={{ display: "grid", gap: "20px" }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}>
-            <LockedField 
-              label="Customer Name" 
-              value={booking.customerName}
-            />
-            <LockedField 
-              label="Account Owner" 
-              value={booking.accountOwner || ""}
-            />
+            <LockedField label="Customer Name" value={booking.customerName} />
+            <LockedField label="Account Owner" value={booking.accountOwner || ""} />
           </div>
-
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "20px" }}>
-            <EditableField
-              fieldName="accountHandler"
-              label="Account Handler"
-              value={booking.accountHandler || ""}
-              status={booking.status}
-              placeholder="Assign handler..."
-              onSave={(value) => {
-                onBookingUpdated();
-                addActivity("Account Handler", booking.accountHandler || "", value);
-                setEditedBooking({ ...booking, accountHandler: value });
-              }}
-            />
-            <LockedField 
-              label="Service/s" 
-              value={booking.service || ""}
-            />
-            <LockedField 
-              label="Quotation Reference" 
-              value={booking.quotationReferenceNumber || ""}
-            />
+            <EditableField label="Account Handler" value={generalSection.draft.accountHandler || ""} mode={gMode} placeholder="Assign handler..." onChange={(v) => generalSection.updateField("accountHandler", v)} />
+            <LockedField label="Service/s" value={booking.service || ""} />
+            <LockedField label="Quotation Reference" value={booking.quotationReferenceNumber || ""} />
           </div>
         </div>
+      </EditableSectionCard>
 
-        <div style={{
-          marginTop: "16px",
-          padding: "12px",
-          backgroundColor: "#F0F9FF",
-          borderRadius: "6px",
-          fontSize: "12px",
-          color: "#0369A1"
-        }}>
-          <strong>Click any field to edit</strong>
-        </div>
-      </div>
-
-      {/* Policy Information Section */}
-      <div style={{
-        backgroundColor: "white",
-        border: "1px solid var(--neuron-ui-border)",
-        borderRadius: "8px",
-        padding: "24px",
-        marginBottom: "24px"
-      }}>
-        <h2 style={{
-          fontSize: "16px",
-          fontWeight: 600,
-          color: "var(--neuron-brand-green)",
-          marginBottom: "20px"
-        }}>
-          Policy Information
-        </h2>
-
+      {/* ── Policy Information ── */}
+      <EditableSectionCard
+        title="Policy Information"
+        isEditing={policySection.isEditing}
+        onEdit={policySection.startEditing}
+        onCancel={policySection.cancel}
+        onSave={() => { const draft = policySection.save(); diffAndApply(booking, draft, POLICY_FIELDS, addActivity, setEditedBooking, onBookingUpdated); }}
+      >
         <div style={{ display: "grid", gap: "20px" }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "20px" }}>
-            <EditableField
-              fieldName="policyNumber"
-              label="Policy Number"
-              value={booking.policyNumber || ""}
-              status={booking.status}
-              placeholder="Enter policy number..."
-              onSave={(value) => {
-                onBookingUpdated();
-                addActivity("Policy Number", booking.policyNumber || "", value);
-                setEditedBooking({ ...booking, policyNumber: value });
-              }}
-            />
-            <EditableField
-              fieldName="insuranceCompany"
-              label="Insurance Company"
-              value={booking.insuranceCompany || ""}
-              status={booking.status}
-              placeholder="Enter insurer..."
-              onSave={(value) => {
-                onBookingUpdated();
-                addActivity("Insurance Company", booking.insuranceCompany || "", value);
-                setEditedBooking({ ...booking, insuranceCompany: value });
-              }}
-            />
-            <EditableField
-              fieldName="coverageType"
-              label="Coverage Type"
-              value={booking.coverageType || ""}
-              status={booking.status}
-              placeholder="Enter coverage type..."
-              onSave={(value) => {
-                onBookingUpdated();
-                addActivity("Coverage Type", booking.coverageType || "", value);
-                setEditedBooking({ ...booking, coverageType: value });
-              }}
-            />
+            <EditableField label="Policy Number" value={policySection.draft.policyNumber || ""} mode={pMode} placeholder="Enter policy number..." onChange={(v) => policySection.updateField("policyNumber", v)} />
+            <EditableField label="Insurance Company" value={policySection.draft.insuranceCompany || ""} mode={pMode} placeholder="Enter insurer..." onChange={(v) => policySection.updateField("insuranceCompany", v)} />
+            <EditableField label="Coverage Type" value={policySection.draft.coverageType || ""} mode={pMode} placeholder="Enter coverage type..." onChange={(v) => policySection.updateField("coverageType", v)} />
           </div>
-
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "20px" }}>
-            <EditableField
-              fieldName="insuredValue"
-              label="Insured Value"
-              value={booking.insuredValue || ""}
-              status={booking.status}
-              placeholder="Enter amount..."
-              onSave={(value) => {
-                onBookingUpdated();
-                addActivity("Insured Value", booking.insuredValue || "", value);
-                setEditedBooking({ ...booking, insuredValue: value });
-              }}
-            />
-            <EditableField
-              fieldName="currency"
-              label="Currency"
-              value={booking.currency || ""}
-              status={booking.status}
-              placeholder="e.g., PHP, USD..."
-              onSave={(value) => {
-                onBookingUpdated();
-                addActivity("Currency", booking.currency || "", value);
-                setEditedBooking({ ...booking, currency: value });
-              }}
-            />
+            <EditableField label="Insured Value" value={policySection.draft.insuredValue || ""} mode={pMode} placeholder="Enter amount..." onChange={(v) => policySection.updateField("insuredValue", v)} />
+            <EditableField label="Currency" value={policySection.draft.currency || ""} mode={pMode} placeholder="e.g., PHP, USD..." onChange={(v) => policySection.updateField("currency", v)} />
           </div>
-
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}>
-            <EditableField
-              fieldName="effectiveDate"
-              label="Effective Date"
-              value={booking.effectiveDate || ""}
-              type="date"
-              status={booking.status}
-              onSave={(value) => {
-                onBookingUpdated();
-                addActivity("Effective Date", booking.effectiveDate || "", value);
-                setEditedBooking({ ...booking, effectiveDate: value });
-              }}
-            />
-            <EditableField
-              fieldName="expiryDate"
-              label="Expiry Date"
-              value={booking.expiryDate || ""}
-              type="date"
-              status={booking.status}
-              onSave={(value) => {
-                onBookingUpdated();
-                addActivity("Expiry Date", booking.expiryDate || "", value);
-                setEditedBooking({ ...booking, expiryDate: value });
-              }}
-            />
+            <EditableField label="Effective Date" value={policySection.draft.effectiveDate || ""} type="date" mode={pMode} onChange={(v) => policySection.updateField("effectiveDate", v)} />
+            <EditableField label="Expiry Date" value={policySection.draft.expiryDate || ""} type="date" mode={pMode} onChange={(v) => policySection.updateField("expiryDate", v)} />
           </div>
         </div>
-      </div>
+      </EditableSectionCard>
 
-      {/* Shipment Information Section */}
-      <div style={{
-        backgroundColor: "white",
-        border: "1px solid var(--neuron-ui-border)",
-        borderRadius: "8px",
-        padding: "24px",
-        marginBottom: "24px"
-      }}>
-        <h2 style={{
-          fontSize: "16px",
-          fontWeight: 600,
-          color: "var(--neuron-brand-green)",
-          marginBottom: "20px"
-        }}>
-          Shipment Information
-        </h2>
-
+      {/* ── Shipment Information ── */}
+      <EditableSectionCard
+        title="Shipment Information"
+        isEditing={shipmentSection.isEditing}
+        onEdit={shipmentSection.startEditing}
+        onCancel={shipmentSection.cancel}
+        onSave={() => { const draft = shipmentSection.save(); diffAndApply(booking, draft, SHIPMENT_FIELDS, addActivity, setEditedBooking, onBookingUpdated); }}
+      >
         <div style={{ display: "grid", gap: "20px" }}>
-          <div>
-            <EditableField
-              fieldName="commodityDescription"
-              label="Commodity Description"
-              value={booking.commodityDescription || ""}
-              type="textarea"
-              status={booking.status}
-              placeholder="Describe the goods..."
-              onSave={(value) => {
-                onBookingUpdated();
-                addActivity("Commodity Description", booking.commodityDescription || "", value);
-                setEditedBooking({ ...booking, commodityDescription: value });
-              }}
-            />
-          </div>
-
+          <EditableField label="Commodity Description" value={shipmentSection.draft.commodityDescription || ""} type="textarea" mode={sMode} placeholder="Describe the goods..." onChange={(v) => shipmentSection.updateField("commodityDescription", v)} />
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "20px" }}>
-            <EditableField
-              fieldName="hsCode"
-              label="HS Code"
-              value={booking.hsCode || ""}
-              status={booking.status}
-              placeholder="Enter HS code..."
-              onSave={(value) => {
-                onBookingUpdated();
-                addActivity("HS Code", booking.hsCode || "", value);
-                setEditedBooking({ ...booking, hsCode: value });
-              }}
-            />
-            <EditableField
-              fieldName="invoiceNumber"
-              label="Invoice Number"
-              value={booking.invoiceNumber || ""}
-              status={booking.status}
-              placeholder="Enter invoice number..."
-              onSave={(value) => {
-                onBookingUpdated();
-                addActivity("Invoice Number", booking.invoiceNumber || "", value);
-                setEditedBooking({ ...booking, invoiceNumber: value });
-              }}
-            />
-            <EditableField
-              fieldName="invoiceValue"
-              label="Invoice Value"
-              value={booking.invoiceValue || ""}
-              status={booking.status}
-              placeholder="Enter invoice value..."
-              onSave={(value) => {
-                onBookingUpdated();
-                addActivity("Invoice Value", booking.invoiceValue || "", value);
-                setEditedBooking({ ...booking, invoiceValue: value });
-              }}
-            />
+            <EditableField label="HS Code" value={shipmentSection.draft.hsCode || ""} mode={sMode} placeholder="Enter HS code..." onChange={(v) => shipmentSection.updateField("hsCode", v)} />
+            <EditableField label="Invoice Number" value={shipmentSection.draft.invoiceNumber || ""} mode={sMode} placeholder="Enter invoice number..." onChange={(v) => shipmentSection.updateField("invoiceNumber", v)} />
+            <EditableField label="Invoice Value" value={shipmentSection.draft.invoiceValue || ""} mode={sMode} placeholder="Enter invoice value..." onChange={(v) => shipmentSection.updateField("invoiceValue", v)} />
           </div>
-
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "20px" }}>
-            <EditableField
-              fieldName="packagingType"
-              label="Packaging Type"
-              value={booking.packagingType || ""}
-              status={booking.status}
-              placeholder="e.g., Pallets, Cartons..."
-              onSave={(value) => {
-                onBookingUpdated();
-                addActivity("Packaging Type", booking.packagingType || "", value);
-                setEditedBooking({ ...booking, packagingType: value });
-              }}
-            />
-            <EditableField
-              fieldName="numberOfPackages"
-              label="Number of Packages"
-              value={booking.numberOfPackages || ""}
-              status={booking.status}
-              placeholder="Enter quantity..."
-              onSave={(value) => {
-                onBookingUpdated();
-                addActivity("Number of Packages", booking.numberOfPackages || "", value);
-                setEditedBooking({ ...booking, numberOfPackages: value });
-              }}
-            />
-            <EditableField
-              fieldName="grossWeight"
-              label="Gross Weight"
-              value={booking.grossWeight || ""}
-              status={booking.status}
-              placeholder="Enter weight..."
-              onSave={(value) => {
-                onBookingUpdated();
-                addActivity("Gross Weight", booking.grossWeight || "", value);
-                setEditedBooking({ ...booking, grossWeight: value });
-              }}
-            />
+            <EditableField label="Packaging Type" value={shipmentSection.draft.packagingType || ""} mode={sMode} placeholder="e.g., Pallets, Cartons..." onChange={(v) => shipmentSection.updateField("packagingType", v)} />
+            <EditableField label="Number of Packages" value={shipmentSection.draft.numberOfPackages || ""} mode={sMode} placeholder="Enter quantity..." onChange={(v) => shipmentSection.updateField("numberOfPackages", v)} />
+            <EditableField label="Gross Weight" value={shipmentSection.draft.grossWeight || ""} mode={sMode} placeholder="Enter weight..." onChange={(v) => shipmentSection.updateField("grossWeight", v)} />
           </div>
         </div>
-      </div>
+      </EditableSectionCard>
 
-      {/* Route Information Section */}
-      <div style={{
-        backgroundColor: "white",
-        border: "1px solid var(--neuron-ui-border)",
-        borderRadius: "8px",
-        padding: "24px",
-        marginBottom: "24px"
-      }}>
-        <h2 style={{
-          fontSize: "16px",
-          fontWeight: 600,
-          color: "var(--neuron-brand-green)",
-          marginBottom: "20px"
-        }}>
-          Route Information
-        </h2>
-
+      {/* ── Route Information ── */}
+      <EditableSectionCard
+        title="Route Information"
+        isEditing={routeSection.isEditing}
+        onEdit={routeSection.startEditing}
+        onCancel={routeSection.cancel}
+        onSave={() => { const draft = routeSection.save(); diffAndApply(booking, draft, ROUTE_FIELDS, addActivity, setEditedBooking, onBookingUpdated); }}
+      >
         <div style={{ display: "grid", gap: "20px" }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "20px" }}>
-            <EditableField
-              fieldName="aol"
-              label="AOL (Airport of Loading)"
-              value={booking.aol || ""}
-              status={booking.status}
-              placeholder="Enter AOL..."
-              onSave={(value) => {
-                onBookingUpdated();
-                addActivity("AOL", booking.aol || "", value);
-                setEditedBooking({ ...booking, aol: value });
-              }}
-            />
-            <EditableField
-              fieldName="pol"
-              label="POL (Port of Loading)"
-              value={booking.pol || ""}
-              status={booking.status}
-              placeholder="Enter POL..."
-              onSave={(value) => {
-                onBookingUpdated();
-                addActivity("POL", booking.pol || "", value);
-                setEditedBooking({ ...booking, pol: value });
-              }}
-            />
-            <EditableField
-              fieldName="mode"
-              label="Mode"
-              value={booking.mode || ""}
-              status={booking.status}
-              placeholder="e.g., FCL, AIR..."
-              onSave={(value) => {
-                onBookingUpdated();
-                addActivity("Mode", booking.mode || "", value);
-                setEditedBooking({ ...booking, mode: value });
-              }}
-            />
+            <EditableField label="AOL (Airport of Loading)" value={routeSection.draft.aol || ""} mode={rMode} placeholder="Enter AOL..." onChange={(v) => routeSection.updateField("aol", v)} />
+            <EditableField label="POL (Port of Loading)" value={routeSection.draft.pol || ""} mode={rMode} placeholder="Enter POL..." onChange={(v) => routeSection.updateField("pol", v)} />
+            <EditableField label="Mode" value={routeSection.draft.mode || ""} mode={rMode} placeholder="e.g., FCL, AIR..." onChange={(v) => routeSection.updateField("mode", v)} />
           </div>
-
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "20px" }}>
-            <EditableField
-              fieldName="aod"
-              label="AOD (Airport of Discharge)"
-              value={booking.aod || ""}
-              status={booking.status}
-              placeholder="Enter AOD..."
-              onSave={(value) => {
-                onBookingUpdated();
-                addActivity("AOD", booking.aod || "", value);
-                setEditedBooking({ ...booking, aod: value });
-              }}
-            />
-            <EditableField
-              fieldName="pod"
-              label="POD (Port of Discharge)"
-              value={booking.pod || ""}
-              status={booking.status}
-              placeholder="Enter POD..."
-              onSave={(value) => {
-                onBookingUpdated();
-                addActivity("POD", booking.pod || "", value);
-                setEditedBooking({ ...booking, pod: value });
-              }}
-            />
-            <EditableField
-              fieldName="vesselVoyage"
-              label="Vessel/Voyage"
-              value={booking.vesselVoyage || ""}
-              status={booking.status}
-              placeholder="Enter vessel/voyage..."
-              onSave={(value) => {
-                onBookingUpdated();
-                addActivity("Vessel/Voyage", booking.vesselVoyage || "", value);
-                setEditedBooking({ ...booking, vesselVoyage: value });
-              }}
-            />
+            <EditableField label="AOD (Airport of Discharge)" value={routeSection.draft.aod || ""} mode={rMode} placeholder="Enter AOD..." onChange={(v) => routeSection.updateField("aod", v)} />
+            <EditableField label="POD (Port of Discharge)" value={routeSection.draft.pod || ""} mode={rMode} placeholder="Enter POD..." onChange={(v) => routeSection.updateField("pod", v)} />
+            <EditableField label="Vessel/Voyage" value={routeSection.draft.vesselVoyage || ""} mode={rMode} placeholder="Enter vessel/voyage..." onChange={(v) => routeSection.updateField("vesselVoyage", v)} />
           </div>
         </div>
-      </div>
+      </EditableSectionCard>
 
-      {/* Additional Information Section */}
+      {/* ── Additional Information ── */}
       {(booking.specialConditions || booking.remarks) && (
-        <div style={{
-          backgroundColor: "white",
-          border: "1px solid var(--neuron-ui-border)",
-          borderRadius: "8px",
-          padding: "24px"
-        }}>
-          <h2 style={{
-            fontSize: "16px",
-            fontWeight: 600,
-            color: "var(--neuron-brand-green)",
-            marginBottom: "20px"
-          }}>
-            Additional Information
-          </h2>
-
+        <EditableSectionCard
+          title="Additional Information"
+          isEditing={additionalSection.isEditing}
+          onEdit={additionalSection.startEditing}
+          onCancel={additionalSection.cancel}
+          onSave={() => { const draft = additionalSection.save(); diffAndApply(booking, draft, ADDITIONAL_FIELDS, addActivity, setEditedBooking, onBookingUpdated); }}
+        >
           <div style={{ display: "grid", gap: "20px" }}>
-            {booking.specialConditions && (
-              <EditableField
-                fieldName="specialConditions"
-                label="Special Conditions"
-                value={booking.specialConditions}
-                type="textarea"
-                status={booking.status}
-                placeholder="Enter special conditions..."
-                onSave={(value) => {
-                  onBookingUpdated();
-                  addActivity("Special Conditions", booking.specialConditions || "", value);
-                  setEditedBooking({ ...booking, specialConditions: value });
-                }}
-              />
-            )}
-
-            {booking.remarks && (
-              <EditableField
-                fieldName="remarks"
-                label="Remarks"
-                value={booking.remarks}
-                type="textarea"
-                status={booking.status}
-                placeholder="Enter remarks..."
-                onSave={(value) => {
-                  onBookingUpdated();
-                  addActivity("Remarks", booking.remarks || "", value);
-                  setEditedBooking({ ...booking, remarks: value });
-                }}
-              />
-            )}
+            {booking.specialConditions && <EditableField label="Special Conditions" value={additionalSection.draft.specialConditions || ""} type="textarea" mode={aMode} placeholder="Enter special conditions..." onChange={(v) => additionalSection.updateField("specialConditions", v)} />}
+            {booking.remarks && <EditableField label="Remarks" value={additionalSection.draft.remarks || ""} type="textarea" mode={aMode} placeholder="Enter remarks..." onChange={(v) => additionalSection.updateField("remarks", v)} />}
           </div>
-        </div>
+        </EditableSectionCard>
       )}
     </div>
   );

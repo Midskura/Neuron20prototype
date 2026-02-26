@@ -1,8 +1,11 @@
 import { useState } from "react";
 import { Project } from "../../types/pricing";
 import { NeuronStatusPill } from "../NeuronStatusPill";
-import { Search, Briefcase, CheckCircle, Package, Calendar, CircleDot, Ship, Truck, Shield, User } from "lucide-react";
+import { Search, Briefcase, CheckCircle, Package, Calendar, CircleDot, Ship, Truck, Shield, User, TrendingUp, TrendingDown, DollarSign, AlertCircle } from "lucide-react";
 import { CustomDropdown } from "../bd/CustomDropdown";
+import { useProjectsFinancialsMap } from "../../hooks/useProjectsFinancialsMap";
+import { SkeletonTable, SkeletonControlBar } from "../shared/NeuronSkeleton";
+import { NeuronRefreshButton } from "../shared/NeuronRefreshButton";
 
 interface ProjectsListProps {
   projects: Project[];
@@ -14,7 +17,8 @@ interface ProjectsListProps {
     email: string; 
     department: string;
   } | null;
-  department: "BD" | "Operations";
+  department: "BD" | "Operations" | "Accounting";
+  onRefresh?: () => Promise<void>;
 }
 
 export function ProjectsList({ 
@@ -22,20 +26,34 @@ export function ProjectsList({
   onSelectProject, 
   isLoading,
   currentUser,
-  department 
+  department,
+  onRefresh,
 }: ProjectsListProps) {
   const [searchQuery, setSearchQuery] = useState("");
-  const [activeTab, setActiveTab] = useState<"all" | "my" | "active" | "completed">(department === "BD" ? "all" : "all");
+  const [activeTab, setActiveTab] = useState<"all" | "my" | "active" | "completed">("all");
+  
+  // Filters
   const [timePeriodFilter, setTimePeriodFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [bookingStatusFilter, setBookingStatusFilter] = useState<string>("all");
   const [serviceFilter, setServiceFilter] = useState<string>("all");
   const [ownerFilter, setOwnerFilter] = useState<string>("all");
+  const [marginFilter, setMarginFilter] = useState<string>("all");
+  const [profitFilter, setProfitFilter] = useState<string>("all");
 
-  // Grid template constant - BD sees different columns
-  const GRID_COLS = "200px 180px 140px 120px 120px 120px";
+  // Fetch actual financials (now using strict accounting logic)
+  const { financialsMap, isLoading: isLoadingFinancials } = useProjectsFinancialsMap(projects);
 
-  // Get unique values for filters
+  // Grid template constant
+  const GRID_COLS = "240px 200px 120px 120px 120px 100px 100px";
+
+  const formatCurrency = (amount: number, currency: string = "PHP") => {
+    return new Intl.NumberFormat("en-PH", {
+      style: "currency",
+      currency: currency,
+    }).format(amount);
+  };
+
   const uniqueOwners = Array.from(new Set(projects.map(p => p.bd_owner_user_name).filter(Boolean)));
   const uniqueServices = Array.from(new Set(projects.flatMap(p => p.services || [])));
 
@@ -43,7 +61,7 @@ export function ProjectsList({
   const getFilteredByTab = () => {
     let filtered = projects;
 
-    // "My Projects" tab logic
+    // "My Projects" tab logic (Only for BD/Ops)
     if (activeTab === "my") {
       filtered = projects.filter(p => 
         p.bd_owner_user_name === currentUser?.name ||
@@ -84,22 +102,42 @@ export function ProjectsList({
       if (timePeriodFilter === "90days" && daysDiff > 90) return false;
     }
     
-    // Status filter
-    if (statusFilter !== "all" && project.status !== statusFilter) return false;
-    
-    // Booking status filter
-    if (bookingStatusFilter !== "all") {
-      const projectBookingStatus = project.booking_status || "No Bookings Yet";
-      if (projectBookingStatus !== bookingStatusFilter) return false;
+    // Financial Data for filtering
+    const stats = financialsMap[project.project_number] || { income: 0, costs: 0, grossProfit: 0, margin: 0 };
+
+    if (department === "Accounting") {
+      // Margin Filter
+      if (marginFilter !== "all") {
+        if (marginFilter === "high" && stats.margin < 20) return false;
+        if (marginFilter === "low" && (stats.margin >= 20 || stats.margin < 0)) return false;
+        if (marginFilter === "loss" && stats.margin >= 0) return false;
+      }
+
+      // Profit Filter
+      if (profitFilter !== "all") {
+         if (profitFilter === "profitable" && stats.grossProfit <= 0) return false;
+         if (profitFilter === "loss" && stats.grossProfit >= 0) return false;
+      }
+    } else {
+      // BD/Ops Filters
+      
+      // Status filter
+      if (statusFilter !== "all" && project.status !== statusFilter) return false;
+      
+      // Booking status filter
+      if (bookingStatusFilter !== "all") {
+        const projectBookingStatus = project.booking_status || "No Bookings Yet";
+        if (projectBookingStatus !== bookingStatusFilter) return false;
+      }
+      
+      // Service filter
+      if (serviceFilter !== "all") {
+        if (!project.services?.includes(serviceFilter)) return false;
+      }
+      
+      // Owner filter
+      if (ownerFilter !== "all" && project.bd_owner_user_name !== ownerFilter) return false;
     }
-    
-    // Service filter
-    if (serviceFilter !== "all") {
-      if (!project.services?.includes(serviceFilter)) return false;
-    }
-    
-    // Owner filter
-    if (ownerFilter !== "all" && project.bd_owner_user_name !== ownerFilter) return false;
     
     return true;
   });
@@ -132,11 +170,19 @@ export function ProjectsList({
               fontSize: "14px", 
               color: "#667085"
             }}>
-              {department === "BD" 
-                ? "Manage approved quotations and project execution"
-                : "View assigned projects and bookings"}
+              {department === "Accounting" 
+                ? "Monitor revenue, costs, and margins across all active shipments"
+                : department === "BD" 
+                  ? "Manage approved quotations and project execution"
+                  : "View assigned projects and bookings"}
             </p>
           </div>
+          {onRefresh && (
+            <NeuronRefreshButton 
+              onRefresh={onRefresh}
+              label="Refresh projects"
+            />
+          )}
         </div>
 
         {/* Search Bar */}
@@ -153,7 +199,7 @@ export function ProjectsList({
           />
           <input
             type="text"
-            placeholder="Search projects by number, customer, or quotation..."
+            placeholder={department === "Accounting" ? "Search projects by number, name, or customer..." : "Search projects by number, customer, or quotation..."}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             style={{
@@ -174,9 +220,10 @@ export function ProjectsList({
           display: "flex",
           gap: "4px",
           marginBottom: "16px",
-          alignItems: "center"
+          alignItems: "center",
+          flexWrap: "wrap"
         }}>
-          {/* Time Period Filter */}
+          {/* Common: Time Period Filter */}
           <div style={{ minWidth: "120px" }}>
             <CustomDropdown
               value={timePeriodFilter}
@@ -191,75 +238,112 @@ export function ProjectsList({
             />
           </div>
 
-          {/* Status Filter */}
-          <div style={{ minWidth: "120px" }}>
-            <CustomDropdown
-              value={statusFilter}
-              onChange={setStatusFilter}
-              options={[
-                { value: "all", label: "All Statuses", icon: <CircleDot size={16} /> },
-                { value: "Active", label: "Active", icon: <CircleDot size={16} style={{ color: "#F59E0B" }} /> },
-                { value: "Completed", label: "Completed", icon: <CheckCircle size={16} style={{ color: "#10B981" }} /> },
-                { value: "On Hold", label: "On Hold", icon: <CircleDot size={16} style={{ color: "#6B7280" }} /> },
-                { value: "Cancelled", label: "Cancelled", icon: <CircleDot size={16} style={{ color: "#EF4444" }} /> }
-              ]}
-              placeholder="Select status"
-            />
-          </div>
+          {department === "Accounting" ? (
+            <>
+              {/* Margin Filter */}
+              <div style={{ minWidth: "150px" }}>
+                <CustomDropdown
+                  value={marginFilter}
+                  onChange={setMarginFilter}
+                  options={[
+                    { value: "all", label: "All Margins", icon: <TrendingUp size={16} /> },
+                    { value: "high", label: "High Margin (>20%)", icon: <TrendingUp size={16} style={{ color: "#10B981" }} /> },
+                    { value: "low", label: "Low Margin (<20%)", icon: <TrendingDown size={16} style={{ color: "#F59E0B" }} /> },
+                    { value: "loss", label: "Loss Making (<0%)", icon: <AlertCircle size={16} style={{ color: "#EF4444" }} /> }
+                  ]}
+                  placeholder="Filter by margin"
+                />
+              </div>
 
-          {/* Booking Status Filter */}
-          <div style={{ minWidth: "150px" }}>
-            <CustomDropdown
-              value={bookingStatusFilter}
-              onChange={setBookingStatusFilter}
-              options={[
-                { value: "all", label: "All Booking Statuses", icon: <Package size={16} /> },
-                { value: "No Bookings Yet", label: "No Bookings Yet", icon: <Package size={16} style={{ color: "#6B7280" }} /> },
-                { value: "Partially Booked", label: "Partially Booked", icon: <Package size={16} style={{ color: "#F59E0B" }} /> },
-                { value: "Fully Booked", label: "Fully Booked", icon: <CheckCircle size={16} style={{ color: "#10B981" }} /> }
-              ]}
-              placeholder="Select booking status"
-            />
-          </div>
+              {/* Profit Status Filter */}
+              <div style={{ minWidth: "140px" }}>
+                <CustomDropdown
+                  value={profitFilter}
+                  onChange={setProfitFilter}
+                  options={[
+                    { value: "all", label: "All Status", icon: <DollarSign size={16} /> },
+                    { value: "profitable", label: "Profitable", icon: <CheckCircle size={16} style={{ color: "#10B981" }} /> },
+                    { value: "loss", label: "Loss", icon: <AlertCircle size={16} style={{ color: "#EF4444" }} /> }
+                  ]}
+                  placeholder="Profit status"
+                />
+              </div>
+            </>
+          ) : (
+            <>
+              {/* BD/Ops Filters */}
+              
+              {/* Status Filter */}
+              <div style={{ minWidth: "120px" }}>
+                <CustomDropdown
+                  value={statusFilter}
+                  onChange={setStatusFilter}
+                  options={[
+                    { value: "all", label: "All Statuses", icon: <CircleDot size={16} /> },
+                    { value: "Active", label: "Active", icon: <CircleDot size={16} style={{ color: "#F59E0B" }} /> },
+                    { value: "Completed", label: "Completed", icon: <CheckCircle size={16} style={{ color: "#10B981" }} /> },
+                    { value: "On Hold", label: "On Hold", icon: <CircleDot size={16} style={{ color: "#6B7280" }} /> },
+                    { value: "Cancelled", label: "Cancelled", icon: <CircleDot size={16} style={{ color: "#EF4444" }} /> }
+                  ]}
+                  placeholder="Select status"
+                />
+              </div>
 
-          {/* Service Filter */}
-          <div style={{ minWidth: "120px" }}>
-            <CustomDropdown
-              value={serviceFilter}
-              onChange={setServiceFilter}
-              options={[
-                { value: "all", label: "All Services", icon: <Briefcase size={16} /> },
-                ...uniqueServices.map(service => {
-                  const getServiceIcon = () => {
-                    if (service === "Brokerage") return <Briefcase size={16} style={{ color: "#0F766E" }} />;
-                    if (service === "Forwarding") return <Ship size={16} style={{ color: "#0F766E" }} />;
-                    if (service === "Trucking") return <Truck size={16} style={{ color: "#0F766E" }} />;
-                    if (service === "Marine Insurance") return <Shield size={16} style={{ color: "#0F766E" }} />;
-                    return <Package size={16} style={{ color: "#0F766E" }} />;
-                  };
-                  return { value: service, label: service, icon: getServiceIcon() };
-                })
-              ]}
-              placeholder="Select service"
-            />
-          </div>
+              {/* Booking Status Filter */}
+              <div style={{ minWidth: "150px" }}>
+                <CustomDropdown
+                  value={bookingStatusFilter}
+                  onChange={setBookingStatusFilter}
+                  options={[
+                    { value: "all", label: "All Booking Statuses", icon: <Package size={16} /> },
+                    { value: "No Bookings Yet", label: "No Bookings Yet", icon: <Package size={16} style={{ color: "#6B7280" }} /> },
+                    { value: "Partially Booked", label: "Partially Booked", icon: <Package size={16} style={{ color: "#F59E0B" }} /> },
+                    { value: "Fully Booked", label: "Fully Booked", icon: <CheckCircle size={16} style={{ color: "#10B981" }} /> }
+                  ]}
+                  placeholder="Select booking status"
+                />
+              </div>
 
-          {/* Owner Filter */}
-          <div style={{ minWidth: "120px" }}>
-            <CustomDropdown
-              value={ownerFilter}
-              onChange={setOwnerFilter}
-              options={[
-                { value: "all", label: "All Owners", icon: <User size={16} /> },
-                ...uniqueOwners.map(owner => ({ 
-                  value: owner, 
-                  label: owner, 
-                  icon: <User size={16} style={{ color: "#0F766E" }} /> 
-                }))
-              ]}
-              placeholder="Select owner"
-            />
-          </div>
+              {/* Service Filter */}
+              <div style={{ minWidth: "120px" }}>
+                <CustomDropdown
+                  value={serviceFilter}
+                  onChange={setServiceFilter}
+                  options={[
+                    { value: "all", label: "All Services", icon: <Briefcase size={16} /> },
+                    ...uniqueServices.map(service => {
+                      const getServiceIcon = () => {
+                        if (service === "Brokerage") return <Briefcase size={16} style={{ color: "#0F766E" }} />;
+                        if (service === "Forwarding") return <Ship size={16} style={{ color: "#0F766E" }} />;
+                        if (service === "Trucking") return <Truck size={16} style={{ color: "#0F766E" }} />;
+                        if (service === "Marine Insurance") return <Shield size={16} style={{ color: "#0F766E" }} />;
+                        return <Package size={16} style={{ color: "#0F766E" }} />;
+                      };
+                      return { value: service, label: service, icon: getServiceIcon() };
+                    })
+                  ]}
+                  placeholder="Select service"
+                />
+              </div>
+
+              {/* Owner Filter */}
+              <div style={{ minWidth: "120px" }}>
+                <CustomDropdown
+                  value={ownerFilter}
+                  onChange={setOwnerFilter}
+                  options={[
+                    { value: "all", label: "All Owners", icon: <User size={16} /> },
+                    ...uniqueOwners.map(owner => ({ 
+                      value: owner, 
+                      label: owner, 
+                      icon: <User size={16} style={{ color: "#0F766E" }} /> 
+                    }))
+                  ]}
+                  placeholder="Select owner"
+                />
+              </div>
+            </>
+          )}
         </div>
 
         {/* Tabs */}
@@ -286,16 +370,6 @@ export function ProjectsList({
               transition: "all 0.2s ease",
               marginBottom: "-1px"
             }}
-            onMouseEnter={(e) => {
-              if (activeTab !== "all") {
-                e.currentTarget.style.color = "#12332B";
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (activeTab !== "all") {
-                e.currentTarget.style.color = "#667085";
-              }
-            }}
           >
             <Briefcase size={18} />
             All Projects
@@ -315,51 +389,43 @@ export function ProjectsList({
             </span>
           </button>
 
-          <button
-            onClick={() => setActiveTab("my")}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "8px",
-              padding: "12px 20px",
-              background: "transparent",
-              border: "none",
-              borderBottom: activeTab === "my" ? "2px solid #0F766E" : "2px solid transparent",
-              color: activeTab === "my" ? "#0F766E" : "#667085",
-              fontSize: "14px",
-              fontWeight: 600,
-              cursor: "pointer",
-              transition: "all 0.2s ease",
-              marginBottom: "-1px"
-            }}
-            onMouseEnter={(e) => {
-              if (activeTab !== "my") {
-                e.currentTarget.style.color = "#12332B";
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (activeTab !== "my") {
-                e.currentTarget.style.color = "#667085";
-              }
-            }}
-          >
-            <User size={18} />
-            My Projects
-            <span
+          {department !== "Accounting" && (
+            <button
+              onClick={() => setActiveTab("my")}
               style={{
-                padding: "2px 8px",
-                borderRadius: "12px",
-                fontSize: "11px",
-                fontWeight: 700,
-                background: activeTab === "my" ? "#0F766E" : "#0F766E15",
-                color: activeTab === "my" ? "#FFFFFF" : "#0F766E",
-                minWidth: "20px",
-                textAlign: "center"
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                padding: "12px 20px",
+                background: "transparent",
+                border: "none",
+                borderBottom: activeTab === "my" ? "2px solid #0F766E" : "2px solid transparent",
+                color: activeTab === "my" ? "#0F766E" : "#667085",
+                fontSize: "14px",
+                fontWeight: 600,
+                cursor: "pointer",
+                transition: "all 0.2s ease",
+                marginBottom: "-1px"
               }}
             >
-              {myCount}
-            </span>
-          </button>
+              <User size={18} />
+              My Projects
+              <span
+                style={{
+                  padding: "2px 8px",
+                  borderRadius: "12px",
+                  fontSize: "11px",
+                  fontWeight: 700,
+                  background: activeTab === "my" ? "#0F766E" : "#0F766E15",
+                  color: activeTab === "my" ? "#FFFFFF" : "#0F766E",
+                  minWidth: "20px",
+                  textAlign: "center"
+                }}
+              >
+                {myCount}
+              </span>
+            </button>
+          )}
           
           <button
             onClick={() => setActiveTab("active")}
@@ -377,16 +443,6 @@ export function ProjectsList({
               cursor: "pointer",
               transition: "all 0.2s ease",
               marginBottom: "-1px"
-            }}
-            onMouseEnter={(e) => {
-              if (activeTab !== "active") {
-                e.currentTarget.style.color = "#12332B";
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (activeTab !== "active") {
-                e.currentTarget.style.color = "#667085";
-              }
             }}
           >
             <Package size={18} />
@@ -424,16 +480,6 @@ export function ProjectsList({
               transition: "all 0.2s ease",
               marginBottom: "-1px"
             }}
-            onMouseEnter={(e) => {
-              if (activeTab !== "completed") {
-                e.currentTarget.style.color = "#12332B";
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (activeTab !== "completed") {
-                e.currentTarget.style.color = "#667085";
-              }
-            }}
           >
             <CheckCircle size={18} />
             Completed
@@ -455,62 +501,23 @@ export function ProjectsList({
         </div>
 
         {/* Table */}
-        {isLoading ? (
-          <div style={{ 
-            padding: "64px", 
-            textAlign: "center", 
-            color: "#667085",
-            fontSize: "14px" 
-          }}>
-            Loading projects...
+        {isLoading || isLoadingFinancials ? (
+          <div className="mt-2">
+            <SkeletonTable rows={10} cols={7} />
           </div>
         ) : filteredProjects.length === 0 ? (
           <div style={{ 
             padding: "64px", 
             textAlign: "center", 
-            maxWidth: "600px",
+            maxWidth: "600px", 
             margin: "0 auto"
           }}>
-            {searchQuery || timePeriodFilter !== "all" || statusFilter !== "all" || bookingStatusFilter !== "all" || serviceFilter !== "all" || ownerFilter !== "all" ? (
-              <>
-                <div style={{ 
-                  fontSize: "16px", 
-                  fontWeight: 600,
-                  color: "#12332B",
-                  marginBottom: "8px" 
-                }}>
-                  No projects match your filters
-                </div>
-                <div style={{ 
-                  fontSize: "14px",
-                  color: "#667085" 
-                }}>
-                  Try adjusting your search criteria or filters
-                </div>
-              </>
-            ) : projects.length === 0 ? (
-              <div className="text-center py-12">
-                <Package size={48} style={{ color: "#D1D5DB", margin: "0 auto 16px" }} />
-                <p className="text-[14px]" style={{ color: "#667085" }}>No Projects Yet</p>
-              </div>
-            ) : (
-              <>
-                <div style={{ 
-                  fontSize: "16px", 
-                  fontWeight: 600,
-                  color: "#12332B",
-                  marginBottom: "8px" 
-                }}>
-                  No {activeTab === "my" ? "projects owned by you" : activeTab === "active" ? "active" : "completed"} projects
-                </div>
-                <div style={{ 
-                  fontSize: "14px",
-                  color: "#667085" 
-                }}>
-                  Try viewing a different tab
-                </div>
-              </>
-            )}
+            <div className="text-center py-12">
+              <Package size={48} style={{ color: "#D1D5DB", margin: "0 auto 16px" }} />
+              <p className="text-[14px]" style={{ color: "#667085" }}>
+                {projects.length === 0 ? "No Projects Yet" : "No projects match your filters"}
+              </p>
+            </div>
           </div>
         ) : (
           <div style={{ 
@@ -528,64 +535,33 @@ export function ProjectsList({
                 background: "#F9FAFB"
               }}
             >
-              <div style={{ 
-                fontSize: "11px",
-                fontWeight: 600,
-                color: "#6B7280",
-                textTransform: "uppercase",
-                letterSpacing: "0.5px"
-              }}>
-                Project Name
+              <div style={{ fontSize: "11px", fontWeight: 600, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                PROJECT
               </div>
-              <div style={{ 
-                fontSize: "11px",
-                fontWeight: 600,
-                color: "#6B7280",
-                textTransform: "uppercase",
-                letterSpacing: "0.5px"
-              }}>
-                Customer
+              <div style={{ fontSize: "11px", fontWeight: 600, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                CUSTOMER
               </div>
-              <div style={{ 
-                fontSize: "11px",
-                fontWeight: 600,
-                color: "#6B7280",
-                textTransform: "uppercase",
-                letterSpacing: "0.5px"
-              }}>
-                Route
+              <div style={{ fontSize: "11px", fontWeight: 600, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.5px", textAlign: "right" }}>
+                INCOME
               </div>
-              <div style={{ 
-                fontSize: "11px",
-                fontWeight: 600,
-                color: "#6B7280",
-                textTransform: "uppercase",
-                letterSpacing: "0.5px"
-              }}>
-                Status
+              <div style={{ fontSize: "11px", fontWeight: 600, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.5px", textAlign: "right" }}>
+                COSTS
               </div>
-              <div style={{ 
-                fontSize: "11px",
-                fontWeight: 600,
-                color: "#6B7280",
-                textTransform: "uppercase",
-                letterSpacing: "0.5px"
-              }}>
-                Booking Status
+              <div style={{ fontSize: "11px", fontWeight: 600, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.5px", textAlign: "right" }}>
+                GROSS PROFIT
               </div>
-              <div style={{ 
-                fontSize: "11px",
-                fontWeight: 600,
-                color: "#6B7280",
-                textTransform: "uppercase",
-                letterSpacing: "0.5px"
-              }}>
-                Ops Assigned
+              <div style={{ fontSize: "11px", fontWeight: 600, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.5px", textAlign: "right" }}>
+                MARGIN
+              </div>
+              <div style={{ fontSize: "11px", fontWeight: 600, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.5px", textAlign: "center" }}>
+                STATUS
               </div>
             </div>
 
             {/* Table Body */}
             {filteredProjects.map((project, index) => {
+              const stats = financialsMap[project.project_number] || { income: 0, costs: 0, grossProfit: 0, margin: 0 };
+              
               return (
                 <div
                   key={project.id}
@@ -603,12 +579,19 @@ export function ProjectsList({
                   }}
                 >
                   <div style={{ display: "flex", alignItems: "center", gap: "12px", overflow: "hidden" }}>
-                    <Package 
-                      size={20} 
-                      color="#0F766E" 
-                      strokeWidth={2}
-                      style={{ flexShrink: 0 }}
-                    />
+                    <div style={{
+                        width: "32px",
+                        height: "32px",
+                        borderRadius: "6px",
+                        backgroundColor: "#F0FDF9",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        flexShrink: 0,
+                        border: "1px solid #CCFBF1"
+                    }}>
+                        <Briefcase size={16} color="#0F766E" />
+                    </div>
                     
                     <div style={{ overflow: "hidden", width: "100%" }}>
                       <div style={{ 
@@ -616,18 +599,18 @@ export function ProjectsList({
                         fontWeight: 600, 
                         color: "#12332B",
                         marginBottom: "2px",
+                        whiteSpace: "nowrap",
                         overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap"
+                        textOverflow: "ellipsis"
                       }}>
                         {project.quotation_name || project.project_number}
                       </div>
                       <div style={{ 
                         fontSize: "12px", 
                         color: "#6B7280",
+                        whiteSpace: "nowrap",
                         overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap"
+                        textOverflow: "ellipsis"
                       }}>
                         {project.project_number}
                       </div>
@@ -638,56 +621,49 @@ export function ProjectsList({
                     <div style={{ 
                       fontSize: "13px", 
                       color: "#12332B",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
                       whiteSpace: "nowrap",
-                      width: "100%"
+                      overflow: "hidden",
+                      textOverflow: "ellipsis"
                     }}>
                       {project.customer_name}
                     </div>
                   </div>
-                  
-                  <div style={{ display: "flex", alignItems: "center", overflow: "hidden" }}>
-                    <div style={{ 
-                      fontSize: "13px", 
-                      color: "#6B7280",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                      width: "100%"
-                    }}>
-                      {project.pol_aol || "—"} → {project.pod_aod || "—"}
+
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end" }}>
+                    <div style={{ fontSize: "13px", fontWeight: 500, color: "#059669" }}>
+                      {formatCurrency(stats.income)}
                     </div>
                   </div>
-                  
-                  <div style={{ display: "flex", alignItems: "center" }}>
+
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end" }}>
+                    <div style={{ fontSize: "13px", fontWeight: 500, color: "#B91C1C" }}>
+                      {formatCurrency(stats.costs)}
+                    </div>
+                  </div>
+
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end" }}>
+                    <div style={{ fontSize: "13px", fontWeight: 600, color: stats.grossProfit >= 0 ? "#12332B" : "#B91C1C" }}>
+                      {formatCurrency(stats.grossProfit)}
+                    </div>
+                  </div>
+
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end" }}>
+                    <div style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      padding: "2px 10px",
+                      borderRadius: "12px",
+                      fontSize: "11px",
+                      fontWeight: 600,
+                      backgroundColor: stats.margin >= 20 ? "#ECFDF5" : stats.margin >= 0 ? "#FFF7ED" : "#FEF2F2",
+                      color: stats.margin >= 20 ? "#059669" : stats.margin >= 0 ? "#C2410C" : "#B91C1C"
+                    }}>
+                      {stats.margin.toFixed(1)}%
+                    </div>
+                  </div>
+
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
                     <NeuronStatusPill status={project.status} size="sm" />
-                  </div>
-                  
-                  <div style={{ display: "flex", alignItems: "center", overflow: "hidden" }}>
-                    <div style={{ 
-                      fontSize: "13px", 
-                      color: "#6B7280",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                      width: "100%"
-                    }}>
-                      {project.booking_status || "No Bookings Yet"}
-                    </div>
-                  </div>
-                  
-                  <div style={{ display: "flex", alignItems: "center", overflow: "hidden" }}>
-                    <div style={{ 
-                      fontSize: "13px", 
-                      color: "#6B7280",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                      width: "100%"
-                    }}>
-                      {project.ops_assigned_user_name || "Unassigned"}
-                    </div>
                   </div>
                 </div>
               );

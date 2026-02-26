@@ -8,6 +8,7 @@ interface CustomDatePickerProps {
   placeholder?: string;
   disabled?: boolean;
   minWidth?: string;
+  className?: string;
 }
 
 export function CustomDatePicker({
@@ -16,7 +17,8 @@ export function CustomDatePicker({
   onChange,
   placeholder = "dd/mm/yyyy",
   disabled = false,
-  minWidth = "140px"
+  minWidth = "140px",
+  className = ""
 }: CustomDatePickerProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [viewDate, setViewDate] = useState(new Date());
@@ -165,14 +167,16 @@ export function CustomDatePicker({
       <button
         onClick={() => !disabled && setIsOpen(!isOpen)}
         disabled={disabled}
+        className={className}
         style={{
           display: "flex",
           alignItems: "center",
           gap: "8px",
-          padding: "6px 10px",
+          // Updated to match CustomDropdown styling (px-4 py-2.5 equivalent)
+          padding: className ? undefined : "10px 16px", 
           fontSize: "13px",
           border: "1px solid var(--neuron-ui-border)",
-          borderRadius: "6px",
+          borderRadius: "8px", // Updated to rounded-lg equivalent (8px)
           backgroundColor: disabled ? "#F3F4F6" : "white",
           color: value ? "var(--neuron-ink-primary)" : "var(--neuron-ink-muted)",
           cursor: disabled ? "not-allowed" : "pointer",
@@ -192,7 +196,7 @@ export function CustomDatePicker({
           }
         }}
       >
-        <Calendar size={14} style={{ color: "var(--neuron-ink-muted)", flexShrink: 0 }} />
+        <Calendar size={16} style={{ color: "var(--neuron-ink-muted)", flexShrink: 0 }} />
         <span style={{ flex: 1, textAlign: "left" }}>
           {formatDisplayValue(value)}
         </span>

@@ -1,8 +1,13 @@
-import { X, Briefcase, Package, FileText } from "lucide-react";
+import { Briefcase, Package, FileText } from "lucide-react";
 import { useState } from "react";
 import { projectId, publicAnonKey } from "../../utils/supabase/info";
 import { toast } from "../ui/toast-utils";
 import { CustomDropdown } from "../bd/CustomDropdown";
+import { SearchableDropdown } from "../shared/SearchableDropdown";
+import { MovementToggle } from "./shared/MovementToggle";
+import { ContractDetectionBanner } from "./shared/ContractDetectionBanner";
+import { BookingCreationPanel } from "./shared/BookingCreationPanel";
+import { useCustomerOptions } from "./shared/useCustomerOptions";
 
 interface CreateOthersBookingPanelProps {
   isOpen: boolean;
@@ -16,8 +21,12 @@ export function CreateOthersBookingPanel({
   onSuccess,
 }: CreateOthersBookingPanelProps) {
   const [loading, setLoading] = useState(false);
+  // ✨ CONTRACT: Detected contract ID for auto-linking
+  const [detectedContractId, setDetectedContractId] = useState<string | null>(null);
+  const customerOptions = useCustomerOptions(isOpen);
   const [formData, setFormData] = useState({
     customerName: "",
+    movement: "IMPORT",
     accountOwner: "",
     accountHandler: "",
     serviceType: "",
@@ -61,7 +70,10 @@ export function CreateOthersBookingPanel({
             "Content-Type": "application/json",
             Authorization: `Bearer ${publicAnonKey}`,
           },
-          body: JSON.stringify(formData),
+          body: JSON.stringify({
+            ...formData,
+            ...(detectedContractId && { contract_id: detectedContractId }),
+          }),
         }
       );
 
@@ -90,69 +102,19 @@ export function CreateOthersBookingPanel({
   const isFormValid = formData.customerName.trim() !== "";
 
   return (
-    <>
-      {/* Backdrop */}
-      <div
-        className="fixed inset-0 bg-black z-40"
-        onClick={onClose}
-        style={{
-          backdropFilter: "blur(2px)",
-          backgroundColor: "rgba(18, 51, 43, 0.15)"
-        }}
-      />
-
-      {/* Side Panel */}
-      <div
-        className="fixed right-0 top-0 h-full w-[680px] bg-white shadow-2xl z-50 flex flex-col animate-slide-in"
-        style={{
-          borderLeft: "1px solid var(--neuron-ui-border)",
-        }}
-      >
-        {/* Header */}
-        <div
-          className="px-12 py-8 border-b"
-          style={{
-            borderColor: "var(--neuron-ui-border)",
-            backgroundColor: "#FFFFFF",
-          }}
-        >
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-3">
-              <div
-                className="w-10 h-10 rounded-lg flex items-center justify-center"
-                style={{ backgroundColor: "#E8F2EE" }}
-              >
-                <Briefcase size={20} style={{ color: "#0F766E" }} />
-              </div>
-              <h2 style={{ fontSize: "24px", fontWeight: 600, color: "#12332B" }}>
-                New Service Booking
-              </h2>
-            </div>
-            <button
-              onClick={onClose}
-              className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors"
-              style={{
-                color: "var(--neuron-ink-muted)",
-                backgroundColor: "transparent",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = "var(--neuron-state-hover)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = "transparent";
-              }}
-            >
-              <X size={20} />
-            </button>
-          </div>
-          <p style={{ fontSize: "14px", color: "#667085" }}>
-            Create a new booking for other services and specialized operations
-          </p>
-        </div>
-
-        {/* Form Content */}
-        <div className="flex-1 overflow-auto px-12 py-8">
-          <form onSubmit={handleSubmit} id="create-others-form">
+    <BookingCreationPanel
+      isOpen={isOpen}
+      onClose={onClose}
+      icon={<Briefcase size={20} />}
+      title="New Service Booking"
+      subtitle="Create a new booking for other services and specialized operations"
+      formId="create-others-form"
+      onSubmit={handleSubmit}
+      isSubmitting={loading}
+      isFormValid={isFormValid}
+      submitLabel="Create Booking"
+      submitIcon={<Briefcase size={16} />}
+    >
             {/* General Information */}
             <div className="mb-8">
               <div className="flex items-center gap-2 mb-4">
@@ -163,24 +125,35 @@ export function CreateOthersBookingPanel({
               </div>
 
               <div className="space-y-4">
+                {/* Movement Toggle */}
                 <div>
                   <label className="block mb-1.5" style={{ fontSize: "13px", fontWeight: 500, color: "#12332B" }}>
-                    Customer Name <span style={{ color: "#C94F3D" }}>*</span>
+                    Movement <span style={{ color: "#C94F3D" }}>*</span>
                   </label>
-                  <input
-                    type="text"
-                    name="customerName"
+                  <MovementToggle
+                    value={formData.movement as "IMPORT" | "EXPORT"}
+                    onChange={(value) => handleChange({ target: { name: "movement", value } } as any)}
+                    layoutIdPrefix="others-movement-pill"
+                  />
+                </div>
+
+                <div>
+                  <SearchableDropdown
+                    label="Customer Name"
                     required
                     value={formData.customerName}
-                    onChange={handleChange}
-                    placeholder="Enter customer name"
-                    className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
-                    style={{
-                      border: "1px solid var(--neuron-ui-border)",
-                      backgroundColor: "#FFFFFF",
-                      color: "var(--neuron-ink-primary)",
-                    }}
+                    onChange={(value) => setFormData(prev => ({ ...prev, customerName: value }))}
+                    options={customerOptions}
+                    placeholder="Search customer..."
+                    fullWidth
                   />
+                  {/* ✨ CONTRACT: Detection banner */}
+                  <ContractDetectionBanner
+                    customerName={formData.customerName}
+                    serviceType="Others"
+                    onContractDetected={setDetectedContractId}
+                  />
+
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
@@ -194,7 +167,7 @@ export function CreateOthersBookingPanel({
                       value={formData.accountOwner}
                       onChange={handleChange}
                       placeholder="Account owner"
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                      className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
                         backgroundColor: "#FFFFFF",
@@ -213,7 +186,7 @@ export function CreateOthersBookingPanel({
                       value={formData.accountHandler}
                       onChange={handleChange}
                       placeholder="Account handler"
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                      className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
                         backgroundColor: "#FFFFFF",
@@ -233,7 +206,7 @@ export function CreateOthersBookingPanel({
                     value={formData.serviceType}
                     onChange={handleChange}
                     placeholder="e.g., Warehousing, Consulting, Documentation"
-                    className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                    className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                     style={{
                       border: "1px solid var(--neuron-ui-border)",
                       backgroundColor: "#FFFFFF",
@@ -252,7 +225,7 @@ export function CreateOthersBookingPanel({
                     onChange={handleChange}
                     rows={3}
                     placeholder="Describe the service to be provided"
-                    className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px] resize-none"
+                    className="w-full px-3.5 py-2.5 rounded-lg text-[13px] resize-none"
                     style={{
                       border: "1px solid var(--neuron-ui-border)",
                       backgroundColor: "#FFFFFF",
@@ -272,7 +245,7 @@ export function CreateOthersBookingPanel({
                       value={formData.quotationReferenceNumber}
                       onChange={handleChange}
                       placeholder="Quotation reference"
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                      className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
                         backgroundColor: "#FFFFFF",
@@ -321,7 +294,7 @@ export function CreateOthersBookingPanel({
                     value={formData.deliveryLocation}
                     onChange={handleChange}
                     placeholder="Location where service will be performed"
-                    className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                    className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                     style={{
                       border: "1px solid var(--neuron-ui-border)",
                       backgroundColor: "#FFFFFF",
@@ -340,7 +313,7 @@ export function CreateOthersBookingPanel({
                       name="scheduleDate"
                       value={formData.scheduleDate}
                       onChange={handleChange}
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                      className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
                         backgroundColor: "#FFFFFF",
@@ -358,7 +331,7 @@ export function CreateOthersBookingPanel({
                       name="completionDate"
                       value={formData.completionDate}
                       onChange={handleChange}
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                      className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
                         backgroundColor: "#FFFFFF",
@@ -379,7 +352,7 @@ export function CreateOthersBookingPanel({
                       value={formData.contactPerson}
                       onChange={handleChange}
                       placeholder="Primary contact person"
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                      className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
                         backgroundColor: "#FFFFFF",
@@ -398,7 +371,7 @@ export function CreateOthersBookingPanel({
                       value={formData.contactNumber}
                       onChange={handleChange}
                       placeholder="Phone number"
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                      className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
                         backgroundColor: "#FFFFFF",
@@ -418,7 +391,7 @@ export function CreateOthersBookingPanel({
                     onChange={handleChange}
                     rows={3}
                     placeholder="Any special requirements or instructions"
-                    className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px] resize-none"
+                    className="w-full px-3.5 py-2.5 rounded-lg text-[13px] resize-none"
                     style={{
                       border: "1px solid var(--neuron-ui-border)",
                       backgroundColor: "#FFFFFF",
@@ -450,7 +423,7 @@ export function CreateOthersBookingPanel({
                       value={formData.estimatedCost}
                       onChange={handleChange}
                       placeholder="e.g., PHP 25,000"
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                      className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
                         backgroundColor: "#FFFFFF",
@@ -469,7 +442,7 @@ export function CreateOthersBookingPanel({
                       value={formData.actualCost}
                       onChange={handleChange}
                       placeholder="e.g., PHP 24,500"
-                      className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px]"
+                      className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
                         backgroundColor: "#FFFFFF",
@@ -489,7 +462,7 @@ export function CreateOthersBookingPanel({
                     onChange={handleChange}
                     rows={2}
                     placeholder="Additional notes or remarks"
-                    className="w-full px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-2 text-[13px] resize-none"
+                    className="w-full px-3.5 py-2.5 rounded-lg text-[13px] resize-none"
                     style={{
                       border: "1px solid var(--neuron-ui-border)",
                       backgroundColor: "#FFFFFF",
@@ -499,67 +472,6 @@ export function CreateOthersBookingPanel({
                 </div>
               </div>
             </div>
-          </form>
-        </div>
-
-        {/* Footer Actions */}
-        <div
-          className="px-12 py-6 border-t flex items-center justify-end gap-3"
-          style={{
-            borderColor: "var(--neuron-ui-border)",
-            backgroundColor: "#FFFFFF",
-          }}
-        >
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-6 py-2.5 rounded-lg transition-colors"
-            style={{
-              border: "1px solid var(--neuron-ui-border)",
-              backgroundColor: "#FFFFFF",
-              color: "var(--neuron-ink-secondary)",
-              fontSize: "14px",
-              fontWeight: 500,
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = "var(--neuron-state-hover)";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = "#FFFFFF";
-            }}
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            form="create-others-form"
-            disabled={!isFormValid || loading}
-            className="px-6 py-2.5 rounded-lg transition-all flex items-center gap-2"
-            style={{
-              backgroundColor: isFormValid && !loading ? "#0F766E" : "#D1D5DB",
-              color: "#FFFFFF",
-              fontSize: "14px",
-              fontWeight: 600,
-              border: "none",
-              cursor: isFormValid && !loading ? "pointer" : "not-allowed",
-              opacity: isFormValid && !loading ? 1 : 0.6,
-            }}
-            onMouseEnter={(e) => {
-              if (isFormValid && !loading) {
-                e.currentTarget.style.backgroundColor = "#0D6560";
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (isFormValid && !loading) {
-                e.currentTarget.style.backgroundColor = "#0F766E";
-              }
-            }}
-          >
-            <Briefcase size={16} />
-            {loading ? "Creating..." : "Create Booking"}
-          </button>
-        </div>
-      </div>
-    </>
+    </BookingCreationPanel>
   );
 }

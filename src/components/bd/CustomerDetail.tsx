@@ -1,12 +1,15 @@
-import { ArrowLeft, Building2, MapPin, Briefcase, Edit, Users, Plus, Mail, Phone, User, CheckCircle, Clock, AlertCircle, Calendar, Paperclip, Upload, MessageSquare, Send, FileText, MessageCircle, Linkedin, StickyNote } from "lucide-react";
-import { useState, useEffect } from "react";
+import { ArrowLeft, Building2, MapPin, Briefcase, Edit, Users, Plus, Mail, Phone, User, CheckCircle, Clock, AlertCircle, Calendar, Paperclip, Upload, MessageSquare, Send, FileText, MessageCircle, Linkedin, StickyNote, Image as ImageIcon, File, Download } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router";
 import type { Customer, Contact, Industry, CustomerStatus, Task, Activity } from "../../types/bd";
-import type { QuotationNew } from "../../types/pricing";
+import type { QuotationNew, Project } from "../../types/pricing";
 import { CustomDropdown } from "./CustomDropdown";
 import { TaskDetailInline } from "./TaskDetailInline";
 import { ActivityDetailInline } from "./ActivityDetailInline";
+import { ActivityTimelineTable } from "./ActivityTimelineTable";
 import { AddContactPanel } from "./AddContactPanel";
+import { CustomerProjectsTab } from "./CustomerProjectsTab";
+import { CustomerInquiriesTab } from "./CustomerInquiriesTab";
 import { projectId, publicAnonKey } from "../../utils/supabase/info";
 import { toast } from "../ui/toast-utils";
 
@@ -17,7 +20,54 @@ interface CustomerDetailProps {
   onBack: () => void;
   onCreateInquiry?: (customer: Customer) => void;
   onViewInquiry?: (inquiryId: string) => void;
+  onViewProject?: (project: Project) => void;
+  variant?: "bd" | "pricing";
 }
+
+// Mock attachment data
+interface Attachment {
+  id: string;
+  name: string;
+  type: "pdf" | "image" | "document" | "spreadsheet";
+  size: string;
+  uploadedAt: string;
+  source: "Task" | "Activity" | "Inquiry" | "Customer";
+  sourceId: string;
+  sourceName: string;
+}
+
+const mockAttachments: Attachment[] = [
+  {
+    id: "att-c1",
+    name: "Business_Registration.pdf",
+    type: "pdf",
+    size: "4.5 MB",
+    uploadedAt: "2024-10-15T09:30:00Z",
+    source: "Customer",
+    sourceId: "cust-1",
+    sourceName: "Onboarding Documents"
+  },
+  {
+    id: "att-c2",
+    name: "Service_Agreement_2025.pdf",
+    type: "pdf",
+    size: "2.8 MB",
+    uploadedAt: "2024-11-20T14:15:00Z",
+    source: "Customer",
+    sourceId: "cust-1",
+    sourceName: "Contract Renewal"
+  },
+  {
+    id: "att-c3",
+    name: "Volume_Forecast_Q1.xlsx",
+    type: "spreadsheet",
+    size: "1.2 MB",
+    uploadedAt: "2024-12-01T11:00:00Z",
+    source: "Activity",
+    sourceId: "act-10",
+    sourceName: "Quarterly Review Meeting"
+  }
+];
 
 interface Comment {
   id: string;
@@ -52,9 +102,13 @@ const mockComments: Comment[] = [
   }
 ];
 
-export function CustomerDetail({ customer, onBack, onCreateInquiry, onViewInquiry }: CustomerDetailProps) {
+export function CustomerDetail({ customer, onBack, onCreateInquiry, onViewInquiry, onViewProject, variant = "bd" }: CustomerDetailProps) {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<"contacts" | "activities" | "tasks" | "inquiries" | "comments">("contacts");
+  const [activeTab, setActiveTab] = useState<"contacts" | "activities" | "tasks" | "inquiries" | "comments" | "attachments" | "projects" | "contracts">(variant === "pricing" ? "inquiries" : "contacts");
+  
+  // ✨ PHASE 5: Customer contracts state
+  const [customerContracts, setCustomerContracts] = useState<any[]>([]);
+  const [isLoadingContracts, setIsLoadingContracts] = useState(false);
   const [newComment, setNewComment] = useState("");
   const [isEditing, setIsEditing] = useState(false);
   const [editedCustomer, setEditedCustomer] = useState(customer);
@@ -64,6 +118,27 @@ export function CustomerDetail({ customer, onBack, onCreateInquiry, onViewInquir
     customer_id: customer.id
   });
   const [activityAttachments, setActivityAttachments] = useState<File[]>([]);
+  const [attachments, setAttachments] = useState<Attachment[]>(mockAttachments);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const newAttachment: Attachment = {
+      id: `att-${Date.now()}`,
+      name: file.name,
+      type: file.name.endsWith('.pdf') ? 'pdf' : file.name.match(/\.(jpg|jpeg|png|gif)$/i) ? 'image' : file.name.endsWith('.xlsx') ? 'spreadsheet' : 'document',
+      size: `${(file.size / 1024 / 1024).toFixed(1)} MB`,
+      uploadedAt: new Date().toISOString(),
+      source: "Customer", 
+      sourceId: "manual-upload",
+      sourceName: "Manual Upload"
+    };
+
+    setAttachments([newAttachment, ...attachments]);
+  };
+
   const [isCreatingTask, setIsCreatingTask] = useState(false);
   const [newTask, setNewTask] = useState<Partial<Task>>({
     type: "Call",
@@ -77,6 +152,8 @@ export function CustomerDetail({ customer, onBack, onCreateInquiry, onViewInquir
   const [editedTask, setEditedTask] = useState<Task | null>(null);
   const [quotations, setQuotations] = useState<QuotationNew[]>([]);
   const [isLoadingQuotations, setIsLoadingQuotations] = useState(false);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [isLoadingProjects, setIsLoadingProjects] = useState(false);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [isLoadingContacts, setIsLoadingContacts] = useState(false);
   const [activities, setActivities] = useState<Activity[]>([]);
@@ -233,6 +310,34 @@ export function CustomerDetail({ customer, onBack, onCreateInquiry, onViewInquir
     }
   };
 
+  // Fetch projects for this customer
+  const fetchProjects = async () => {
+    setIsLoadingProjects(true);
+    try {
+      const response = await fetch(`${API_URL}/projects`, {
+        headers: { Authorization: `Bearer ${publicAnonKey}` },
+        cache: 'no-store',
+      });
+      const result = await response.json();
+      if (result.success) {
+        // Client-side filtering because API might not support query params fully yet
+        // or to be safe since we want to match by customer name or ID
+        const customerProjects = result.data.filter((p: Project) => 
+          p.customer_id === customer.id || 
+          p.customer_name === (customer.name || customer.company_name)
+        );
+        setProjects(customerProjects);
+      } else {
+        setProjects([]);
+      }
+    } catch (error) {
+      console.error("Error fetching projects:", error);
+      setProjects([]);
+    } finally {
+      setIsLoadingProjects(false);
+    }
+  };
+
   // Fetch users for lookups
   const fetchUsers = async () => {
     try {
@@ -249,13 +354,36 @@ export function CustomerDetail({ customer, onBack, onCreateInquiry, onViewInquir
     }
   };
 
+  // ✨ PHASE 5: Fetch customer contracts
+  const fetchCustomerContracts = async () => {
+    setIsLoadingContracts(true);
+    try {
+      const response = await fetch(`${API_URL}/contracts/by-customer/${encodeURIComponent(customer.company_name || customer.name || "")}`, {
+        headers: { Authorization: `Bearer ${publicAnonKey}` },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setCustomerContracts(data.contracts || []);
+      }
+    } catch (error) {
+      console.error("Error fetching customer contracts:", error);
+      setCustomerContracts([]);
+    } finally {
+      setIsLoadingContracts(false);
+    }
+  };
+
   // Fetch customer details when component mounts or customer changes
   useEffect(() => {
     fetchCustomerDetails();
-    fetchActivities();
-    fetchTasks();
+    fetchProjects();
+    fetchCustomerContracts();
+    if (variant === "bd") {
+      fetchActivities();
+      fetchTasks();
+    }
     fetchUsers();
-  }, [customer.id]);
+  }, [customer.id, variant]);
 
   // Get all contacts for this customer (now from backend state)
   const getCustomerContacts = () => {
@@ -410,7 +538,7 @@ export function CustomerDetail({ customer, onBack, onCreateInquiry, onViewInquir
 
       {/* Two Column Layout */}
       <div className="flex-1 overflow-auto" style={{ padding: "0 48px 48px 48px" }}>
-        <div className="grid grid-cols-[35%_1fr] gap-8 h-full">
+        <div className="grid grid-cols-[35%_1fr] gap-8 min-h-full">
           {/* Left Column - Customer Profile Card */}
           <div>
             <div 
@@ -455,79 +583,104 @@ export function CustomerDetail({ customer, onBack, onCreateInquiry, onViewInquir
                     </div>
                   </div>
                   
-                  <button
-                    onClick={() => setIsEditing(!isEditing)}
-                    className="p-2 rounded-lg transition-colors flex-shrink-0"
-                    style={{ 
-                      color: "var(--neuron-ink-muted)",
-                      backgroundColor: "transparent"
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor = "var(--neuron-state-hover)";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor = "transparent";
-                    }}
-                  >
-                    <Edit size={16} />
-                  </button>
+                  {variant === "bd" && (
+                    <button
+                      onClick={() => setIsEditing(!isEditing)}
+                      className="p-2 rounded-lg transition-colors flex-shrink-0"
+                      style={{ 
+                        color: "var(--neuron-ink-muted)",
+                        backgroundColor: "transparent"
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = "var(--neuron-state-hover)";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = "transparent";
+                      }}
+                    >
+                      <Edit size={16} />
+                    </button>
+                  )}
                 </div>
               </div>
 
               {/* Customer Details */}
               {!isEditing ? (
                 <div className="space-y-5">
-                  {/* Industry */}
-                  <div>
-                    <div className="flex items-center gap-2 mb-2">
-                      <Briefcase size={14} style={{ color: "var(--neuron-ink-muted)" }} />
-                      <label className="text-[11px] font-medium uppercase tracking-wide" style={{ color: "var(--neuron-ink-muted)" }}>
-                        Industry
-                      </label>
+                  {/* Client Type */}
+                  {variant === "bd" && (
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <Briefcase size={14} style={{ color: "var(--neuron-ink-muted)" }} />
+                        <label className="text-[11px] font-medium uppercase tracking-wide" style={{ color: "var(--neuron-ink-muted)" }}>
+                          Client Type
+                        </label>
+                      </div>
+                      <p className="text-[13px] pl-6" style={{ color: "var(--neuron-ink-primary)" }}>
+                        {customer.client_type || "Local"}
+                      </p>
                     </div>
-                    <p className="text-[13px] pl-6" style={{ color: "var(--neuron-ink-primary)" }}>
-                      {customer.industry}
-                    </p>
-                  </div>
+                  )}
+
+                  {/* Industry */}
+                  {variant === "bd" && (
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <Briefcase size={14} style={{ color: "var(--neuron-ink-muted)" }} />
+                        <label className="text-[11px] font-medium uppercase tracking-wide" style={{ color: "var(--neuron-ink-muted)" }}>
+                          Industry
+                        </label>
+                      </div>
+                      <p className="text-[13px] pl-6" style={{ color: "var(--neuron-ink-primary)" }}>
+                        {customer.industry}
+                      </p>
+                    </div>
+                  )}
 
                   {/* Registered Address */}
-                  <div>
-                    <div className="flex items-center gap-2 mb-2">
-                      <MapPin size={14} style={{ color: "var(--neuron-ink-muted)" }} />
-                      <label className="text-[11px] font-medium uppercase tracking-wide" style={{ color: "var(--neuron-ink-muted)" }}>
-                        Registered Address
-                      </label>
+                  {variant === "bd" && (
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <MapPin size={14} style={{ color: "var(--neuron-ink-muted)" }} />
+                        <label className="text-[11px] font-medium uppercase tracking-wide" style={{ color: "var(--neuron-ink-muted)" }}>
+                          Registered Address
+                        </label>
+                      </div>
+                      <p className="text-[13px] pl-6" style={{ color: "var(--neuron-ink-primary)" }}>
+                        {customer.registered_address}
+                      </p>
                     </div>
-                    <p className="text-[13px] pl-6" style={{ color: "var(--neuron-ink-primary)" }}>
-                      {customer.registered_address}
-                    </p>
-                  </div>
+                  )}
 
                   {/* Lead Source */}
-                  <div>
-                    <div className="flex items-center gap-2 mb-2">
-                      <Building2 size={14} style={{ color: "var(--neuron-ink-muted)" }} />
-                      <label className="text-[11px] font-medium uppercase tracking-wide" style={{ color: "var(--neuron-ink-muted)" }}>
-                        Lead Source
-                      </label>
+                  {variant === "bd" && (
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <Building2 size={14} style={{ color: "var(--neuron-ink-muted)" }} />
+                        <label className="text-[11px] font-medium uppercase tracking-wide" style={{ color: "var(--neuron-ink-muted)" }}>
+                          Lead Source
+                        </label>
+                      </div>
+                      <p className="text-[13px] pl-6" style={{ color: "var(--neuron-ink-primary)" }}>
+                        {customer.lead_source}
+                      </p>
                     </div>
-                    <p className="text-[13px] pl-6" style={{ color: "var(--neuron-ink-primary)" }}>
-                      {customer.lead_source}
-                    </p>
-                  </div>
+                  )}
 
                   {/* Owner */}
-                  <div>
-                    <div className="flex items-center gap-2 mb-2">
-                      <User size={14} style={{ color: "var(--neuron-ink-muted)" }} />
-                      <label className="text-[11px] font-medium uppercase tracking-wide" style={{ color: "var(--neuron-ink-muted)" }}>
-                        Account Owner
-                      </label>
+                  {variant === "bd" && (
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <User size={14} style={{ color: "var(--neuron-ink-muted)" }} />
+                        <label className="text-[11px] font-medium uppercase tracking-wide" style={{ color: "var(--neuron-ink-muted)" }}>
+                          Account Owner
+                        </label>
+                      </div>
+                      <p className="text-[13px] pl-6" style={{ color: "var(--neuron-ink-primary)" }}>
+                        {getOwnerName(customer.owner_id)}
+                      </p>
                     </div>
-                    <p className="text-[13px] pl-6" style={{ color: "var(--neuron-ink-primary)" }}>
-                      {getOwnerName(customer.owner_id)}
-                    </p>
-                  </div>
+                  )}
 
                   {/* Contact Count */}
                   <div>
@@ -580,7 +733,7 @@ export function CustomerDetail({ customer, onBack, onCreateInquiry, onViewInquir
                     </label>
                     <input
                       type="text"
-                      value={editedCustomer.name || editedCustomer.company_name}
+                      value={editedCustomer.name || editedCustomer.company_name || ""}
                       onChange={(e) => setEditedCustomer({ ...editedCustomer, name: e.target.value, company_name: e.target.value })}
                       className="w-full px-3 py-2 rounded-lg text-[13px] focus:outline-none focus:ring-2"
                       style={{
@@ -591,33 +744,44 @@ export function CustomerDetail({ customer, onBack, onCreateInquiry, onViewInquir
                     />
                   </div>
 
+                  {/* Client Type */}
+                  <div>
+                    <label className="block text-[11px] font-medium uppercase tracking-wide mb-1.5" style={{ color: "var(--neuron-ink-muted)" }}>
+                      Client Type
+                    </label>
+                    <CustomDropdown
+                      value={editedCustomer.client_type || "Local"}
+                      options={[
+                        { value: "Local", label: "Local" },
+                        { value: "International", label: "International" }
+                      ]}
+                      onChange={(val) => setEditedCustomer({ ...editedCustomer, client_type: val as "Local" | "International" })}
+                      fullWidth
+                    />
+                  </div>
+
                   {/* Industry */}
                   <div>
                     <label className="block text-[11px] font-medium uppercase tracking-wide mb-1.5" style={{ color: "var(--neuron-ink-muted)" }}>
                       Industry
                     </label>
-                    <select
-                      value={editedCustomer.industry}
-                      onChange={(e) => setEditedCustomer({ ...editedCustomer, industry: e.target.value as Industry })}
-                      className="w-full px-3 py-2 rounded-lg text-[13px] focus:outline-none focus:ring-2"
-                      style={{
-                        border: "1px solid var(--neuron-ui-border)",
-                        backgroundColor: "#FFFFFF",
-                        color: "var(--neuron-ink-primary)"
-                      }}
-                    >
-                      <option value="Garments">Garments</option>
-                      <option value="Automobile">Automobile</option>
-                      <option value="Energy">Energy</option>
-                      <option value="Food & Beverage">Food & Beverage</option>
-                      <option value="Heavy Equipment">Heavy Equipment</option>
-                      <option value="Construction">Construction</option>
-                      <option value="Agricultural">Agricultural</option>
-                      <option value="Pharmaceutical">Pharmaceutical</option>
-                      <option value="IT">IT</option>
-                      <option value="Electronics">Electronics</option>
-                      <option value="General Merchandise">General Merchandise</option>
-                    </select>
+                    <CustomDropdown
+                      value={editedCustomer.industry || ""}
+                      options={[
+                        { value: "Garments", label: "Garments" },
+                        { value: "Automobile", label: "Automobile" },
+                        { value: "Energy", label: "Energy" },
+                        { value: "Food & Beverage", label: "Food & Beverage" },
+                        { value: "Heavy Equipment", label: "Heavy Equipment" },
+                        { value: "Construction", label: "Construction" },
+                        { value: "Pharmaceutical", label: "Pharmaceutical" },
+                        { value: "IT", label: "IT" },
+                        { value: "Electronics", label: "Electronics" },
+                        { value: "General Merchandise", label: "General Merchandise" }
+                      ]}
+                      onChange={(val) => setEditedCustomer({ ...editedCustomer, industry: val as Industry })}
+                      fullWidth
+                    />
                   </div>
 
                   {/* Registered Address */}
@@ -626,7 +790,7 @@ export function CustomerDetail({ customer, onBack, onCreateInquiry, onViewInquir
                       Registered Address
                     </label>
                     <textarea
-                      value={editedCustomer.registered_address}
+                      value={editedCustomer.registered_address || ""}
                       onChange={(e) => setEditedCustomer({ ...editedCustomer, registered_address: e.target.value })}
                       rows={3}
                       className="w-full px-3 py-2 rounded-lg text-[13px] focus:outline-none focus:ring-2 resize-none"
@@ -643,20 +807,16 @@ export function CustomerDetail({ customer, onBack, onCreateInquiry, onViewInquir
                     <label className="block text-[11px] font-medium uppercase tracking-wide mb-1.5" style={{ color: "var(--neuron-ink-muted)" }}>
                       Status
                     </label>
-                    <select
-                      value={editedCustomer.status}
-                      onChange={(e) => setEditedCustomer({ ...editedCustomer, status: e.target.value as CustomerStatus })}
-                      className="w-full px-3 py-2 rounded-lg text-[13px] focus:outline-none focus:ring-2"
-                      style={{
-                        border: "1px solid var(--neuron-ui-border)",
-                        backgroundColor: "#FFFFFF",
-                        color: "var(--neuron-ink-primary)"
-                      }}
-                    >
-                      <option value="Prospect">Prospect</option>
-                      <option value="Active">Active</option>
-                      <option value="Inactive">Inactive</option>
-                    </select>
+                    <CustomDropdown
+                      value={editedCustomer.status || "Prospect"}
+                      options={[
+                        { value: "Prospect", label: "Prospect" },
+                        { value: "Active", label: "Active" },
+                        { value: "Inactive", label: "Inactive" }
+                      ]}
+                      onChange={(val) => setEditedCustomer({ ...editedCustomer, status: val as CustomerStatus })}
+                      fullWidth
+                    />
                   </div>
 
                   {/* Lead Source */}
@@ -666,7 +826,7 @@ export function CustomerDetail({ customer, onBack, onCreateInquiry, onViewInquir
                     </label>
                     <input
                       type="text"
-                      value={editedCustomer.lead_source}
+                      value={editedCustomer.lead_source || ""}
                       onChange={(e) => setEditedCustomer({ ...editedCustomer, lead_source: e.target.value })}
                       className="w-full px-3 py-2 rounded-lg text-[13px] focus:outline-none focus:ring-2"
                       style={{
@@ -685,7 +845,7 @@ export function CustomerDetail({ customer, onBack, onCreateInquiry, onViewInquir
                     <textarea
                       value={editedCustomer.notes || ''}
                       onChange={(e) => setEditedCustomer({ ...editedCustomer, notes: e.target.value })}
-                      rows={3}
+                      rows={12}
                       placeholder="Additional information about the customer..."
                       className="w-full px-3 py-2 rounded-lg text-[13px] focus:outline-none focus:ring-2 resize-none"
                       style={{
@@ -738,51 +898,57 @@ export function CustomerDetail({ customer, onBack, onCreateInquiry, onViewInquir
           <div className="flex flex-col h-full">
             {/* Tabs */}
             <div className="flex items-center gap-6 mb-6" style={{ borderBottom: "1px solid var(--neuron-ui-divider)" }}>
-              <button
-                onClick={() => setActiveTab("contacts")}
-                className="px-1 pb-3 text-[13px] font-medium transition-colors relative"
-                style={{
-                  color: activeTab === "contacts" ? "#0F766E" : "#667085"
-                }}
-              >
-                Contacts
-                {activeTab === "contacts" && (
-                  <div 
-                    className="absolute bottom-0 left-0 right-0 h-0.5"
-                    style={{ backgroundColor: "#0F766E" }}
-                  />
-                )}
-              </button>
-              <button
-                onClick={() => setActiveTab("activities")}
-                className="px-1 pb-3 text-[13px] font-medium transition-colors relative"
-                style={{
-                  color: activeTab === "activities" ? "#0F766E" : "#667085"
-                }}
-              >
-                Activities
-                {activeTab === "activities" && (
-                  <div 
-                    className="absolute bottom-0 left-0 right-0 h-0.5"
-                    style={{ backgroundColor: "#0F766E" }}
-                  />
-                )}
-              </button>
-              <button
-                onClick={() => setActiveTab("tasks")}
-                className="px-1 pb-3 text-[13px] font-medium transition-colors relative"
-                style={{
-                  color: activeTab === "tasks" ? "#0F766E" : "#667085"
-                }}
-              >
-                Tasks
-                {activeTab === "tasks" && (
-                  <div 
-                    className="absolute bottom-0 left-0 right-0 h-0.5"
-                    style={{ backgroundColor: "#0F766E" }}
-                  />
-                )}
-              </button>
+              {variant === "bd" && (
+                <button
+                  onClick={() => setActiveTab("contacts")}
+                  className="px-1 pb-3 text-[13px] font-medium transition-colors relative"
+                  style={{
+                    color: activeTab === "contacts" ? "#0F766E" : "#667085"
+                  }}
+                >
+                  Contacts
+                  {activeTab === "contacts" && (
+                    <div 
+                      className="absolute bottom-0 left-0 right-0 h-0.5"
+                      style={{ backgroundColor: "#0F766E" }}
+                    />
+                  )}
+                </button>
+              )}
+              {variant === "bd" && (
+                <>
+                  <button
+                    onClick={() => setActiveTab("activities")}
+                    className="px-1 pb-3 text-[13px] font-medium transition-colors relative"
+                    style={{
+                      color: activeTab === "activities" ? "#0F766E" : "#667085"
+                    }}
+                  >
+                    Activities
+                    {activeTab === "activities" && (
+                      <div 
+                        className="absolute bottom-0 left-0 right-0 h-0.5"
+                        style={{ backgroundColor: "#0F766E" }}
+                      />
+                    )}
+                  </button>
+                  <button
+                    onClick={() => setActiveTab("tasks")}
+                    className="px-1 pb-3 text-[13px] font-medium transition-colors relative"
+                    style={{
+                      color: activeTab === "tasks" ? "#0F766E" : "#667085"
+                    }}
+                  >
+                    Tasks
+                    {activeTab === "tasks" && (
+                      <div 
+                        className="absolute bottom-0 left-0 right-0 h-0.5"
+                        style={{ backgroundColor: "#0F766E" }}
+                      />
+                    )}
+                  </button>
+                </>
+              )}
               <button
                 onClick={() => setActiveTab("inquiries")}
                 className="px-1 pb-3 text-[13px] font-medium transition-colors relative"
@@ -792,6 +958,37 @@ export function CustomerDetail({ customer, onBack, onCreateInquiry, onViewInquir
               >
                 Inquiries
                 {activeTab === "inquiries" && (
+                  <div 
+                    className="absolute bottom-0 left-0 right-0 h-0.5"
+                    style={{ backgroundColor: "#0F766E" }}
+                  />
+                )}
+              </button>
+              <button
+                onClick={() => setActiveTab("projects")}
+                className="px-1 pb-3 text-[13px] font-medium transition-colors relative"
+                style={{
+                  color: activeTab === "projects" ? "#0F766E" : "#667085"
+                }}
+              >
+                Projects
+                {activeTab === "projects" && (
+                  <div 
+                    className="absolute bottom-0 left-0 right-0 h-0.5"
+                    style={{ backgroundColor: "#0F766E" }}
+                  />
+                )}
+              </button>
+              {/* ✨ PHASE 5: Contracts tab */}
+              <button
+                onClick={() => setActiveTab("contracts")}
+                className="px-1 pb-3 text-[13px] font-medium transition-colors relative"
+                style={{
+                  color: activeTab === "contracts" ? "#0F766E" : "#667085"
+                }}
+              >
+                Contracts
+                {activeTab === "contracts" && (
                   <div 
                     className="absolute bottom-0 left-0 right-0 h-0.5"
                     style={{ backgroundColor: "#0F766E" }}
@@ -813,12 +1010,27 @@ export function CustomerDetail({ customer, onBack, onCreateInquiry, onViewInquir
                   />
                 )}
               </button>
+              <button
+                onClick={() => setActiveTab("attachments")}
+                className="px-1 pb-3 text-[13px] font-medium transition-colors relative"
+                style={{
+                  color: activeTab === "attachments" ? "#0F766E" : "#667085"
+                }}
+              >
+                Attachments
+                {activeTab === "attachments" && (
+                  <div 
+                    className="absolute bottom-0 left-0 right-0 h-0.5"
+                    style={{ backgroundColor: "#0F766E" }}
+                  />
+                )}
+              </button>
             </div>
 
             {/* Tab Content */}
             <div className="flex-1 overflow-auto">
               {/* Contacts Tab */}
-              {activeTab === "contacts" && (
+              {activeTab === "contacts" && variant === "bd" && (
                 <div>
                   <div className="flex items-center justify-between mb-6">
                     <h3 style={{ fontSize: "16px", fontWeight: 600, color: "#12332B" }}>
@@ -868,7 +1080,13 @@ export function CustomerDetail({ customer, onBack, onCreateInquiry, onViewInquir
                             border: "1px solid var(--neuron-ui-border)",
                             backgroundColor: "#FFFFFF"
                           }}
-                          onClick={() => navigate(`/bd/contacts/${contact.id}`)}
+                          onClick={() => {
+                            if (variant === "bd") {
+                              navigate(`/bd/contacts/${contact.id}`);
+                            } else {
+                              navigate(`/pricing/contacts/${contact.id}`);
+                            }
+                          }}
                           onMouseEnter={(e) => {
                             e.currentTarget.style.backgroundColor = "#F9FAFB";
                             e.currentTarget.style.borderColor = "#0F766E";
@@ -897,9 +1115,9 @@ export function CustomerDetail({ customer, onBack, onCreateInquiry, onViewInquir
                               <h4 className="text-[13px] font-medium mb-1" style={{ color: "var(--neuron-ink-primary)" }}>
                                 {displayName}
                               </h4>
-                              {contact.job_title && (
+                              {(contact.title || contact.job_title) && (
                                 <p className="text-[12px] mb-2" style={{ color: "var(--neuron-ink-muted)" }}>
-                                  {contact.job_title}
+                                  {contact.title || contact.job_title}
                                 </p>
                               )}
                               <div className="flex flex-col gap-1">
@@ -1343,40 +1561,26 @@ export function CustomerDetail({ customer, onBack, onCreateInquiry, onViewInquir
                                       <h4 className="text-[13px] font-medium" style={{ color: "var(--neuron-ink-primary)" }}>
                                         {task.title}
                                       </h4>
-                                      <div className="flex items-center gap-2">
-                                        <span 
-                                          className="text-[10px] px-2 py-0.5 rounded text-white font-medium"
-                                          style={{ backgroundColor: getTaskPriorityColor(task.priority) }}
-                                        >
-                                          {task.priority}
-                                        </span>
-                                        <span 
-                                          className="text-[10px] px-2 py-0.5 rounded text-white font-medium"
-                                          style={{ backgroundColor: getTaskStatusColor(task.status) }}
-                                        >
-                                          {task.status}
-                                        </span>
-                                      </div>
-                                    </div>
-                                    <div className="flex items-center gap-3 mb-2 text-[12px]" style={{ color: "var(--neuron-ink-muted)" }}>
-                                      <span className="flex items-center gap-1">
-                                        <Calendar size={12} />
-                                        {formatDate(task.due_date)}
+                                      <span 
+                                        className="text-[10px] px-2 py-0.5 rounded font-medium"
+                                        style={{ 
+                                          backgroundColor: getTaskPriorityColor(task.priority) + "20",
+                                          color: getTaskPriorityColor(task.priority)
+                                        }}
+                                      >
+                                        {task.priority}
                                       </span>
-                                      <span>•</span>
-                                      <span>{task.type}</span>
+                                    </div>
+                                    <div className="flex items-center gap-2 mb-1">
+                                      <span className="text-[11px]" style={{ color: "var(--neuron-ink-muted)" }}>
+                                        Due: {formatDate(task.due_date)}
+                                      </span>
                                       {taskContact && (
-                                        <>
-                                          <span>•</span>
-                                          <span>{taskContact.first_name} {taskContact.last_name}</span>
-                                        </>
+                                        <span className="text-[11px]" style={{ color: "var(--neuron-ink-muted)" }}>
+                                          • with {taskContact.first_name} {taskContact.last_name}
+                                        </span>
                                       )}
                                     </div>
-                                    {task.remarks && (
-                                      <p className="text-[13px]" style={{ color: "var(--neuron-ink-secondary)" }}>
-                                        {task.remarks}
-                                      </p>
-                                    )}
                                   </div>
                                 </div>
                               </div>
@@ -1386,19 +1590,11 @@ export function CustomerDetail({ customer, onBack, onCreateInquiry, onViewInquir
                       )}
                     </>
                   ) : isCreatingTask ? (
-                    /* Create Task Form */
+                    // Create Task Form
                     <div>
                       <div className="mb-6">
                         <button
-                          onClick={() => {
-                            setIsCreatingTask(false);
-                            setNewTask({
-                              type: "Call",
-                              priority: "Medium",
-                              status: "Pending",
-                              customer_id: customer.id
-                            });
-                          }}
+                          onClick={() => setIsCreatingTask(false)}
                           className="flex items-center gap-2 text-[13px] transition-colors mb-4"
                           style={{ color: "#0F766E" }}
                           onMouseEnter={(e) => {
@@ -1411,68 +1607,48 @@ export function CustomerDetail({ customer, onBack, onCreateInquiry, onViewInquir
                           <ArrowLeft size={16} />
                           Back to Tasks
                         </button>
-
-                        <h3 style={{ fontSize: "16px", fontWeight: 600, color: "#12332B", marginBottom: "24px" }}>
-                          Create Task
+                        <h3 style={{ fontSize: "16px", fontWeight: 600, color: "#12332B" }}>
+                          Create New Task
                         </h3>
+                      </div>
+                      
+                      <div 
+                        className="p-6 rounded-xl"
+                        style={{ 
+                          border: "1px solid var(--neuron-ui-border)",
+                          backgroundColor: "#FAFAFA"
+                        }}
+                      >
+                        <div className="space-y-6">
+                          {/* Task Title */}
+                          <div>
+                            <label className="block text-[11px] font-medium uppercase tracking-wide mb-2" style={{ color: "#667085" }}>
+                              Task Title *
+                            </label>
+                            <input
+                              type="text"
+                              value={newTask.title || ""}
+                              onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
+                              placeholder="Enter task title..."
+                              className="w-full px-3 py-2.5 rounded-lg text-[13px]"
+                              style={{
+                                border: "1px solid var(--neuron-ui-border)",
+                                backgroundColor: "#FFFFFF",
+                                color: "#12332B"
+                              }}
+                            />
+                          </div>
 
-                        <div 
-                          className="p-6 rounded-xl"
-                          style={{ 
-                            border: "1px solid var(--neuron-ui-border)",
-                            backgroundColor: "#FAFAFA"
-                          }}
-                        >
-                          <div className="space-y-6">
-                            {/* Task Title */}
-                            <div>
-                              <label className="block text-[11px] font-medium uppercase tracking-wide mb-2" style={{ color: "#667085" }}>
-                                Task Title *
-                              </label>
-                              <input
-                                type="text"
-                                value={newTask.title || ""}
-                                onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
-                                placeholder="Enter task title..."
-                                className="w-full px-3 py-2.5 rounded-lg text-[13px]"
-                                style={{
-                                  border: "1px solid var(--neuron-ui-border)",
-                                  backgroundColor: "#FFFFFF",
-                                  color: "#12332B"
-                                }}
-                              />
-                            </div>
-
-                            {/* Type */}
-                            <div>
-                              <CustomDropdown
-                                label="TYPE"
-                                value={newTask.type || "Call"}
-                                onChange={(value) => setNewTask({ ...newTask, type: value })}
-                                options={[
-                                  { value: "To-do", label: "To-do" },
-                                  { value: "Call", label: "Call" },
-                                  { value: "Email", label: "Email" },
-                                  { value: "Meeting", label: "Meeting" },
-                                  { value: "SMS", label: "SMS" },
-                                  { value: "Viber", label: "Viber" },
-                                  { value: "WhatsApp", label: "WhatsApp" },
-                                  { value: "WeChat", label: "WeChat" },
-                                  { value: "LinkedIn", label: "LinkedIn" },
-                                  { value: "Marketing Email", label: "Marketing Email" }
-                                ]}
-                              />
-                            </div>
-
-                            {/* Due Date */}
+                          {/* Due Date & Priority */}
+                          <div className="grid grid-cols-2 gap-4">
                             <div>
                               <label className="block text-[11px] font-medium uppercase tracking-wide mb-2" style={{ color: "#667085" }}>
                                 Due Date *
                               </label>
                               <input
-                                type="date"
-                                value={newTask.due_date || ""}
-                                onChange={(e) => setNewTask({ ...newTask, due_date: e.target.value })}
+                                type="datetime-local"
+                                value={newTask.due_date ? new Date(newTask.due_date).toISOString().slice(0, 16) : ""}
+                                onChange={(e) => setNewTask({ ...newTask, due_date: new Date(e.target.value).toISOString() })}
                                 className="w-full px-3 py-2.5 rounded-lg text-[13px]"
                                 style={{
                                   border: "1px solid var(--neuron-ui-border)",
@@ -1481,122 +1657,102 @@ export function CustomerDetail({ customer, onBack, onCreateInquiry, onViewInquir
                                 }}
                               />
                             </div>
-
-                            {/* Priority */}
-                            <div>
-                              <CustomDropdown
-                                label="PRIORITY"
-                                value={newTask.priority || "Medium"}
-                                onChange={(value) => setNewTask({ ...newTask, priority: value as any })}
-                                options={[
-                                  { value: "Low", label: "Low" },
-                                  { value: "Medium", label: "Medium" },
-                                  { value: "High", label: "High" }
-                                ]}
-                              />
-                            </div>
-
-                            {/* Contact Selection */}
-                            <div>
-                              <CustomDropdown
-                                label="RELATED CONTACT (OPTIONAL)"
-                                value={newTask.contact_id || ""}
-                                onChange={(value) => setNewTask({ ...newTask, contact_id: value })}
-                                options={[
-                                  { value: "", label: "Select a contact..." },
-                                  ...customerContacts.map(contact => ({
-                                    value: contact.id,
-                                    label: contact.name || `${contact.first_name || ''} ${contact.last_name || ''}`
-                                  }))
-                                ]}
-                                placeholder="Select a contact..."
-                              />
-                            </div>
-
-                            {/* Remarks */}
                             <div>
                               <label className="block text-[11px] font-medium uppercase tracking-wide mb-2" style={{ color: "#667085" }}>
-                                Remarks (Optional)
+                                Priority *
                               </label>
-                              <textarea
-                                value={newTask.remarks || ""}
-                                onChange={(e) => setNewTask({ ...newTask, remarks: e.target.value })}
-                                placeholder="Add any additional notes..."
-                                className="w-full px-3 py-2.5 rounded-lg text-[13px] resize-none"
-                                rows={3}
+                              <select
+                                value={newTask.priority || "Medium"}
+                                onChange={(e) => setNewTask({ ...newTask, priority: e.target.value as any })}
+                                className="w-full px-3 py-2.5 rounded-lg text-[13px]"
                                 style={{
                                   border: "1px solid var(--neuron-ui-border)",
                                   backgroundColor: "#FFFFFF",
                                   color: "#12332B"
                                 }}
-                              />
+                              >
+                                <option value="Low">Low</option>
+                                <option value="Medium">Medium</option>
+                                <option value="High">High</option>
+                              </select>
                             </div>
+                          </div>
 
-                            {/* Attachments */}
-                            <div>
-                              <label className="block text-[11px] font-medium uppercase tracking-wide mb-2" style={{ color: "#667085" }}>
-                                Attachments (Optional)
-                              </label>
-                              <div 
-                                className="border-2 border-dashed rounded-lg p-4 text-center cursor-pointer transition-colors"
-                                style={{ borderColor: "var(--neuron-ui-border)", backgroundColor: "#FFFFFF" }}
-                                onMouseEnter={(e) => {
-                                  e.currentTarget.style.borderColor = "#0F766E";
-                                  e.currentTarget.style.backgroundColor = "#E8F5F3";
-                                }}
-                                onMouseLeave={(e) => {
-                                  e.currentTarget.style.borderColor = "var(--neuron-ui-border)";
-                                  e.currentTarget.style.backgroundColor = "#FFFFFF";
-                                }}
-                              >
-                                <Upload size={24} className="mx-auto mb-2" style={{ color: "#667085" }} />
-                                <p className="text-[13px]" style={{ color: "#667085" }}>
-                                  Click to upload or drag and drop files
-                                </p>
-                              </div>
-                            </div>
+                          {/* Related Contact */}
+                          <div>
+                            <label className="block text-[11px] font-medium uppercase tracking-wide mb-2" style={{ color: "#667085" }}>
+                              Related Contact (Optional)
+                            </label>
+                            <select
+                              value={newTask.contact_id || ""}
+                              onChange={(e) => setNewTask({ ...newTask, contact_id: e.target.value })}
+                              className="w-full px-3 py-2.5 rounded-lg text-[13px]"
+                              style={{
+                                border: "1px solid var(--neuron-ui-border)",
+                                backgroundColor: "#FFFFFF",
+                                color: "#12332B"
+                              }}
+                            >
+                              <option value="">Select a contact...</option>
+                              {customerContacts.map(contact => (
+                                <option key={contact.id} value={contact.id}>
+                                  {contact.name || `${contact.first_name || ''} ${contact.last_name || ''}`}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
 
-                            {/* Submit Buttons */}
-                            <div className="flex gap-3 pt-4">
-                              <button
-                                onClick={handleCreateTask}
-                                className="flex-1 px-4 py-2.5 rounded-lg text-[13px] font-medium text-white transition-colors"
-                                style={{ backgroundColor: "#0F766E" }}
-                                onMouseEnter={(e) => {
-                                  e.currentTarget.style.backgroundColor = "#0D6560";
-                                }}
-                                onMouseLeave={(e) => {
-                                  e.currentTarget.style.backgroundColor = "#0F766E";
-                                }}
-                              >
-                                Create Task
-                              </button>
-                              <button
-                                onClick={() => {
-                                  setIsCreatingTask(false);
-                                  setNewTask({
-                                    type: "Call",
-                                    priority: "Medium",
-                                    status: "Pending",
-                                    customer_id: customer.id
-                                  });
-                                }}
-                                className="flex-1 px-4 py-2.5 rounded-lg text-[13px] font-medium transition-colors"
-                                style={{
-                                  border: "1px solid var(--neuron-ui-border)",
-                                  color: "var(--neuron-ink-secondary)",
-                                  backgroundColor: "#FFFFFF"
-                                }}
-                                onMouseEnter={(e) => {
-                                  e.currentTarget.style.backgroundColor = "var(--neuron-state-hover)";
-                                }}
-                                onMouseLeave={(e) => {
-                                  e.currentTarget.style.backgroundColor = "#FFFFFF";
-                                }}
-                              >
-                                Cancel
-                              </button>
-                            </div>
+                          {/* Description */}
+                          <div>
+                            <label className="block text-[11px] font-medium uppercase tracking-wide mb-2" style={{ color: "#667085" }}>
+                              Description
+                            </label>
+                            <textarea
+                              value={newTask.description || ""}
+                              onChange={(e) => setNewTask({ ...newTask, description: e.target.value })}
+                              placeholder="Add details about this task..."
+                              className="w-full px-3 py-2.5 rounded-lg text-[13px] resize-none"
+                              rows={4}
+                              style={{
+                                border: "1px solid var(--neuron-ui-border)",
+                                backgroundColor: "#FFFFFF",
+                                color: "#12332B"
+                              }}
+                            />
+                          </div>
+
+                          {/* Submit Buttons */}
+                          <div className="flex gap-3 pt-4">
+                            <button
+                              onClick={handleCreateTask}
+                              className="flex-1 px-4 py-2.5 rounded-lg text-[13px] font-medium text-white transition-colors"
+                              style={{ backgroundColor: "#0F766E" }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.backgroundColor = "#0D6560";
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.backgroundColor = "#0F766E";
+                              }}
+                            >
+                              Create Task
+                            </button>
+                            <button
+                              onClick={() => setIsCreatingTask(false)}
+                              className="flex-1 px-4 py-2.5 rounded-lg text-[13px] font-medium transition-colors"
+                              style={{
+                                border: "1px solid var(--neuron-ui-border)",
+                                color: "var(--neuron-ink-secondary)",
+                                backgroundColor: "#FFFFFF"
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.backgroundColor = "var(--neuron-state-hover)";
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.backgroundColor = "#FFFFFF";
+                              }}
+                            >
+                              Cancel
+                            </button>
                           </div>
                         </div>
                       </div>
@@ -1619,157 +1775,151 @@ export function CustomerDetail({ customer, onBack, onCreateInquiry, onViewInquir
 
             {/* Inquiries Tab */}
             {activeTab === "inquiries" && (
-              <div>
-                <div className="flex items-center justify-between mb-6">
-                  <h3 style={{ fontSize: "16px", fontWeight: 600, color: "#12332B" }}>
-                    Inquiries
-                  </h3>
-                  {onCreateInquiry && (
-                    <button
-                      onClick={() => onCreateInquiry(customer)}
-                      className="px-4 py-2.5 rounded-lg text-[13px] font-medium transition-colors flex items-center gap-2"
-                      style={{
-                        backgroundColor: "#0F766E",
-                        color: "#FFFFFF"
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.backgroundColor = "#0D6560";
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.backgroundColor = "#0F766E";
-                      }}
-                    >
-                      <Plus size={16} />
-                      Create Inquiry
-                    </button>
-                  )}
-                </div>
+              <div style={{ paddingBottom: "32px" }}>
+                <CustomerInquiriesTab 
+                  inquiries={inquiries}
+                  onViewInquiry={onViewInquiry}
+                  onCreateInquiry={() => onCreateInquiry && onCreateInquiry(customer)}
+                  isLoading={isLoadingQuotations}
+                />
+              </div>
+            )}
 
-                {isLoadingQuotations ? (
-                  <div className="text-center py-12">
-                    <p className="text-[14px]" style={{ color: "#667085" }}>Loading inquiries...</p>
+            {/* Projects Tab */}
+            {activeTab === "projects" && (
+              <div style={{ paddingBottom: "32px" }}>
+                <CustomerProjectsTab 
+                  projects={projects}
+                  onViewProject={(project) => onViewProject && onViewProject(project)}
+                  isLoading={isLoadingProjects}
+                />
+              </div>
+            )}
+
+            {/* ✨ PHASE 5: Contracts Tab */}
+            {activeTab === "contracts" && (
+              <div style={{ paddingBottom: "32px" }}>
+                {isLoadingContracts ? (
+                  <div style={{ padding: "48px", textAlign: "center", color: "#667085", fontSize: "13px" }}>
+                    Loading contracts...
                   </div>
-                ) : inquiries.length === 0 ? (
-                  <div className="text-center py-12">
-                    <FileText size={48} style={{ color: "#D1D5DB", margin: "0 auto 16px" }} />
-                    <p className="text-[14px]" style={{ color: "#667085" }}>No inquiries yet</p>
-                    <p className="text-[12px] mt-2" style={{ color: "#9CA3AF" }}>
-                      Inquiries from E-Quotation system will appear here
+                ) : customerContracts.length === 0 ? (
+                  <div style={{
+                    padding: "48px 24px",
+                    textAlign: "center",
+                    color: "#667085",
+                  }}>
+                    <FileText size={40} style={{ marginBottom: "12px", opacity: 0.3, margin: "0 auto 12px" }} />
+                    <p style={{ fontSize: "14px", fontWeight: 500, margin: "0 0 4px" }}>No contracts found</p>
+                    <p style={{ fontSize: "13px", margin: 0 }}>
+                      Contract quotations for this customer will appear here.
                     </p>
                   </div>
                 ) : (
-                  <div 
-                    className="rounded-lg overflow-hidden"
-                    style={{ 
-                      border: "1px solid var(--neuron-ui-border)",
-                      backgroundColor: "#FFFFFF"
-                    }}
-                  >
-                    {/* Table Header */}
-                    <div 
-                      className="grid grid-cols-[2fr_1.5fr_1fr_1.5fr_0.8fr_0.8fr] gap-4 px-4 py-3"
-                      style={{ 
-                        backgroundColor: "#F9FAFB",
-                        borderBottom: "1px solid var(--neuron-ui-divider)"
-                      }}
-                    >
-                      <div className="text-[11px] font-medium uppercase tracking-wide" style={{ color: "#6B7A76" }}>
-                        Inquiry #
-                      </div>
-                      <div className="text-[11px] font-medium uppercase tracking-wide" style={{ color: "#6B7A76" }}>
-                        Services
-                      </div>
-                      <div className="text-[11px] font-medium uppercase tracking-wide" style={{ color: "#6B7A76" }}>
-                        Movement
-                      </div>
-                      <div className="text-[11px] font-medium uppercase tracking-wide" style={{ color: "#6B7A76" }}>
-                        Route
-                      </div>
-                      <div className="text-[11px] font-medium uppercase tracking-wide" style={{ color: "#6B7A76" }}>
-                        Status
-                      </div>
-                      <div className="text-[11px] font-medium uppercase tracking-wide" style={{ color: "#6B7A76" }}>
-                        Created
-                      </div>
-                    </div>
-
-                    {/* Table Rows */}
-                    <div>
-                      {inquiries.map(inquiry => {
-                        // Status badge styling
-                        const getStatusStyle = (status: string) => {
-                          const statusStyles: Record<string, { bg: string; text: string }> = {
-                            'Draft': { bg: '#F3F4F6', text: '#6B7280' },
-                            'Pending Pricing': { bg: '#FEF3C7', text: '#92400E' },
-                            'Quoted': { bg: '#DBEAFE', text: '#1E40AF' },
-                            'Sent': { bg: '#E0E7FF', text: '#4338CA' },
-                            'pending': { bg: '#FEF3C7', text: '#92400E' },
-                            'draft': { bg: '#F3F4F6', text: '#6B7280' }
-                          };
-                          return statusStyles[status] || { bg: '#F3F4F6', text: '#6B7280' };
-                        };
-
-                        const statusStyle = getStatusStyle(inquiry.status);
-
-                        return (
-                          <div
-                            key={inquiry.id}
-                            className="grid grid-cols-[2fr_1.5fr_1fr_1.5fr_0.8fr_0.8fr] gap-4 px-4 py-4 cursor-pointer transition-colors"
-                            style={{ borderBottom: "1px solid var(--neuron-ui-divider)" }}
-                            onClick={() => onViewInquiry && onViewInquiry(inquiry.id)}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.backgroundColor = "#F9FAFB";
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.backgroundColor = "#FFFFFF";
-                            }}
-                          >
-                            {/* Inquiry Number */}
+                  <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                    {customerContracts.map((contract: any) => {
+                      const statusColors: Record<string, { text: string; bg: string }> = {
+                        Draft: { text: "#6B7280", bg: "#F3F4F6" },
+                        Sent: { text: "#3B82F6", bg: "#DBEAFE" },
+                        Active: { text: "#059669", bg: "#D1FAE5" },
+                        Expiring: { text: "#D97706", bg: "#FEF3C7" },
+                        Expired: { text: "#6B7280", bg: "#F3F4F6" },
+                        Renewed: { text: "#7C3AED", bg: "#EDE9FE" },
+                      };
+                      const sc = statusColors[contract.contract_status] || statusColors.Draft;
+                      const validStart = contract.contract_validity_start
+                        ? new Date(contract.contract_validity_start).toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" })
+                        : "—";
+                      const validEnd = contract.contract_validity_end
+                        ? new Date(contract.contract_validity_end).toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" })
+                        : "—";
+                      return (
+                        <div
+                          key={contract.id}
+                          style={{
+                            padding: "16px 20px",
+                            borderRadius: "8px",
+                            border: "1px solid var(--neuron-ui-border, #E5E7EB)",
+                            backgroundColor: "white",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                          }}
+                        >
+                          <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+                            <div style={{
+                              width: "36px",
+                              height: "36px",
+                              borderRadius: "8px",
+                              backgroundColor: "#E8F2EE",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                            }}>
+                              <FileText size={18} style={{ color: "#12332B" }} />
+                            </div>
                             <div>
-                              <div className="text-[13px] font-medium mb-0.5" style={{ color: "#12332B" }}>
-                                {inquiry.quotation_name || inquiry.quote_number}
+                              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
+                                <span style={{ fontSize: "13px", fontWeight: 600, color: "#12332B" }}>
+                                  {contract.quotation_name || contract.quote_number}
+                                </span>
+                                <span style={{
+                                  fontSize: "10px",
+                                  fontWeight: 700,
+                                  color: "#12332B",
+                                  backgroundColor: "#E8F2EE",
+                                  border: "1px solid #12332B",
+                                  padding: "2px 6px",
+                                  borderRadius: "3px",
+                                  textTransform: "uppercase",
+                                  letterSpacing: "0.3px",
+                                }}>
+                                  Contract
+                                </span>
+                                <span style={{
+                                  fontSize: "10px",
+                                  fontWeight: 600,
+                                  padding: "2px 8px",
+                                  borderRadius: "4px",
+                                  backgroundColor: sc.bg,
+                                  color: sc.text,
+                                }}>
+                                  {contract.contract_status}
+                                </span>
                               </div>
-                              <div className="text-[12px]" style={{ color: "#667085" }}>
-                                {inquiry.quote_number}
+                              <div style={{ display: "flex", alignItems: "center", gap: "12px", fontSize: "12px", color: "#667085" }}>
+                                <span style={{ fontFamily: "monospace" }}>{contract.quote_number}</span>
+                                <span>•</span>
+                                <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                                  <Calendar size={11} />
+                                  {validStart} — {validEnd}
+                                </span>
+                                {contract.rate_matrices_count > 0 && (
+                                  <>
+                                    <span>•</span>
+                                    <span>{contract.rate_matrices_count} rate {contract.rate_matrices_count === 1 ? "matrix" : "matrices"}</span>
+                                  </>
+                                )}
                               </div>
-                            </div>
-
-                            {/* Services */}
-                            <div className="text-[12px]" style={{ color: "#344054" }}>
-                              {inquiry.services.join(", ")}
-                            </div>
-
-                            {/* Movement */}
-                            <div className="text-[12px]" style={{ color: "#344054" }}>
-                              {inquiry.movement}
-                            </div>
-
-                            {/* Route */}
-                            <div className="text-[12px]" style={{ color: "#344054" }}>
-                              {inquiry.pol_aol} → {inquiry.pod_aod}
-                            </div>
-
-                            {/* Status */}
-                            <div>
-                              <span 
-                                className="inline-block px-2 py-0.5 rounded text-[11px] font-medium"
-                                style={{
-                                  backgroundColor: statusStyle.bg,
-                                  color: statusStyle.text
-                                }}
-                              >
-                                {inquiry.status}
-                              </span>
-                            </div>
-
-                            {/* Created Date */}
-                            <div className="text-[12px]" style={{ color: "#667085" }}>
-                              {formatDate(inquiry.created_at)}
                             </div>
                           </div>
-                        );
-                      })}
-                    </div>
+                          <div style={{ display: "flex", gap: "4px" }}>
+                            {(contract.services || []).map((s: string) => (
+                              <span key={s} style={{
+                                fontSize: "11px",
+                                fontWeight: 500,
+                                padding: "3px 8px",
+                                borderRadius: "4px",
+                                backgroundColor: "#E8F5F3",
+                                color: "#0F766E",
+                              }}>
+                                {s}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -1866,6 +2016,114 @@ export function CustomerDetail({ customer, onBack, onCreateInquiry, onViewInquir
                     </button>
                   </div>
                 </div>
+              </div>
+            )}
+
+            {activeTab === "attachments" && (
+              <div>
+                <div className="flex items-center justify-between mb-6">
+                  <h3 style={{ fontSize: "16px", fontWeight: 600, color: "#12332B" }}>
+                    Attachments
+                  </h3>
+                  <div>
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      className="hidden"
+                      onChange={handleFileUpload}
+                    />
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      className="flex items-center gap-2 px-3 py-2 rounded-lg text-[13px] font-medium transition-colors"
+                      style={{
+                        backgroundColor: "#0F766E",
+                        color: "#FFFFFF"
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = "#0D6560";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = "#0F766E";
+                      }}
+                    >
+                      <Upload size={14} />
+                      Upload File
+                    </button>
+                  </div>
+                </div>
+
+                {attachments.length === 0 ? (
+                  <div className="text-center py-12">
+                    <p className="text-[14px]" style={{ color: "#667085" }}>No attachments yet</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {attachments.map((attachment) => (
+                      <div 
+                        key={attachment.id}
+                        className="p-4 rounded-lg"
+                        style={{
+                          border: "1px solid var(--neuron-ui-border)",
+                          backgroundColor: "#FFFFFF"
+                        }}
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-start gap-4 flex-1">
+                            <div className="flex-shrink-0 mt-1">
+                              {attachment.type === "pdf" && <FileText size={20} style={{ color: "#0F766E" }} />}
+                              {attachment.type === "image" && <ImageIcon size={20} style={{ color: "#0F766E" }} />}
+                              {attachment.type === "document" && <File size={20} style={{ color: "#0F766E" }} />}
+                              {attachment.type === "spreadsheet" && <File size={20} style={{ color: "#0F766E" }} />}
+                            </div>
+                            <div className="flex-1">
+                              <div className="text-[14px] font-medium mb-1" style={{ color: "#12332B" }}>
+                                {attachment.name}
+                              </div>
+                              <div className="flex items-center gap-3 mb-2">
+                                <span className="text-[12px]" style={{ color: "#667085" }}>
+                                  {attachment.size}
+                                </span>
+                                <span className="text-[12px]" style={{ color: "#667085" }}>
+                                  • Uploaded: {formatDate(attachment.uploadedAt)}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span 
+                                  className="text-[11px] px-2 py-0.5 rounded font-medium uppercase tracking-wide"
+                                  style={{
+                                    backgroundColor: attachment.source === "Customer" ? "#E8F5F3" : attachment.source === "Activity" ? "#FEF3E7" : "#F3F4F6",
+                                    color: attachment.source === "Customer" ? "#0F766E" : attachment.source === "Activity" ? "#C88A2B" : "#667085"
+                                  }}
+                                >
+                                  {attachment.source}
+                                </span>
+                                <span className="text-[12px]" style={{ color: "#667085" }}>
+                                  {attachment.sourceName}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                          <button
+                            className="flex items-center gap-2 px-3 py-2 rounded-lg text-[13px] font-medium transition-colors ml-4"
+                            style={{
+                              backgroundColor: "#0F766E",
+                              color: "#FFFFFF"
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.backgroundColor = "#0D6560";
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = "#0F766E";
+                            }}
+                          >
+                            <Download size={14} />
+                            Download
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
             </div>

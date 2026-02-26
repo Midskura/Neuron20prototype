@@ -1,5 +1,5 @@
-import { ArrowLeft, User, Building2, Calendar, MessageSquare, Upload, Paperclip, Send, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { ArrowLeft, User, Building2, Calendar, MessageSquare, Upload, Paperclip, Send, Trash2, FileText, Download } from "lucide-react";
+import { useState, useEffect } from "react";
 import type { Activity, Contact, Customer } from "../../types/bd";
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { toast } from "../ui/toast-utils";
@@ -23,6 +23,13 @@ interface Comment {
   timestamp: string;
 }
 
+interface Attachment {
+  name: string;
+  size: number;
+  type: string;
+  url?: string;
+}
+
 export function ActivityDetailInline({ 
   activity, 
   onBack,
@@ -34,7 +41,14 @@ export function ActivityDetailInline({
 }: ActivityDetailInlineProps) {
   const [newComment, setNewComment] = useState("");
   const [comments, setComments] = useState<Comment[]>([]);
-  const [attachments, setAttachments] = useState<string[]>([]);
+  const [attachments, setAttachments] = useState<Attachment[]>(activity.attachments || []);
+
+  // Update attachments if activity prop changes
+  useEffect(() => {
+    if (activity.attachments) {
+      setAttachments(activity.attachments);
+    }
+  }, [activity.attachments]);
 
   const formatDateTime = (dateString: string) => {
     const date = new Date(dateString);
@@ -98,6 +112,12 @@ export function ActivityDetailInline({
       console.error('Error deleting activity:', error);
       toast.error('Unable to delete activity. Please try again.');
     }
+  };
+
+  const handleUpload = () => {
+    // Placeholder for upload functionality
+    // In a real app, this would trigger a file input and upload to storage
+    toast.info("Upload functionality coming soon");
   };
 
   return (
@@ -294,6 +314,7 @@ export function ActivityDetailInline({
           >
             <div className="flex items-center justify-between mb-4">
               <button
+                onClick={handleUpload}
                 className="px-4 py-2 rounded-lg text-[13px] font-medium transition-colors flex items-center gap-2"
                 style={{
                   border: "1px solid var(--neuron-ui-border)",
@@ -329,10 +350,25 @@ export function ActivityDetailInline({
                       e.currentTarget.style.backgroundColor = "#FAFAFA";
                     }}
                   >
-                    <Paperclip size={16} style={{ color: "#667085" }} />
-                    <span className="text-[13px] flex-1" style={{ color: "#12332B" }}>
-                      {file}
-                    </span>
+                    <div className="flex items-center justify-center w-8 h-8 rounded bg-gray-100 flex-shrink-0">
+                      <FileText size={16} style={{ color: "#667085" }} />
+                    </div>
+                    
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[13px] font-medium truncate" style={{ color: "#12332B" }}>
+                        {file.name}
+                      </div>
+                      <div className="text-[11px] text-gray-500">
+                        {(file.size / 1024).toFixed(0)} KB • {file.type.split('/').pop()?.toUpperCase() || 'FILE'}
+                      </div>
+                    </div>
+
+                    <button
+                      className="p-2 text-gray-400 hover:text-[#0F766E] transition-colors"
+                      title="Download"
+                    >
+                      <Download size={16} />
+                    </button>
                   </div>
                 ))}
               </div>

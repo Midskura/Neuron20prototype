@@ -1,6 +1,6 @@
 import { NeuronSidebar } from "./NeuronSidebar";
 
-type Page = "dashboard" | "bd-contacts" | "bd-customers" | "bd-tasks" | "bd-activities" | "bd-budget-requests" | "bd-reports" | "pricing" | "operations" | "acct-evouchers" | "acct-billings" | "acct-collections" | "acct-expenses" | "acct-ledger" | "acct-reports" | "hr" | "calendar" | "inbox" | "profile" | "admin";
+type Page = "dashboard" | "bd-contacts" | "bd-customers" | "bd-tasks" | "bd-activities" | "bd-budget-requests" | "bd-reports" | "pricing" | "operations" | "acct-transactions" | "acct-evouchers" | "acct-billings" | "acct-collections" | "acct-expenses" | "acct-ledger" | "acct-coa" | "acct-reports" | "acct-projects" | "acct-customers" | "hr" | "calendar" | "inbox" | "profile" | "admin";
 
 interface LayoutProps {
   children: React.ReactNode;

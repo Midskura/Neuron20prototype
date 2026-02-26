@@ -1,7 +1,20 @@
 // Network Partners - Active International Agents
 // Data sourced from Active Agents Analysis (Jan 13, 2026)
 
+import type { QuotationChargeCategory, QuotationLineItemNew } from "../types/pricing";
+
 export type PartnerType = "international" | "co-loader" | "all-in";
+
+// ⚠️ DEPRECATED: Use QuotationChargeCategory[] instead
+// Kept for backward compatibility during migration
+export interface VendorLineItem {
+  id: string;
+  description: string;
+  unit_price: number;
+  unit_type: "per_cbm" | "per_container" | "per_shipment" | "per_kg" | "flat_fee";
+  currency: string;
+  category?: string; // e.g., "Origin Charges", "Freight", "Destination Charges"
+}
 
 export interface NetworkPartner {
   id: string;
@@ -20,6 +33,12 @@ export interface NetworkPartner {
   mobile?: string;
   website?: string;
   address?: string;
+  
+  // NEW: Vendor's standard rate card using same structure as quotations
+  charge_categories?: QuotationChargeCategory[];
+  
+  // DEPRECATED: Old format - kept for backward compatibility
+  line_items?: VendorLineItem[];
 }
 
 // Helper function to check if partnership is expired
@@ -51,7 +70,85 @@ export const NETWORK_PARTNERS: NetworkPartner[] = [
     country: "China",
     is_wca_conference: false,
     services: ["Ocean Freight", "Air Freight"],
-    partner_type: "international"
+    partner_type: "international",
+    
+    // NEW FORMAT: Category-based structure (same as quotations)
+    charge_categories: [
+      {
+        id: "cat-np001-origin",
+        category_name: "Origin Charges",
+        line_items: [
+          {
+            id: "li-001-01",
+            description: "Document Fee",
+            price: 50,
+            currency: "USD",
+            quantity: 1,
+            unit: "flat fee",
+            forex_rate: 1.0,
+            is_taxed: false,
+            remarks: "per shipment",
+            amount: 50
+          },
+          {
+            id: "li-001-02",
+            description: "Local Trucking (China)",
+            price: 120,
+            currency: "USD",
+            quantity: 1,
+            unit: "per container",
+            forex_rate: 1.0,
+            is_taxed: false,
+            remarks: "per container",
+            amount: 120
+          },
+          {
+            id: "li-001-03",
+            description: "Export Customs Clearance",
+            price: 80,
+            currency: "USD",
+            quantity: 1,
+            unit: "per shipment",
+            forex_rate: 1.0,
+            is_taxed: false,
+            remarks: "per shipment",
+            amount: 80
+          },
+          {
+            id: "li-001-05",
+            description: "THC (Terminal Handling Charge)",
+            price: 150,
+            currency: "USD",
+            quantity: 1,
+            unit: "per container",
+            forex_rate: 1.0,
+            is_taxed: false,
+            remarks: "per container",
+            amount: 150
+          }
+        ],
+        subtotal: 400
+      },
+      {
+        id: "cat-np001-freight",
+        category_name: "Freight Charges",
+        line_items: [
+          {
+            id: "li-001-04",
+            description: "Ocean Freight Handling",
+            price: 200,
+            currency: "USD",
+            quantity: 1,
+            unit: "per CBM",
+            forex_rate: 1.0,
+            is_taxed: false,
+            remarks: "per CBM",
+            amount: 200
+          }
+        ],
+        subtotal: 200
+      }
+    ]
   },
   {
     id: "np-002",

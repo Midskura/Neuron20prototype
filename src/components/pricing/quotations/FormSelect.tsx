@@ -11,9 +11,10 @@ interface FormSelectProps {
   options: FormSelectOption[];
   onChange: (value: string) => void;
   placeholder?: string;
+  disabled?: boolean;
 }
 
-export function FormSelect({ value, options, onChange, placeholder = "Select..." }: FormSelectProps) {
+export function FormSelect({ value, options, onChange, placeholder = "Select...", disabled = false }: FormSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -36,29 +37,35 @@ export function FormSelect({ value, options, onChange, placeholder = "Select..."
     <div ref={dropdownRef} style={{ position: "relative", width: "100%" }}>
       <button
         type="button"
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={() => !disabled && setIsOpen(!isOpen)}
         style={{
           width: "100%",
           padding: "10px 12px",
           fontSize: "13px",
           color: selectedOption ? "var(--neuron-ink-base)" : "var(--neuron-ink-muted)",
-          backgroundColor: "white",
+          backgroundColor: disabled ? "#F9FAFB" : "white",
           border: "1px solid var(--neuron-ui-border)",
           borderRadius: "6px",
-          cursor: "pointer",
+          cursor: disabled ? "default" : "pointer",
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center",
           textAlign: "left",
           outline: "none",
-          transition: "all 0.15s ease"
+          transition: "all 0.15s ease",
+          opacity: disabled ? 0.6 : 1
         }}
         onMouseEnter={(e) => {
-          e.currentTarget.style.borderColor = "var(--neuron-brand-teal)";
+          if (!disabled) {
+            e.currentTarget.style.borderColor = "var(--neuron-brand-teal)";
+          }
         }}
         onMouseLeave={(e) => {
-          e.currentTarget.style.borderColor = "var(--neuron-ui-border)";
+          if (!disabled) {
+            e.currentTarget.style.borderColor = "var(--neuron-ui-border)";
+          }
         }}
+        disabled={disabled}
       >
         <span>{displayValue}</span>
         <ChevronDown 

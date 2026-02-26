@@ -1,4 +1,5 @@
-import { useState } from "react";
+import "./styles/globals.css";
+import { useState, useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation, useParams, useSearchParams } from "react-router";
 import { Layout } from "./components/Layout";
 import { ExecutiveDashboard } from "./components/ExecutiveDashboard";
@@ -6,6 +7,7 @@ import { BusinessDevelopment } from "./components/BusinessDevelopment";
 import { Pricing } from "./components/Pricing";
 import { Operations } from "./components/Operations";
 import { ProjectsModule } from "./components/projects/ProjectsModule";
+import { ContractsModule } from "./components/contracts/ContractsModule";
 import { Accounting } from "./components/accounting/Accounting";
 import { HR } from "./components/HR";
 import { InboxPage } from "./components/InboxPage";
@@ -24,6 +26,7 @@ import { OthersBookings } from "./components/operations/OthersBookings";
 import { OperationsReports } from "./components/operations/OperationsReports";
 import { DiagnosticsPage } from "./components/DiagnosticsPage";
 import { UserProvider, useUser } from "./hooks/useUser";
+import { NeuronCacheProvider } from "./hooks/useNeuronCache";
 import { toast, Toaster } from "sonner@2.0.3";
 import type { Customer } from "./types/bd";
 import logoImage from "figma:asset/28c84ed117b026fbf800de0882eb478561f37f4f.png";
@@ -153,6 +156,7 @@ function RouteWrapper({ children, page }: { children: React.ReactNode; page: str
     const path = location.pathname;
     if (path === "/" || path === "/dashboard") return "dashboard";
     if (path.startsWith("/bd/projects")) return "bd-projects";
+    if (path.startsWith("/bd/contracts")) return "bd-contracts";
     if (path.startsWith("/bd/contacts")) return "bd-contacts";
     if (path.startsWith("/bd/customers")) return "bd-customers";
     if (path.startsWith("/bd/inquiries")) return "bd-inquiries";
@@ -164,6 +168,7 @@ function RouteWrapper({ children, page }: { children: React.ReactNode; page: str
     if (path.startsWith("/pricing/customers")) return "pricing-customers";
     if (path.startsWith("/pricing/quotations")) return "pricing-quotations";
     if (path.startsWith("/pricing/projects")) return "pricing-projects";
+    if (path.startsWith("/pricing/contracts")) return "pricing-contracts";
     if (path.startsWith("/pricing/vendors")) return "pricing-vendors";
     if (path.startsWith("/pricing/reports")) return "pricing-reports";
     if (path.startsWith("/operations/forwarding")) return "ops-forwarding";
@@ -174,11 +179,16 @@ function RouteWrapper({ children, page }: { children: React.ReactNode; page: str
     if (path.startsWith("/operations/reports")) return "ops-reports";
     if (path.startsWith("/operations")) return "operations";
     if (path.startsWith("/projects")) return "projects";
+    if (path.startsWith("/contracts")) return "contracts";
+    if (path.startsWith("/accounting/transactions")) return "acct-transactions";
+    if (path.startsWith("/accounting/coa")) return "acct-coa";
     if (path.startsWith("/accounting/evouchers")) return "acct-evouchers";
     if (path.startsWith("/accounting/billings")) return "acct-billings";
     if (path.startsWith("/accounting/collections")) return "acct-collections";
     if (path.startsWith("/accounting/expenses")) return "acct-expenses";
     if (path.startsWith("/accounting/ledger")) return "acct-ledger";
+    if (path.startsWith("/accounting/projects")) return "acct-projects";
+    if (path.startsWith("/accounting/customers")) return "acct-customers";
     if (path.startsWith("/accounting/reports")) return "acct-reports";
     if (path.startsWith("/hr")) return "hr";
     if (path.startsWith("/calendar")) return "calendar";
@@ -200,7 +210,9 @@ function RouteWrapper({ children, page }: { children: React.ReactNode; page: str
       "bd-customers": "/bd/customers",
       "bd-inquiries": "/bd/inquiries",
       "projects": "/projects",
+      "contracts": "/contracts",
       "bd-projects": "/bd/projects",
+      "bd-contracts": "/bd/contracts",
       "bd-tasks": "/bd/tasks",
       "bd-activities": "/bd/activities",
       "bd-budget-requests": "/bd/budget-requests",
@@ -209,6 +221,7 @@ function RouteWrapper({ children, page }: { children: React.ReactNode; page: str
       "pricing-customers": "/pricing/customers",
       "pricing-quotations": "/pricing/quotations",
       "pricing-projects": "/pricing/projects",
+      "pricing-contracts": "/pricing/contracts",
       "pricing-vendors": "/pricing/vendors",
       "pricing-reports": "/pricing/reports",
       "operations": "/operations",
@@ -218,11 +231,15 @@ function RouteWrapper({ children, page }: { children: React.ReactNode; page: str
       "ops-marine-insurance": "/operations/marine-insurance",
       "ops-others": "/operations/others",
       "ops-reports": "/operations/reports",
+      "acct-transactions": "/accounting/transactions",
+      "acct-coa": "/accounting/coa",
       "acct-evouchers": "/accounting/evouchers",
       "acct-billings": "/accounting/billings",
       "acct-collections": "/accounting/collections",
       "acct-expenses": "/accounting/expenses",
       "acct-ledger": "/accounting/ledger",
+      "acct-projects": "/accounting/projects",
+      "acct-customers": "/accounting/customers",
       "acct-reports": "/accounting/reports",
       "hr": "/hr",
       "calendar": "/calendar",
@@ -354,6 +371,30 @@ function BDProjectsPage() {
   );
 }
 
+function BDContractsPage() {
+  const { user } = useUser();
+  const navigate = useNavigate();
+  
+  const handleCreateTicket = (entity: { type: string; id: string; name: string }) => {
+    const params = new URLSearchParams({
+      entityType: entity.type,
+      entityId: entity.id,
+      entityName: entity.name,
+      entityStatus: ''
+    });
+    navigate(`/tickets?${params.toString()}`);
+  };
+
+  return (
+    <RouteWrapper page="bd-contracts">
+      <ContractsModule 
+        currentUser={user || undefined}
+        onCreateTicket={handleCreateTicket}
+      />
+    </RouteWrapper>
+  );
+}
+
 function BDActivitiesPage() {
   const { user } = useUser();
   return (
@@ -404,6 +445,31 @@ function ProjectsPage() {
   return (
     <RouteWrapper page="projects">
       <ProjectsModule 
+        currentUser={user || undefined}
+        onCreateTicket={handleCreateTicket}
+      />
+    </RouteWrapper>
+  );
+}
+
+// Unified Contracts Page (Bridge Module for BD and Operations)
+function ContractsPage() {
+  const { user } = useUser();
+  const navigate = useNavigate();
+  
+  const handleCreateTicket = (entity: { type: string; id: string; name: string }) => {
+    const params = new URLSearchParams({
+      entityType: entity.type,
+      entityId: entity.id,
+      entityName: entity.name,
+      entityStatus: ''
+    });
+    navigate(`/tickets?${params.toString()}`);
+  };
+  
+  return (
+    <RouteWrapper page="contracts">
+      <ContractsModule 
         currentUser={user || undefined}
         onCreateTicket={handleCreateTicket}
       />
@@ -502,6 +568,30 @@ function PricingProjectsPage() {
   );
 }
 
+function PricingContractsPage() {
+  const { user } = useUser();
+  const navigate = useNavigate();
+  
+  const handleCreateTicket = (entity: { type: string; id: string; name: string }) => {
+    const params = new URLSearchParams({
+      entityType: entity.type,
+      entityId: entity.id,
+      entityName: entity.name,
+      entityStatus: ''
+    });
+    navigate(`/tickets?${params.toString()}`);
+  };
+
+  return (
+    <RouteWrapper page="pricing-contracts">
+      <ContractsModule 
+        currentUser={user || undefined}
+        onCreateTicket={handleCreateTicket}
+      />
+    </RouteWrapper>
+  );
+}
+
 function PricingVendorsPage() {
   const { user } = useUser();
   return (
@@ -550,7 +640,7 @@ function OperationsProjectsPage() {
   
   return (
     <RouteWrapper page="ops-projects">
-      <ProjectsList 
+      <ProjectsModule 
         currentUser={user || undefined}
         onCreateTicket={handleCreateTicket}
       />
@@ -632,6 +722,14 @@ function BookingDetailPage() {
   );
 }
 
+function AccountingTransactionsPage() {
+  return (
+    <RouteWrapper page="acct-transactions">
+      <Accounting view="transactions" />
+    </RouteWrapper>
+  );
+}
+
 // Accounting Routes
 function AccountingEVouchersPage() {
   return (
@@ -677,6 +775,30 @@ function AccountingReportsPage() {
   return (
     <RouteWrapper page="acct-reports">
       <Accounting view="reports" />
+    </RouteWrapper>
+  );
+}
+
+function AccountingCoaPage() {
+  return (
+    <RouteWrapper page="acct-coa">
+      <Accounting view="coa" />
+    </RouteWrapper>
+  );
+}
+
+function AccountingProjectsPage() {
+  return (
+    <RouteWrapper page="acct-projects">
+      <Accounting view="projects" />
+    </RouteWrapper>
+  );
+}
+
+function AccountingCustomersPage() {
+  return (
+    <RouteWrapper page="acct-customers">
+      <Accounting view="customers" />
     </RouteWrapper>
   );
 }
@@ -838,6 +960,7 @@ function AppContent() {
         <Route path="/bd/inquiries/:inquiryId" element={<BDInquiriesPage />} />
         <Route path="/bd/tasks" element={<BDTasksPage />} />
         <Route path="/bd/projects" element={<BDProjectsPage />} />
+        <Route path="/bd/contracts" element={<BDContractsPage />} />
         <Route path="/bd/activities" element={<BDActivitiesPage />} />
         <Route path="/bd/budget-requests" element={<BDBudgetRequestsPage />} />
         <Route path="/bd/reports" element={<BDReportsPage />} />
@@ -845,12 +968,16 @@ function AppContent() {
         {/* Unified Projects Page */}
         <Route path="/projects" element={<ProjectsPage />} />
         
+        {/* Unified Contracts Page */}
+        <Route path="/contracts" element={<ContractsPage />} />
+        
         {/* Pricing */}
         <Route path="/pricing/contacts" element={<PricingContactsPage />} />
         <Route path="/pricing/customers" element={<PricingCustomersPage />} />
         <Route path="/pricing/quotations" element={<PricingQuotationsPage />} />
         <Route path="/pricing/quotations/:inquiryId" element={<PricingQuotationsPage />} />
         <Route path="/pricing/projects" element={<PricingProjectsPage />} />
+        <Route path="/pricing/contracts" element={<PricingContractsPage />} />
         <Route path="/pricing/vendors" element={<PricingVendorsPage />} />
         <Route path="/pricing/reports" element={<PricingReportsPage />} />
         
@@ -865,12 +992,18 @@ function AppContent() {
         <Route path="/operations/others" element={<RouteWrapper page="ops-others"><OthersBookings /></RouteWrapper>} />
         <Route path="/operations/reports" element={<RouteWrapper page="ops-reports"><OperationsReports /></RouteWrapper>} />
         
+        {/* Accounting Transactions */}
+        <Route path="/accounting/transactions" element={<AccountingTransactionsPage />} />
+
         {/* Accounting */}
         <Route path="/accounting/evouchers" element={<AccountingEVouchersPage />} />
         <Route path="/accounting/billings" element={<AccountingBillingsPage />} />
         <Route path="/accounting/collections" element={<AccountingCollectionsPage />} />
         <Route path="/accounting/expenses" element={<AccountingExpensesPage />} />
+        <Route path="/accounting/coa" element={<AccountingCoaPage />} />
         <Route path="/accounting/ledger" element={<AccountingLedgerPage />} />
+        <Route path="/accounting/projects" element={<AccountingProjectsPage />} />
+        <Route path="/accounting/customers" element={<AccountingCustomersPage />} />
         <Route path="/accounting/reports" element={<AccountingReportsPage />} />
         
         {/* Other */}
@@ -895,11 +1028,26 @@ function AppContent() {
 }
 
 export default function App() {
+  // Inject Google Fonts dynamically to avoid CSS @import issues
+  useEffect(() => {
+    const link = document.createElement('link');
+    link.href = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap';
+    link.rel = 'stylesheet';
+    document.head.appendChild(link);
+    return () => {
+      if (link.parentNode) {
+        document.head.removeChild(link);
+      }
+    };
+  }, []);
+
   return (
     <UserProvider>
-      <BrowserRouter>
-        <AppContent />
-      </BrowserRouter>
+      <NeuronCacheProvider>
+        <BrowserRouter>
+          <AppContent />
+        </BrowserRouter>
+      </NeuronCacheProvider>
     </UserProvider>
   );
 }

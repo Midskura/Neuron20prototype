@@ -1,12 +1,15 @@
 import { useState, useEffect, useMemo } from "react";
+import { useNavigate } from "react-router";
 import { Plus, FileText, Search, Filter, Calendar, DollarSign, CreditCard, Banknote, Building2 } from "lucide-react";
 import type { Collection } from "../../types/accounting";
 import { projectId, publicAnonKey } from "../../utils/supabase/info";
-import { CollectionDetailPanel } from "./CollectionDetailPanel";
 import { AddRequestForPaymentPanel } from "./AddRequestForPaymentPanel";
 import { CustomDropdown } from "../bd/CustomDropdown";
+import { CollectionDetailsSheet } from "./collections/CollectionDetailsSheet";
 
 export function CollectionsContentNew() {
+  const navigate = useNavigate();
+
   // State for data
   const [collections, setCollections] = useState<Collection[]>([]);
   const [loading, setLoading] = useState(true);
@@ -14,8 +17,8 @@ export function CollectionsContentNew() {
   
   // State for UI
   const [showAddPanel, setShowAddPanel] = useState(false);
-  const [showDetailPanel, setShowDetailPanel] = useState(false);
-  const [selectedCollection, setSelectedCollection] = useState<Collection | null>(null);
+  const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null);
+  const [isSheetOpen, setIsSheetOpen] = useState(false);
   
   // State for filters
   const [searchQuery, setSearchQuery] = useState("");
@@ -40,8 +43,9 @@ export function CollectionsContentNew() {
       setLoading(true);
       setError(null);
       
+      // PHASE 4 FIX: Fetch from Universal E-Vouchers table
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-c142e950/accounting/collections`,
+        `https://${projectId}.supabase.co/functions/v1/make-server-c142e950/evouchers`,
         {
           headers: {
             'Authorization': `Bearer ${publicAnonKey}`,
@@ -55,9 +59,36 @@ export function CollectionsContentNew() {
         throw new Error(`HTTP ${response.status}: ${errorText || response.statusText}`);
       }
 
-      const data = await response.json();
-      console.log('✅ Fetched collections:', data);
-      setCollections(data.data || []);
+      const result = await response.json();
+      const evouchers = result.data || [];
+      
+      // Map E-Vouchers to Collection interface
+      const mappedCollections = evouchers
+        .filter((ev: any) => ev.transaction_type === 'collection')
+        .map((ev: any) => {
+          const isPosted = ev.status === 'posted' || ev.status === 'Posted';
+          const primaryId = (isPosted && ev.ledger_entry_id) ? ev.ledger_entry_id : ev.id;
+          
+          return {
+            id: primaryId,
+            reference_number: ev.voucher_number,
+            evoucher_number: ev.voucher_number,
+            customer_name: ev.customer_name || ev.vendor_name || "Unknown Customer",
+            description: ev.purpose || ev.description,
+            project_number: ev.project_number,
+            amount: ev.amount,
+            collection_date: ev.request_date,
+            payment_method: ev.payment_method || "Cash",
+            received_by_name: ev.requestor_name,
+            evoucher_id: ev.id,
+            created_at: ev.created_at,
+            // Extra fields that might be in EVoucher but mapped for UI
+            status: ev.status
+          };
+        });
+
+      console.log('✅ Fetched collections from E-Vouchers:', mappedCollections);
+      setCollections(mappedCollections);
     } catch (err) {
       console.error('❌ Error fetching collections:', err);
       const errorMessage = err instanceof Error ? err.message : 'Failed to load collections';
@@ -477,8 +508,8 @@ export function CollectionsContentNew() {
                     e.currentTarget.style.backgroundColor = "transparent";
                   }}
                   onClick={() => {
-                    setSelectedCollection(collection);
-                    setShowDetailPanel(true);
+                    setSelectedCollectionId(collection.id);
+                    setIsSheetOpen(true);
                   }}
                 >
                   {/* Icon Column */}
@@ -542,21 +573,13 @@ export function CollectionsContentNew() {
           defaultRequestor={currentUser?.name || "Current User"}
         />
       )}
-
-      {/* Collection Detail Panel */}
-      {selectedCollection && showDetailPanel && (
-        <CollectionDetailPanel
-          collection={selectedCollection}
-          isOpen={showDetailPanel}
-          onClose={() => {
-            setShowDetailPanel(false);
-            setSelectedCollection(null);
-          }}
-          onDelete={() => {
-            fetchCollections();
-          }}
-        />
-      )}
+      
+      {/* View Collection Details Sheet */}
+      <CollectionDetailsSheet
+        isOpen={isSheetOpen}
+        onClose={() => setIsSheetOpen(false)}
+        collectionId={selectedCollectionId}
+      />
     </div>
   );
 }

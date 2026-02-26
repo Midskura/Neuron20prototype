@@ -245,7 +245,7 @@ export function BillingsContent() {
           context="billing"
           isOpen={showCreateModal}
           onClose={() => setShowCreateModal(false)}
-          onSave={handleBillingCreated}
+          onSuccess={handleBillingCreated}
           defaultRequestor={currentUser?.name || "Current User"}
         />
       )}

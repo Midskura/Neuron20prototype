@@ -39,6 +39,7 @@ const INDUSTRIES = [
 export function AddCustomerPanel({ isOpen, onClose, onSave }: AddCustomerPanelProps) {
   const [formData, setFormData] = useState({
     company_name: "",
+    client_type: "Local", // Default to Local
     industry: "",
     registered_address: "",
     status: "Prospect" as CustomerStatus,
@@ -55,7 +56,6 @@ export function AddCustomerPanel({ isOpen, onClose, onSave }: AddCustomerPanelPr
       try {
         const response = await fetch(`${API_URL}/users`, {
           headers: { Authorization: `Bearer ${publicAnonKey}` },
-          cache: 'no-store',
         });
         
         if (response.ok) {
@@ -66,6 +66,8 @@ export function AddCustomerPanel({ isOpen, onClose, onSave }: AddCustomerPanelPr
             setUsers(bdUsers);
             console.log('[AddCustomerPanel] Fetched BD users:', bdUsers.length);
           }
+        } else {
+          console.warn(`Error fetching users: ${response.status}`);
         }
       } catch (error) {
         console.error('Error fetching users for AddCustomerPanel:', error);
@@ -93,6 +95,7 @@ export function AddCustomerPanel({ isOpen, onClose, onSave }: AddCustomerPanelPr
     // Reset form
     setFormData({
       company_name: "",
+      client_type: "Local",
       industry: "",
       registered_address: "",
       status: "Prospect",
@@ -111,6 +114,7 @@ export function AddCustomerPanel({ isOpen, onClose, onSave }: AddCustomerPanelPr
     // Reset form on close
     setFormData({
       company_name: "",
+      client_type: "Local",
       industry: "",
       registered_address: "",
       status: "Prospect",
@@ -224,6 +228,26 @@ export function AddCustomerPanel({ isOpen, onClose, onSave }: AddCustomerPanelPr
                       color: "var(--neuron-ink-primary)",
                     }}
                     required
+                  />
+                </div>
+
+                {/* Client Type */}
+                <div>
+                  <label
+                    htmlFor="client_type"
+                    className="block mb-1.5"
+                    style={{ fontSize: "13px", fontWeight: 500, color: "#12332B" }}
+                  >
+                    Client Type
+                  </label>
+                  <CustomSelect
+                    id="client_type"
+                    value={formData.client_type || "Local"}
+                    onChange={(value) => handleChange("client_type", value)}
+                    options={[
+                      { value: "Local", label: "Local" },
+                      { value: "International", label: "International" }
+                    ]}
                   />
                 </div>
 

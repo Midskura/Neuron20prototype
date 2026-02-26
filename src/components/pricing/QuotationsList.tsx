@@ -1,12 +1,14 @@
-import { Search, Plus, FileText, Eye, ChevronDown, ChevronUp, AlertCircle, Filter, X, ArrowRight, SlidersHorizontal, MessageSquare, DollarSign, Briefcase, Ship, Shield, Truck, Layers, Inbox, Calendar } from "lucide-react";
-import { useState, useRef } from "react";
-import type { QuotationNew, QuotationStatus } from "../../types/pricing";
+import { Search, Plus, FileText, Eye, ChevronDown, ChevronUp, AlertCircle, Filter, X, ArrowRight, SlidersHorizontal, MessageSquare, DollarSign, Briefcase, Ship, Shield, Truck, Layers, Inbox, Calendar, Handshake } from "lucide-react";
+import { useState, useRef, useEffect } from "react";
+import type { QuotationNew, QuotationStatus, QuotationType } from "../../types/pricing";
 import { CustomDropdown } from "../bd/CustomDropdown";
 import { MultiSelectDropdown } from "../bd/MultiSelectDropdown";
+import { CreateQuotationMenu } from "./CreateQuotationMenu";
+import { QuotationTypeIcon, QuotationTypeSubLabel, getQuotationTypeAccentStyle } from "./QuotationTypeIcons";
 
 interface QuotationsListProps {
   onViewQuotation: (quotation: QuotationNew) => void;
-  onCreateQuotation: () => void;
+  onCreateQuotation: (quotationType: QuotationType) => void;
   department?: "BD" | "Pricing";
   quotations?: QuotationNew[];
   isLoading?: boolean;
@@ -74,6 +76,10 @@ function TableRow({ item, index, totalItems, onItemClick }: TableRowProps) {
   const iconRef = useRef<HTMLDivElement>(null);
   const hasMultipleServices = item.services.length > 1;
 
+  // ✨ CONTRACT: Access quotation type from raw data
+  const quotationType = item.rawData.quotation_type;
+  const isContract = quotationType === "contract";
+
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleDateString('en-US', { 
@@ -99,7 +105,8 @@ function TableRow({ item, index, totalItems, onItemClick }: TableRowProps) {
       className="grid gap-3 px-4 py-3 transition-colors cursor-pointer"
       style={{ 
         gridTemplateColumns: "40px 120px 1fr 100px 110px 100px 140px",
-        borderBottom: index < totalItems - 1 ? "1px solid var(--neuron-ui-divider)" : "none"
+        borderBottom: index < totalItems - 1 ? "1px solid var(--neuron-ui-divider)" : "none",
+        ...getQuotationTypeAccentStyle(quotationType),
       }}
       onClick={() => onItemClick(item)}
       onMouseEnter={(e) => {
@@ -109,7 +116,7 @@ function TableRow({ item, index, totalItems, onItemClick }: TableRowProps) {
         e.currentTarget.style.backgroundColor = "transparent";
       }}
     >
-      {/* Icon Column - Default Inquiry/Quotation Icon */}
+      {/* Icon Column — type-aware */}
       <div 
         style={{ 
           display: "flex", 
@@ -117,25 +124,23 @@ function TableRow({ item, index, totalItems, onItemClick }: TableRowProps) {
           justifyContent: "center"
         }}
       >
-        <FileText size={16} style={{ color: "#667085" }} />
+        <QuotationTypeIcon type={quotationType} size={16} />
       </div>
 
-      {/* Number Column */}
+      {/* Number Column with type sub-label */}
       <div>
         <p style={{ 
           fontSize: "13px",
           fontWeight: 500,
           color: "var(--neuron-ink-primary)",
-          marginBottom: "2px"
+          marginBottom: "0",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
         }}>
           {item.name || item.number}
         </p>
-        <p style={{ 
-          fontSize: "12px",
-          color: "var(--neuron-ink-muted)"
-        }}>
-          {item.number}
-        </p>
+        <QuotationTypeSubLabel quoteNumber={item.number} type={quotationType} />
       </div>
 
       {/* Customer Column */}
@@ -219,9 +224,19 @@ function TableRow({ item, index, totalItems, onItemClick }: TableRowProps) {
         )}
       </div>
 
-      {/* Total Column */}
+      {/* Total Column — adaptive (total for projects, validity for contracts) */}
       <div>
-        {item.total !== undefined ? (
+        {isContract ? (
+          <p style={{
+            fontSize: "12px",
+            color: "var(--neuron-ink-muted)",
+          }}>
+            {item.rawData.contract_validity_start && item.rawData.contract_validity_end
+              ? `${formatDate(item.rawData.contract_validity_start)} - ${formatDate(item.rawData.contract_validity_end)}`
+              : "No validity"
+            }
+          </p>
+        ) : item.total !== undefined ? (
           <p style={{ 
             fontSize: "13px",
             color: "var(--neuron-ink-muted)"
@@ -278,7 +293,7 @@ export function QuotationsList({ onViewQuotation, onCreateQuotation, department,
   const [selectedServices, setSelectedServices] = useState<string[]>([]);
   const [dateRangeFilter, setDateRangeFilter] = useState<string>("all");
 
-  // Combine and transform inquiries and quotations into a unified format
+  // Combine and transform
   const combinedItems: CombinedItem[] = (quotations || []).map(quot => {
     const needsPricing = quot.status === "Draft" || quot.status === "Pending Pricing";
     
@@ -527,18 +542,10 @@ export function QuotationsList({ onViewQuotation, onCreateQuotation, department,
           </div>
 
           {/* Create Button */}
-          <button
-            onClick={onCreateQuotation}
-            className="neuron-btn-primary"
-            style={{
-              height: "48px",
-              padding: "0 24px",
-              borderRadius: "16px",
-            }}
-          >
-            <Plus size={20} />
-            Create Quotation
-          </button>
+          <CreateQuotationMenu
+            onSelect={onCreateQuotation}
+            buttonText="Create Quotation"
+          />
         </div>
 
         {/* Filters Row - Dropdown Style like Budget Requests */}

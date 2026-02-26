@@ -5,19 +5,22 @@ interface FormCheckboxProps {
   checked: boolean;
   onChange: (checked: boolean) => void;
   label: string;
+  disabled?: boolean;
 }
 
-export function FormCheckbox({ checked, onChange, label }: FormCheckboxProps) {
+export function FormCheckbox({ checked, onChange, label, disabled = false }: FormCheckboxProps) {
   const [isHovered, setIsHovered] = useState(false);
   
   // Compute styles based on state
   let borderColor = "var(--neuron-ui-border)";
   let backgroundColor = "white";
+  let cursor = disabled ? "default" : "pointer";
+  let opacity = disabled ? 0.6 : 1;
   
   if (checked) {
-    borderColor = "#0F766E";
-    backgroundColor = "#0F766E";
-  } else if (isHovered) {
+    borderColor = disabled ? "#9CA3AF" : "#0F766E";
+    backgroundColor = disabled ? "#9CA3AF" : "#0F766E";
+  } else if (isHovered && !disabled) {
     borderColor = "#0F766E";
     backgroundColor = "#F8FBFB";
   }
@@ -28,14 +31,15 @@ export function FormCheckbox({ checked, onChange, label }: FormCheckboxProps) {
         display: "flex", 
         alignItems: "center", 
         gap: "8px", 
-        cursor: "pointer",
-        userSelect: "none"
+        cursor: cursor,
+        userSelect: "none",
+        opacity: opacity
       }}
     >
       <div
-        onClick={() => onChange(!checked)}
-        onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
+        onClick={() => !disabled && onChange(!checked)}
+        onMouseEnter={() => !disabled && setIsHovered(true)}
+        onMouseLeave={() => !disabled && setIsHovered(false)}
         style={{
           width: "18px",
           height: "18px",

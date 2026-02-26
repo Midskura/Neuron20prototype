@@ -1,19 +1,18 @@
-import { Search, Plus, Globe, Building2, MapPin, AlertCircle, Award, Mail, Calendar, Clock, Filter, X, ChevronDown, ChevronRight, Plane, Ship } from "lucide-react";
-import { useState } from "react";
+import { Search, Plus, Globe, Award, ChevronDown, ChevronRight, Plane, Ship, Loader2, User, Phone, Mail } from "lucide-react";
+import { useState, useMemo } from "react";
 import { 
-  NETWORK_PARTNERS, 
   COUNTRIES, 
-  getPartnerStats, 
   isExpired, 
   expiresSoon,
-  formatExpiryDate,
   getDaysUntilExpiry,
   type NetworkPartner,
-  type PartnerType 
 } from "../../data/networkPartners";
+import { PartnerSheet } from "./partners/PartnerSheet";
+import { useNetworkPartners } from "../../hooks/useNetworkPartners";
 import React from "react";
 
 type StatusFilter = "all" | "active" | "expiring" | "expired" | "wca";
+type Tab = "international" | "co-loader" | "all-in";
 
 // Get service icon component
 const getServiceIcon = (service: string) => {
@@ -42,36 +41,58 @@ const groupPartnersByCountry = (partners: NetworkPartner[]) => {
   return Object.entries(grouped).sort((a, b) => b[1].length - a[1].length);
 };
 
-export function NetworkPartnersModule() {
+interface NetworkPartnersModuleProps {
+  onViewVendor?: (vendorId: string) => void;
+  // Optional props to allow parent control (Lifting State Up)
+  partners?: NetworkPartner[];
+  isLoading?: boolean;
+  onSavePartner?: (partner: Partial<NetworkPartner>) => Promise<any>;
+}
+
+export function NetworkPartnersModule({ 
+  onViewVendor, 
+  partners: propPartners, 
+  isLoading: propIsLoading,
+  onSavePartner: propOnSavePartner 
+}: NetworkPartnersModuleProps) {
+  // Use hook if props are not provided
+  const hookData = useNetworkPartners();
+  
+  // Determine source of truth
+  const partners = propPartners || hookData.partners;
+  const isLoading = propIsLoading !== undefined ? propIsLoading : hookData.isLoading;
+  const savePartner = propOnSavePartner || hookData.savePartner;
+  
   const [searchQuery, setSearchQuery] = useState("");
   const [countryFilter, setCountryFilter] = useState<string>("All");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
-  const [selectedPartner, setSelectedPartner] = useState<NetworkPartner | null>(null);
+  const [activeTab, setActiveTab] = useState<Tab>("international");
+  const [isPartnerSheetOpen, setIsPartnerSheetOpen] = useState(false);
   
-  // Initialize with all countries collapsed by default
-  const [collapsedCountries, setCollapsedCountries] = useState<Set<string>>(() => {
-    const allCountries = new Set<string>();
-    NETWORK_PARTNERS.forEach(partner => allCountries.add(partner.country));
-    return allCountries;
-  });
+  const [collapsedCountries, setCollapsedCountries] = useState<Set<string>>(new Set());
 
-  // Category collapse state - all collapsed by default
-  const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(
-    new Set(["international", "co-loader", "all-in"])
-  );
+  // Calculate stats dynamically
+  const stats = useMemo(() => {
+    const expired = partners.filter(p => p.expires && isExpired(p.expires)).length;
+    const expiringSoonCount = partners.filter(p => p.expires && expiresSoon(p.expires) && !isExpired(p.expires)).length;
+    const wcaConference = partners.filter(p => p.is_wca_conference).length;
+    const active = partners.filter(p => !p.expires || (!isExpired(p.expires) && !expiresSoon(p.expires))).length;
+    
+    return {
+      total: partners.length,
+      expired,
+      expiringSoon: expiringSoonCount,
+      wcaConference,
+      active
+    };
+  }, [partners]);
 
-  const stats = getPartnerStats();
-
-  // Toggle category collapse
-  const toggleCategory = (category: string) => {
-    const newCollapsed = new Set(collapsedCategories);
-    if (newCollapsed.has(category)) {
-      newCollapsed.delete(category);
-    } else {
-      newCollapsed.add(category);
-    }
-    setCollapsedCategories(newCollapsed);
-  };
+  // Calculate counts for each tab
+  const tabCounts = useMemo(() => ({
+    international: partners.filter(p => !p.partner_type || p.partner_type === "international").length,
+    "co-loader": partners.filter(p => p.partner_type === "co-loader").length,
+    "all-in": partners.filter(p => p.partner_type === "all-in").length
+  }), [partners]);
 
   // Toggle country collapse
   const toggleCountry = (country: string) => {
@@ -85,38 +106,42 @@ export function NetworkPartnersModule() {
   };
 
   // Filter partners
-  const filteredPartners = NETWORK_PARTNERS.filter(partner => {
-    const matchesSearch = 
-      partner.company_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      partner.country.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (partner.contact_person && partner.contact_person.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (partner.wca_id && partner.wca_id.toLowerCase().includes(searchQuery.toLowerCase()));
-    
-    const matchesCountry = countryFilter === "All" || partner.country === countryFilter;
+  const filteredPartners = useMemo(() => {
+    return partners.filter(partner => {
+      // 1. Tab Filter (Primary)
+      const isInternational = !partner.partner_type || partner.partner_type === "international";
+      if (activeTab === "international" && !isInternational) return false;
+      if (activeTab === "co-loader" && partner.partner_type !== "co-loader") return false;
+      if (activeTab === "all-in" && partner.partner_type !== "all-in") return false;
 
-    let matchesStatus = true;
-    if (statusFilter === "expired" && partner.expires) {
-      matchesStatus = isExpired(partner.expires);
-    } else if (statusFilter === "expiring" && partner.expires) {
-      matchesStatus = expiresSoon(partner.expires) && !isExpired(partner.expires);
-    } else if (statusFilter === "active") {
-      matchesStatus = !partner.expires || (!isExpired(partner.expires) && !expiresSoon(partner.expires));
-    } else if (statusFilter === "wca") {
-      matchesStatus = partner.is_wca_conference;
-    }
+      // 2. Search Filter
+      const matchesSearch = 
+        partner.company_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        partner.country.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (partner.contact_person && partner.contact_person.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (partner.wca_id && partner.wca_id.toLowerCase().includes(searchQuery.toLowerCase()));
+      
+      // 3. Country Filter
+      const matchesCountry = countryFilter === "All" || partner.country === countryFilter;
 
-    return matchesSearch && matchesCountry && matchesStatus;
-  });
+      // 4. Status Filter
+      let matchesStatus = true;
+      if (statusFilter === "expired" && partner.expires) {
+        matchesStatus = isExpired(partner.expires);
+      } else if (statusFilter === "expiring" && partner.expires) {
+        matchesStatus = expiresSoon(partner.expires) && !isExpired(partner.expires);
+      } else if (statusFilter === "active") {
+        matchesStatus = !partner.expires || (!isExpired(partner.expires) && !expiresSoon(partner.expires));
+      } else if (statusFilter === "wca") {
+        matchesStatus = partner.is_wca_conference;
+      }
 
-  // Separate partners by type (default to "international" for backwards compatibility)
-  const internationalPartners = filteredPartners.filter(p => !p.partner_type || p.partner_type === "international");
-  const coLoaderPartners = filteredPartners.filter(p => p.partner_type === "co-loader");
-  const allInPartners = filteredPartners.filter(p => p.partner_type === "all-in");
+      return matchesSearch && matchesCountry && matchesStatus;
+    });
+  }, [partners, activeTab, searchQuery, countryFilter, statusFilter]);
 
   // Group filtered partners by country
-  const groupedInternational = groupPartnersByCountry(internationalPartners);
-  const groupedCoLoaders = groupPartnersByCountry(coLoaderPartners);
-  const groupedAllIn = groupPartnersByCountry(allInPartners);
+  const groupedPartners = useMemo(() => groupPartnersByCountry(filteredPartners), [filteredPartners]);
 
   const getStatusColor = (partner: NetworkPartner): string => {
     if (!partner.expires) return "#9CA3AF"; // gray
@@ -142,6 +167,41 @@ export function NetworkPartnersModule() {
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' });
   };
 
+  const handleSavePartner = async (data: Partial<NetworkPartner>) => {
+    console.log("Saving new partner:", data);
+    try {
+      await savePartner(data);
+      setIsPartnerSheetOpen(false);
+    } catch (error) {
+      console.error("Failed to save partner", error);
+      // Ideally show a toast here
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex h-full items-center justify-center bg-white">
+        <div className="flex flex-col items-center gap-2">
+          <Loader2 className="h-8 w-8 animate-spin text-[#0F766E]" />
+          <p className="text-sm text-gray-500">Loading partners...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Define column widths for consistency
+  const colWidths = (
+    <colgroup>
+      <col style={{ width: "40px" }} />
+      <col style={{ width: "auto" }} />
+      <col style={{ width: "140px" }} />
+      <col style={{ width: "100px" }} />
+      <col style={{ width: "160px" }} />
+      <col style={{ width: "100px" }} />
+      <col style={{ width: "100px" }} />
+    </colgroup>
+  );
+
   return (
     <div
       style={{
@@ -160,20 +220,15 @@ export function NetworkPartnersModule() {
           overflow: "hidden",
         }}
       >
-        {/* Header */}
-        <div
-          style={{
-            padding: "32px 48px",
-            borderBottom: "1px solid var(--neuron-ui-border)",
-            flexShrink: 0,
-          }}
-        >
+        {/* Header Section */}
+        <div style={{ flexShrink: 0 }}>
+          {/* Title Row */}
           <div
             style={{
+              padding: "32px 48px 24px 48px",
               display: "flex",
               justifyContent: "space-between",
               alignItems: "flex-start",
-              marginBottom: "24px",
             }}
           >
             <div>
@@ -200,6 +255,7 @@ export function NetworkPartnersModule() {
             </div>
 
             <button
+              onClick={() => setIsPartnerSheetOpen(true)}
               style={{
                 display: "flex",
                 alignItems: "center",
@@ -227,161 +283,253 @@ export function NetworkPartnersModule() {
             </button>
           </div>
 
-          {/* Stats Pills */}
-          <div style={{ display: "flex", gap: "8px", marginBottom: "16px" }}>
-            <button
-              onClick={() => setStatusFilter("all")}
-              style={{
-                padding: "6px 12px",
-                borderRadius: "16px",
-                fontSize: "12px",
-                fontWeight: 600,
-                backgroundColor: statusFilter === "all" ? "#E8F5F3" : "#F9FAFB",
-                color: statusFilter === "all" ? "#0F766E" : "#6B7280",
-                border: statusFilter === "all" ? "2px solid #0F766E" : "1px solid #E5E7EB",
-                cursor: "pointer",
-                transition: "all 0.2s"
-              }}
-            >
-              All • {stats.total}
-            </button>
-            <button
-              onClick={() => setStatusFilter("active")}
-              style={{
-                padding: "6px 12px",
-                borderRadius: "16px",
-                fontSize: "12px",
-                fontWeight: 600,
-                backgroundColor: statusFilter === "active" ? "#D1FAE5" : "#F9FAFB",
-                color: statusFilter === "active" ? "#047857" : "#6B7280",
-                border: statusFilter === "active" ? "2px solid #047857" : "1px solid #E5E7EB",
-                cursor: "pointer",
-                transition: "all 0.2s"
-              }}
-            >
-              Active • {stats.active}
-            </button>
-            <button
-              onClick={() => setStatusFilter("expiring")}
-              style={{
-                padding: "6px 12px",
-                borderRadius: "16px",
-                fontSize: "12px",
-                fontWeight: 600,
-                backgroundColor: statusFilter === "expiring" ? "#FEF3C7" : "#F9FAFB",
-                color: statusFilter === "expiring" ? "#D97706" : "#6B7280",
-                border: statusFilter === "expiring" ? "2px solid #D97706" : "1px solid #E5E7EB",
-                cursor: "pointer",
-                transition: "all 0.2s"
-              }}
-            >
-              Expiring • {stats.expiringSoon}
-            </button>
-            <button
-              onClick={() => setStatusFilter("expired")}
-              style={{
-                padding: "6px 12px",
-                borderRadius: "16px",
-                fontSize: "12px",
-                fontWeight: 600,
-                backgroundColor: statusFilter === "expired" ? "#FEE2E2" : "#F9FAFB",
-                color: statusFilter === "expired" ? "#DC2626" : "#6B7280",
-                border: statusFilter === "expired" ? "2px solid #DC2626" : "1px solid #E5E7EB",
-                cursor: "pointer",
-                transition: "all 0.2s"
-              }}
-            >
-              Expired • {stats.expired}
-            </button>
-            <button
-              onClick={() => setStatusFilter("wca")}
-              style={{
-                padding: "6px 12px",
-                borderRadius: "16px",
-                fontSize: "12px",
-                fontWeight: 600,
-                backgroundColor: statusFilter === "wca" ? "#EDE9FE" : "#F9FAFB",
-                color: statusFilter === "wca" ? "#7C3AED" : "#6B7280",
-                border: statusFilter === "wca" ? "2px solid #7C3AED" : "1px solid #E5E7EB",
-                cursor: "pointer",
-                transition: "all 0.2s",
-                display: "flex",
-                alignItems: "center",
-                gap: "4px"
-              }}
-            >
-              <Award size={12} />
-              WCA • {stats.wcaConference}
-            </button>
-          </div>
-
-          {/* Filters */}
-          <div style={{ display: "flex", gap: "8px" }}>
-            {/* Search */}
-            <div style={{ position: "relative", flex: 1 }}>
-              <Search
-                size={16}
+          {/* Filters Row */}
+          <div 
+            style={{ 
+              padding: "0 48px 24px 48px", 
+              display: "flex", 
+              justifyContent: "space-between", 
+              alignItems: "center" 
+            }}
+          >
+            {/* Stats Pills - Left Side */}
+            <div style={{ display: "flex", gap: "8px" }}>
+              <button
+                onClick={() => setStatusFilter("all")}
                 style={{
-                  position: "absolute",
-                  left: "10px",
-                  top: "50%",
-                  transform: "translateY(-50%)",
-                  color: "var(--neuron-ink-muted)",
+                  padding: "6px 12px",
+                  borderRadius: "16px",
+                  fontSize: "12px",
+                  fontWeight: 600,
+                  backgroundColor: statusFilter === "all" ? "#E8F5F3" : "#F9FAFB",
+                  color: statusFilter === "all" ? "#0F766E" : "#6B7280",
+                  border: statusFilter === "all" ? "2px solid #0F766E" : "1px solid #E5E7EB",
+                  cursor: "pointer",
+                  transition: "all 0.2s"
                 }}
-              />
-              <input
-                type="text"
-                placeholder="Search partners, countries, contacts, WCA IDs..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+              >
+                All • {stats.total}
+              </button>
+              <button
+                onClick={() => setStatusFilter("active")}
                 style={{
-                  width: "100%",
-                  padding: "8px 10px 8px 34px",
-                  border: "1px solid var(--neuron-ui-border)",
-                  borderRadius: "6px",
-                  fontSize: "13px",
-                  outline: "none",
-                  transition: "border-color 0.2s ease",
+                  padding: "6px 12px",
+                  borderRadius: "16px",
+                  fontSize: "12px",
+                  fontWeight: 600,
+                  backgroundColor: statusFilter === "active" ? "#D1FAE5" : "#F9FAFB",
+                  color: statusFilter === "active" ? "#047857" : "#6B7280",
+                  border: statusFilter === "active" ? "2px solid #047857" : "1px solid #E5E7EB",
+                  cursor: "pointer",
+                  transition: "all 0.2s"
                 }}
-                onFocus={(e) => {
-                  e.currentTarget.style.borderColor = "var(--neuron-brand-green)";
+              >
+                Active • {stats.active}
+              </button>
+              <button
+                onClick={() => setStatusFilter("expiring")}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: "16px",
+                  fontSize: "12px",
+                  fontWeight: 600,
+                  backgroundColor: statusFilter === "expiring" ? "#FEF3C7" : "#F9FAFB",
+                  color: statusFilter === "expiring" ? "#D97706" : "#6B7280",
+                  border: statusFilter === "expiring" ? "2px solid #D97706" : "1px solid #E5E7EB",
+                  cursor: "pointer",
+                  transition: "all 0.2s"
                 }}
-                onBlur={(e) => {
-                  e.currentTarget.style.borderColor = "var(--neuron-ui-border)";
+              >
+                Expiring • {stats.expiringSoon}
+              </button>
+              <button
+                onClick={() => setStatusFilter("expired")}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: "16px",
+                  fontSize: "12px",
+                  fontWeight: 600,
+                  backgroundColor: statusFilter === "expired" ? "#FEE2E2" : "#F9FAFB",
+                  color: statusFilter === "expired" ? "#DC2626" : "#6B7280",
+                  border: statusFilter === "expired" ? "2px solid #DC2626" : "1px solid #E5E7EB",
+                  cursor: "pointer",
+                  transition: "all 0.2s"
                 }}
-              />
+              >
+                Expired • {stats.expired}
+              </button>
+              <button
+                onClick={() => setStatusFilter("wca")}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: "16px",
+                  fontSize: "12px",
+                  fontWeight: 600,
+                  backgroundColor: statusFilter === "wca" ? "#EDE9FE" : "#F9FAFB",
+                  color: statusFilter === "wca" ? "#7C3AED" : "#6B7280",
+                  border: statusFilter === "wca" ? "2px solid #7C3AED" : "1px solid #E5E7EB",
+                  cursor: "pointer",
+                  transition: "all 0.2s",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "4px"
+                }}
+              >
+                <Award size={12} />
+                WCA • {stats.wcaConference}
+              </button>
             </div>
 
-            {/* Country Filter */}
-            <select
-              value={countryFilter}
-              onChange={(e) => setCountryFilter(e.target.value)}
+            {/* Search and Filters - Right Side */}
+            <div style={{ display: "flex", gap: "12px" }}>
+              <div style={{ position: "relative" }}>
+                <Search
+                  size={16}
+                  style={{
+                    position: "absolute",
+                    left: "10px",
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    color: "var(--neuron-ink-muted)",
+                  }}
+                />
+                <input
+                  type="text"
+                  placeholder="Search..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  style={{
+                    width: "240px",
+                    padding: "8px 10px 8px 34px",
+                    border: "1px solid var(--neuron-ui-border)",
+                    borderRadius: "8px",
+                    fontSize: "13px",
+                    outline: "none",
+                    transition: "border-color 0.2s ease",
+                  }}
+                  onFocus={(e) => {
+                    e.currentTarget.style.borderColor = "#0F766E";
+                    e.currentTarget.style.boxShadow = "0 0 0 1px #0F766E";
+                  }}
+                  onBlur={(e) => {
+                    e.currentTarget.style.borderColor = "var(--neuron-ui-border)";
+                    e.currentTarget.style.boxShadow = "none";
+                  }}
+                />
+              </div>
+
+              <select
+                value={countryFilter}
+                onChange={(e) => setCountryFilter(e.target.value)}
+                style={{
+                  padding: "8px 32px 8px 12px",
+                  border: "1px solid var(--neuron-ui-border)",
+                  borderRadius: "8px",
+                  fontSize: "13px",
+                  color: "var(--neuron-ink-secondary)",
+                  backgroundColor: "white",
+                  cursor: "pointer",
+                  outline: "none",
+                  appearance: "none",
+                  backgroundImage: `url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1.5L6 6.5L11 1.5' stroke='%236B7280' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")`,
+                  backgroundRepeat: "no-repeat",
+                  backgroundPosition: "right 10px center",
+                  minWidth: "160px",
+                }}
+              >
+                <option value="All">All Countries</option>
+                {COUNTRIES.map(country => (
+                  <option key={country} value={country}>{country}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Tabs Row */}
+          <div style={{ padding: "0 48px", display: "flex", gap: "32px", borderBottom: "1px solid var(--neuron-ui-border)" }}>
+            <button
+              onClick={() => setActiveTab("international")}
               style={{
-                padding: "8px 32px 8px 12px",
-                border: "1px solid var(--neuron-ui-border)",
-                borderRadius: "6px",
-                fontSize: "13px",
-                color: "var(--neuron-ink-secondary)",
-                backgroundColor: "white",
+                padding: "0 0 16px 0",
+                fontSize: "14px",
+                fontWeight: 600,
+                color: activeTab === "international" ? "#0F766E" : "#6B7280",
+                borderBottom: activeTab === "international" ? "2px solid #0F766E" : "2px solid transparent",
                 cursor: "pointer",
-                outline: "none",
-                appearance: "none",
-                backgroundImage: `url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1.5L6 6.5L11 1.5' stroke='%236B7280' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")`,
-                backgroundRepeat: "no-repeat",
-                backgroundPosition: "right 10px center",
-                minWidth: "160px",
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                transition: "all 0.2s"
               }}
             >
-              <option value="All">All Countries</option>
-              {COUNTRIES.map(country => (
-                <option key={country} value={country}>{country}</option>
-              ))}
-            </select>
+              International Partners
+              <span style={{ 
+                backgroundColor: activeTab === "international" ? "#F0FDF9" : "#F3F4F6", 
+                color: activeTab === "international" ? "#0F766E" : "#6B7280",
+                fontSize: "12px", 
+                padding: "2px 8px", 
+                borderRadius: "12px" 
+              }}>
+                {tabCounts.international}
+              </span>
+            </button>
+            <button
+              onClick={() => setActiveTab("co-loader")}
+              style={{
+                padding: "0 0 16px 0",
+                fontSize: "14px",
+                fontWeight: 600,
+                color: activeTab === "co-loader" ? "#0F766E" : "#6B7280",
+                borderBottom: activeTab === "co-loader" ? "2px solid #0F766E" : "2px solid transparent",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                transition: "all 0.2s"
+              }}
+            >
+              Co-Loader Partners
+              <span style={{ 
+                backgroundColor: activeTab === "co-loader" ? "#F0FDF9" : "#F3F4F6", 
+                color: activeTab === "co-loader" ? "#0F766E" : "#6B7280",
+                fontSize: "12px", 
+                padding: "2px 8px", 
+                borderRadius: "12px" 
+              }}>
+                {tabCounts["co-loader"]}
+              </span>
+            </button>
+            <button
+              onClick={() => setActiveTab("all-in")}
+              style={{
+                padding: "0 0 16px 0",
+                fontSize: "14px",
+                fontWeight: 600,
+                color: activeTab === "all-in" ? "#0F766E" : "#6B7280",
+                borderBottom: activeTab === "all-in" ? "2px solid #0F766E" : "2px solid transparent",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                transition: "all 0.2s"
+              }}
+            >
+              All-In Partners
+              <span style={{ 
+                backgroundColor: activeTab === "all-in" ? "#F0FDF9" : "#F3F4F6", 
+                color: activeTab === "all-in" ? "#0F766E" : "#6B7280",
+                fontSize: "12px", 
+                padding: "2px 8px", 
+                borderRadius: "12px" 
+              }}>
+                {tabCounts["all-in"]}
+              </span>
+            </button>
           </div>
         </div>
 
-        {/* Dense Table */}
-        <div style={{ flex: 1, overflow: "auto" }}>
+        {/* Content Area */}
+        <div style={{ flex: 1, overflow: "auto", padding: "32px 48px" }}>
           {filteredPartners.length === 0 ? (
             <div
               style={{
@@ -391,6 +539,9 @@ export function NetworkPartnersModule() {
                 justifyContent: "center",
                 padding: "60px 20px",
                 color: "var(--neuron-ink-muted)",
+                backgroundColor: "#F9FAFB",
+                borderRadius: "12px",
+                border: "1px dashed var(--neuron-ui-border)",
               }}
             >
               <Globe size={48} style={{ marginBottom: "16px", opacity: 0.3 }} />
@@ -402,1276 +553,186 @@ export function NetworkPartnersModule() {
               </p>
             </div>
           ) : (
-            <div style={{ padding: "32px 48px" }}>
-              {/* INTERNATIONAL PARTNERS CATEGORY */}
-              {internationalPartners.length > 0 && (
-                <>
-                  {/* Category Header - Clickable */}
-                  <div
-                    onClick={() => toggleCategory("international")}
-                    style={{
-                      marginBottom: "16px",
-                      paddingBottom: "12px",
-                      borderBottom: "2px solid var(--neuron-ui-border)",
-                      cursor: "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "12px",
-                      transition: "opacity 0.2s",
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.opacity = "0.7";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.opacity = "1";
-                    }}
-                  >
-                    {collapsedCategories.has("international") ? (
-                      <ChevronRight size={20} color="var(--neuron-ink-primary)" />
-                    ) : (
-                      <ChevronDown size={20} color="var(--neuron-ink-primary)" />
-                    )}
-                    <div style={{ flex: 1 }}>
-                      <h2
-                        style={{
-                          fontSize: "16px",
-                          fontWeight: 600,
-                          color: "var(--neuron-ink-primary)",
-                          margin: 0,
-                          textTransform: "uppercase",
-                          letterSpacing: "0.5px",
-                        }}
-                      >
-                        International Partners
-                        <span style={{ marginLeft: "12px", color: "var(--neuron-ink-muted)", fontWeight: 500 }}>
-                          • {internationalPartners.length}
-                        </span>
-                      </h2>
-                      <p
-                        style={{
-                          fontSize: "12px",
-                          color: "var(--neuron-ink-muted)",
-                          margin: "4px 0 0 0",
-                        }}
-                      >
-                        Overseas agents and international freight forwarders
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Table Container with Border */}
-                  {!collapsedCategories.has("international") && (
-                    <div
-                      style={{
-                        border: "1px solid var(--neuron-ui-border)",
-                        borderRadius: "8px",
-                        overflow: "hidden",
-                        backgroundColor: "white",
-                      }}
-                    >
-                      {/* Table Header - Sticky */}
-                      <div
-                        style={{
-                          position: "sticky",
-                          top: 0,
-                          backgroundColor: "#F9FAFB",
-                          borderBottom: "1px solid var(--neuron-ui-border)",
-                          zIndex: 10,
-                        }}
-                      >
-                        <div
-                          style={{
-                            display: "grid",
-                            gridTemplateColumns: "24px 1fr 120px 90px 150px 100px 80px",
-                            gap: "12px",
-                            padding: "10px 16px",
-                            fontSize: "11px",
-                            fontWeight: 600,
-                            color: "#6B7280",
-                            textTransform: "uppercase",
-                            letterSpacing: "0.5px",
-                          }}
-                        >
-                          <div style={{ textAlign: "center" }}>•</div>
-                          <div>Company</div>
-                          <div>Location</div>
-                          <div>WCA ID</div>
-                          <div>Contact</div>
-                          <div>Expires</div>
-                          <div>Services</div>
-                        </div>
-                      </div>
-
-                      {/* Grouped Rows */}
-                      {groupedInternational.map(([country, partners]) => {
+            <div
+              style={{
+                border: "1.5px solid var(--neuron-ui-border)",
+                borderRadius: "16px",
+                overflow: "hidden",
+                backgroundColor: "white",
+              }}
+            >
+              <table className="w-full" style={{ borderCollapse: "collapse" }}>
+                {colWidths}
+                <thead>
+                  <tr style={{ borderBottom: "1.5px solid var(--neuron-ui-border)" }}>
+                    <th className="text-left px-4 py-3 text-xs" style={{ color: "var(--neuron-ink-muted)", backgroundColor: "#FAFBFB" }}></th>
+                    <th className="text-left px-4 py-3 text-xs" style={{ color: "var(--neuron-ink-muted)", backgroundColor: "#FAFBFB" }}>COMPANY</th>
+                    <th className="text-left px-4 py-3 text-xs" style={{ color: "var(--neuron-ink-muted)", backgroundColor: "#FAFBFB" }}>LOCATION</th>
+                    <th className="text-left px-4 py-3 text-xs" style={{ color: "var(--neuron-ink-muted)", backgroundColor: "#FAFBFB" }}>WCA ID</th>
+                    <th className="text-left px-4 py-3 text-xs" style={{ color: "var(--neuron-ink-muted)", backgroundColor: "#FAFBFB" }}>CONTACT</th>
+                    <th className="text-left px-4 py-3 text-xs" style={{ color: "var(--neuron-ink-muted)", backgroundColor: "#FAFBFB" }}>EXPIRES</th>
+                    <th className="text-left px-4 py-3 text-xs" style={{ color: "var(--neuron-ink-muted)", backgroundColor: "#FAFBFB" }}>SERVICES</th>
+                  </tr>
+                </thead>
+                {groupedPartners.map(([country, partners]) => {
                   const isCollapsed = collapsedCountries.has(country);
                   
                   return (
-                    <div key={country}>
-                      {/* Country Header */}
-                      <div
+                    <tbody key={country}>
+                      {/* Country Group Header */}
+                      <tr 
                         onClick={() => toggleCountry(country)}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "8px",
-                          padding: "8px 16px",
-                          backgroundColor: "#F3F4F6",
-                          borderBottom: "1px solid #E5E7EB",
-                          cursor: "pointer",
-                          transition: "background-color 0.15s",
-                          position: "sticky",
-                          top: "41px",
-                          zIndex: 9,
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.backgroundColor = "#E5E7EB";
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.backgroundColor = "#F3F4F6";
+                        className="cursor-pointer hover:bg-[#F3F4F6] transition-colors"
+                        style={{ 
+                          backgroundColor: "#F9FAFB",
+                          borderBottom: "1px solid var(--neuron-ui-border)"
                         }}
                       >
-                        {isCollapsed ? (
-                          <ChevronRight size={16} color="#6B7280" />
-                        ) : (
-                          <ChevronDown size={16} color="#6B7280" />
-                        )}
-                        <span
-                          style={{
-                            fontSize: "13px",
-                            fontWeight: 600,
-                            color: "#374151",
-                            textTransform: "uppercase",
-                            letterSpacing: "0.3px",
-                          }}
-                        >
-                          {country}
-                        </span>
-                        <span
-                          style={{
-                            fontSize: "12px",
-                            color: "#6B7280",
-                            fontWeight: 500,
-                          }}
-                        >
-                          • {partners.length}
-                        </span>
-                      </div>
+                        <td colSpan={7} className="px-4 py-2">
+                          <div className="flex items-center gap-2">
+                            <ChevronDown 
+                              size={16} 
+                              className="text-gray-500 transition-transform duration-200"
+                              style={{ transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}
+                            />
+                            <span className="text-[13px] font-semibold text-gray-700 uppercase tracking-wide">
+                              {country}
+                            </span>
+                            <span className="text-xs text-gray-500 font-medium bg-white px-2 py-0.5 rounded-full border border-gray-200">
+                              {partners.length}
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
 
-                      {/* Partner Rows */}
-                      {!isCollapsed && partners.map((partner, index) => {
-                        const statusColor = getStatusColor(partner);
-                        const statusLabel = getStatusLabel(partner);
-                        
-                        return (
+                      {/* Partner Rows Wrapper */}
+                      <tr>
+                        <td colSpan={7} className="p-0 border-0">
                           <div
-                            key={partner.id}
-                            onClick={() => setSelectedPartner(partner)}
                             style={{
-                              display: "grid",
-                              gridTemplateColumns: "24px 1fr 120px 90px 150px 100px 80px",
-                              gap: "12px",
-                              padding: "10px 16px",
-                              borderBottom: "1px solid #F3F4F6",
-                              cursor: "pointer",
-                              transition: "background-color 0.1s ease",
-                              backgroundColor: index % 2 === 0 ? "white" : "#FAFAFA",
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.backgroundColor = "#F0F9FF";
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.backgroundColor = index % 2 === 0 ? "white" : "#FAFAFA";
+                              maxHeight: isCollapsed ? "0px" : "2000px",
+                              opacity: isCollapsed ? 0 : 1,
+                              overflow: "hidden",
+                              transition: "max-height 0.3s ease-in-out, opacity 0.25s ease-in-out",
                             }}
                           >
-                            {/* Status Dot */}
-                            <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
-                              <div
-                                style={{
-                                  width: "8px",
-                                  height: "8px",
-                                  borderRadius: "50%",
-                                  backgroundColor: statusColor,
-                                }}
-                                title={statusLabel}
-                              />
-                            </div>
+                            <table className="w-full" style={{ borderCollapse: "collapse" }}>
+                              {colWidths}
+                              <tbody>
+                                {partners.map((partner) => {
+                                  const statusColor = getStatusColor(partner);
+                                  const statusLabel = getStatusLabel(partner);
+                                  
+                                  return (
+                                    <tr
+                                      key={partner.id}
+                                      onClick={() => onViewVendor?.(partner.id)}
+                                      className="cursor-pointer hover:bg-[#FAFBFB] transition-colors"
+                                      style={{ 
+                                        borderBottom: "1px solid #EAECF0",
+                                        backgroundColor: "white"
+                                      }}
+                                    >
+                                      {/* Status Dot */}
+                                      <td className="px-4 py-3 align-middle text-center">
+                                        <div 
+                                          title={statusLabel}
+                                          className="w-2 h-2 rounded-full mx-auto"
+                                          style={{ backgroundColor: statusColor }}
+                                        />
+                                      </td>
 
-                            {/* Company */}
-                            <div style={{ display: "flex", alignItems: "center", gap: "6px", minWidth: 0 }}>
-                              <span
-                                style={{
-                                  fontSize: "12px",
-                                  fontWeight: 500,
-                                  color: "var(--neuron-ink-primary)",
-                                  overflow: "hidden",
-                                  textOverflow: "ellipsis",
-                                  whiteSpace: "nowrap",
-                                }}
-                                title={partner.company_name}
-                              >
-                                {partner.company_name}
-                              </span>
-                              {partner.is_wca_conference && (
-                                <Award size={12} color="#7C3AED" style={{ flexShrink: 0 }} title="WCA Conference" />
-                              )}
-                            </div>
+                                      {/* Company */}
+                                      <td className="px-4 py-3 align-middle">
+                                        <div className="flex items-center gap-2">
+                                          <span className="text-[13px] font-medium text-[var(--neuron-ink-primary)]">
+                                            {partner.company_name}
+                                          </span>
+                                          {partner.is_wca_conference && (
+                                            <Award size={14} className="text-purple-600" title="WCA Conference Member" />
+                                          )}
+                                        </div>
+                                      </td>
 
-                            {/* Location */}
-                            <div style={{ display: "flex", alignItems: "center" }}>
-                              <span style={{ fontSize: "12px", color: "var(--neuron-ink-secondary)" }}>
-                                {partner.territory ? `${partner.country} · ${partner.territory.substring(0, 3)}` : partner.country}
-                              </span>
-                            </div>
+                                      {/* Location */}
+                                      <td className="px-4 py-3 align-middle">
+                                        <div className="flex flex-col">
+                                          <span className="text-[13px] text-gray-600">
+                                            {partner.territory || partner.country}
+                                          </span>
+                                        </div>
+                                      </td>
 
-                            {/* WCA ID */}
-                            <div style={{ display: "flex", alignItems: "center" }}>
-                              {partner.wca_id ? (
-                                <span
-                                  style={{
-                                    fontSize: "11px",
-                                    color: "#6B7280",
-                                    fontFamily: "monospace",
-                                    backgroundColor: "#F9FAFB",
-                                    padding: "2px 6px",
-                                    borderRadius: "3px",
-                                  }}
-                                >
-                                  {partner.wca_id}
-                                </span>
-                              ) : (
-                                <span style={{ fontSize: "12px", color: "#D1D5DB" }}>—</span>
-                              )}
-                            </div>
+                                      {/* WCA ID */}
+                                      <td className="px-4 py-3 align-middle">
+                                        <span className="text-[13px] text-gray-600 font-mono">
+                                          {partner.wca_id || "—"}
+                                        </span>
+                                      </td>
 
-                            {/* Contact */}
-                            <div style={{ display: "flex", alignItems: "center", minWidth: 0 }}>
-                              <span
-                                style={{
-                                  fontSize: "12px",
-                                  color: "var(--neuron-ink-secondary)",
-                                  overflow: "hidden",
-                                  textOverflow: "ellipsis",
-                                  whiteSpace: "nowrap",
-                                }}
-                                title={partner.contact_person || "No contact"}
-                              >
-                                {partner.contact_person || "—"}
-                              </span>
-                            </div>
+                                      {/* Contact */}
+                                      <td className="px-4 py-3 align-middle">
+                                        <span className="text-[13px] text-[var(--neuron-ink-primary)]">
+                                          {partner.contact_person || "—"}
+                                        </span>
+                                      </td>
 
-                            {/* Expires */}
-                            <div style={{ display: "flex", alignItems: "center" }}>
-                              <span
-                                style={{
-                                  fontSize: "12px",
-                                  color: isExpired(partner.expires) ? "#DC2626" : 
-                                         expiresSoon(partner.expires) ? "#D97706" : 
-                                         "#6B7280",
-                                  fontWeight: (isExpired(partner.expires) || expiresSoon(partner.expires)) ? 600 : 400,
-                                }}
-                              >
-                                {formatCompactDate(partner.expires)}
-                              </span>
-                            </div>
+                                      {/* Expires */}
+                                      <td className="px-4 py-3 align-middle">
+                                        <span 
+                                          className="text-[13px]"
+                                          style={{
+                                            color: isExpired(partner.expires) ? "#DC2626" : 
+                                                   expiresSoon(partner.expires) ? "#D97706" : "#6B7280",
+                                            fontWeight: expiresSoon(partner.expires) ? 600 : 400
+                                          }}
+                                        >
+                                          {formatCompactDate(partner.expires)}
+                                        </span>
+                                      </td>
 
-                            {/* Services */}
-                            <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                              {partner.services.map((service, i) => (
-                                <React.Fragment key={i}>
-                                  {getServiceIcon(service)}
-                                </React.Fragment>
-                              ))}
-                            </div>
+                                      {/* Services */}
+                                      <td className="px-4 py-3 align-middle">
+                                        <div className="flex gap-1.5 flex-wrap">
+                                          {partner.services && partner.services.slice(0, 3).map(service => (
+                                            <div 
+                                              key={service}
+                                              className="p-1 rounded bg-gray-50 border border-gray-100"
+                                              title={service}
+                                            >
+                                              {getServiceIcon(service)}
+                                            </div>
+                                          ))}
+                                          {partner.services && partner.services.length > 3 && (
+                                            <span className="text-[10px] text-gray-500 bg-gray-50 px-1 rounded flex items-center">
+                                              +{partner.services.length - 3}
+                                            </span>
+                                          )}
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
                           </div>
-                        );
-                      })}
-                    </div>
+                        </td>
+                      </tr>
+                    </tbody>
                   );
                 })}
-                    </div>
-                  )}
-                </>
-              )}
-
-              {/* CO-LOADER PARTNERS SECTION */}
-              {coLoaderPartners.length > 0 && (
-                <>
-                  {/* Category Header - Clickable */}
-                  <div
-                    onClick={() => toggleCategory("co-loader")}
-                    style={{
-                      marginTop: "48px",
-                      marginBottom: "16px",
-                      paddingBottom: "12px",
-                      borderBottom: "2px solid var(--neuron-ui-border)",
-                      cursor: "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "12px",
-                      transition: "opacity 0.2s",
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.opacity = "0.7";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.opacity = "1";
-                    }}
-                  >
-                    {collapsedCategories.has("co-loader") ? (
-                      <ChevronRight size={20} color="var(--neuron-ink-primary)" />
-                    ) : (
-                      <ChevronDown size={20} color="var(--neuron-ink-primary)" />
-                    )}
-                    <div style={{ flex: 1 }}>
-                      <h2
-                        style={{
-                          fontSize: "16px",
-                          fontWeight: 600,
-                          color: "var(--neuron-ink-primary)",
-                          margin: 0,
-                          textTransform: "uppercase",
-                          letterSpacing: "0.5px",
-                          }}
-                        >
-                          Co-loader Partners
-                          <span style={{ marginLeft: "12px", color: "var(--neuron-ink-muted)", fontWeight: 500 }}>
-                            • {coLoaderPartners.length}
-                          </span>
-                        </h2>
-                        <p
-                          style={{
-                            fontSize: "12px",
-                            color: "var(--neuron-ink-muted)",
-                            margin: "4px 0 0 0",
-                          }}
-                        >
-                          Local Philippines co-loaders and consolidators
-                        </p>
-                      </div>
-                  </div>
-
-                  {/* Table Container with Border */}
-                  {!collapsedCategories.has("co-loader") && (
-                    <div
-                      style={{
-                        border: "1px solid var(--neuron-ui-border)",
-                        borderRadius: "8px",
-                        overflow: "hidden",
-                        backgroundColor: "white",
-                    }}
-                  >
-                    {/* Table Header - Sticky */}
-                    <div
-                      style={{
-                        position: "sticky",
-                        top: 0,
-                        backgroundColor: "#F9FAFB",
-                        borderBottom: "1px solid var(--neuron-ui-border)",
-                        zIndex: 10,
-                      }}
-                    >
-                      <div
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "24px 1fr 120px 90px 150px 100px 80px",
-                          gap: "12px",
-                          padding: "10px 16px",
-                          fontSize: "11px",
-                          fontWeight: 600,
-                          color: "#6B7280",
-                          textTransform: "uppercase",
-                          letterSpacing: "0.5px",
-                        }}
-                      >
-                        <div style={{ textAlign: "center" }}>•</div>
-                        <div>Company</div>
-                        <div>Location</div>
-                        <div>Phone</div>
-                        <div>Contact</div>
-                        <div>Mobile</div>
-                        <div>Services</div>
-                      </div>
-                    </div>
-
-                    {/* Grouped Rows */}
-                    {groupedCoLoaders.map(([country, partners]) => {
-                      const isCollapsed = collapsedCountries.has(country);
-                      
-                      return (
-                        <div key={country}>
-                          {/* Country Header */}
-                          <div
-                            onClick={() => toggleCountry(country)}
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: "8px",
-                              padding: "8px 16px",
-                              backgroundColor: "#F3F4F6",
-                              borderBottom: "1px solid #E5E7EB",
-                              cursor: "pointer",
-                              transition: "background-color 0.15s",
-                              position: "sticky",
-                              top: "41px",
-                              zIndex: 9,
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.backgroundColor = "#E5E7EB";
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.backgroundColor = "#F3F4F6";
-                            }}
-                          >
-                            {isCollapsed ? (
-                              <ChevronRight size={16} color="#6B7280" />
-                            ) : (
-                              <ChevronDown size={16} color="#6B7280" />
-                            )}
-                            <span
-                              style={{
-                                fontSize: "13px",
-                                fontWeight: 600,
-                                color: "#374151",
-                                textTransform: "uppercase",
-                                letterSpacing: "0.3px",
-                              }}
-                            >
-                              {country}
-                            </span>
-                            <span
-                              style={{
-                                fontSize: "12px",
-                                color: "#6B7280",
-                                fontWeight: 500,
-                              }}
-                            >
-                              • {partners.length}
-                            </span>
-                          </div>
-
-                          {/* Partner Rows */}
-                          {!isCollapsed && partners.map((partner, index) => {
-                            const statusColor = getStatusColor(partner);
-                            const statusLabel = getStatusLabel(partner);
-                            
-                            return (
-                              <div
-                                key={partner.id}
-                                onClick={() => setSelectedPartner(partner)}
-                                style={{
-                                  display: "grid",
-                                  gridTemplateColumns: "24px 1fr 120px 90px 150px 100px 80px",
-                                  gap: "12px",
-                                  padding: "10px 16px",
-                                  borderBottom: "1px solid #F3F4F6",
-                                  cursor: "pointer",
-                                  transition: "background-color 0.1s ease",
-                                  backgroundColor: index % 2 === 0 ? "white" : "#FAFAFA",
-                                }}
-                                onMouseEnter={(e) => {
-                                  e.currentTarget.style.backgroundColor = "#F0F9FF";
-                                }}
-                                onMouseLeave={(e) => {
-                                  e.currentTarget.style.backgroundColor = index % 2 === 0 ? "white" : "#FAFAFA";
-                                }}
-                              >
-                                {/* Status Dot */}
-                                <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
-                                  <div
-                                    style={{
-                                      width: "8px",
-                                      height: "8px",
-                                      borderRadius: "50%",
-                                      backgroundColor: statusColor,
-                                    }}
-                                    title={statusLabel}
-                                  />
-                                </div>
-
-                                {/* Company */}
-                                <div style={{ display: "flex", alignItems: "center", gap: "6px", minWidth: 0 }}>
-                                  <span
-                                    style={{
-                                      fontSize: "12px",
-                                      fontWeight: 500,
-                                      color: "var(--neuron-ink-primary)",
-                                      overflow: "hidden",
-                                      textOverflow: "ellipsis",
-                                      whiteSpace: "nowrap",
-                                    }}
-                                    title={partner.company_name}
-                                  >
-                                    {partner.company_name}
-                                  </span>
-                                </div>
-
-                                {/* Location */}
-                                <div style={{ display: "flex", alignItems: "center" }}>
-                                  <span style={{ fontSize: "12px", color: "var(--neuron-ink-secondary)" }}>
-                                    {partner.territory ? `${partner.country} · ${partner.territory.substring(0, 3)}` : partner.country}
-                                  </span>
-                                </div>
-
-                                {/* Phone */}
-                                <div style={{ display: "flex", alignItems: "center" }}>
-                                  {partner.phone ? (
-                                    <span
-                                      style={{
-                                        fontSize: "11px",
-                                        color: "#6B7280",
-                                        overflow: "hidden",
-                                        textOverflow: "ellipsis",
-                                        whiteSpace: "nowrap",
-                                      }}
-                                      title={partner.phone}
-                                    >
-                                      {partner.phone}
-                                    </span>
-                                  ) : (
-                                    <span style={{ fontSize: "12px", color: "#D1D5DB" }}>—</span>
-                                  )}
-                                </div>
-
-                                {/* Contact */}
-                                <div style={{ display: "flex", alignItems: "center", minWidth: 0 }}>
-                                  <span
-                                    style={{
-                                      fontSize: "12px",
-                                      color: "var(--neuron-ink-secondary)",
-                                      overflow: "hidden",
-                                      textOverflow: "ellipsis",
-                                      whiteSpace: "nowrap",
-                                    }}
-                                    title={partner.contact_person || "No contact"}
-                                  >
-                                    {partner.contact_person || "—"}
-                                  </span>
-                                </div>
-
-                                {/* Mobile */}
-                                <div style={{ display: "flex", alignItems: "center" }}>
-                                  {partner.mobile ? (
-                                    <span
-                                      style={{
-                                        fontSize: "11px",
-                                        color: "#6B7280",
-                                        overflow: "hidden",
-                                        textOverflow: "ellipsis",
-                                        whiteSpace: "nowrap",
-                                      }}
-                                      title={partner.mobile}
-                                    >
-                                      {partner.mobile}
-                                    </span>
-                                  ) : (
-                                    <span style={{ fontSize: "12px", color: "#D1D5DB" }}>—</span>
-                                  )}
-                                </div>
-
-                                {/* Services */}
-                                <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                                  {partner.services.map((service, i) => (
-                                    <React.Fragment key={i}>
-                                      {getServiceIcon(service)}
-                                    </React.Fragment>
-                                  ))}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      );
-                    })}
-                  </div>
-                    )}
-                  </>
-                )}
-
-              {/* ALL-IN PARTNERS SECTION */}
-              {allInPartners.length > 0 && (
-                <>
-                  {/* Category Header - Clickable */}
-                  <div
-                    onClick={() => toggleCategory("all-in")}
-                    style={{
-                      marginTop: "48px",
-                      marginBottom: "16px",
-                      paddingBottom: "12px",
-                      borderBottom: "2px solid var(--neuron-ui-border)",
-                      cursor: "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "12px",
-                      transition: "opacity 0.2s",
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.opacity = "0.7";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.opacity = "1";
-                    }}
-                  >
-                    {collapsedCategories.has("all-in") ? (
-                      <ChevronRight size={20} color="var(--neuron-ink-primary)" />
-                    ) : (
-                      <ChevronDown size={20} color="var(--neuron-ink-primary)" />
-                    )}
-                    <div style={{ flex: 1 }}>
-                      <h2
-                        style={{
-                          fontSize: "16px",
-                          fontWeight: 600,
-                          color: "var(--neuron-ink-primary)",
-                          margin: 0,
-                          textTransform: "uppercase",
-                          letterSpacing: "0.5px",
-                        }}
-                      >
-                        All-in Partners
-                        <span style={{ marginLeft: "12px", color: "var(--neuron-ink-muted)", fontWeight: 500 }}>
-                          • {allInPartners.length}
-                        </span>
-                    </h2>
-                    <p
-                      style={{
-                        fontSize: "12px",
-                        color: "var(--neuron-ink-muted)",
-                        margin: "4px 0 0 0",
-                      }}
-                    >
-                        Comprehensive service providers
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Table Container with Border */}
-                  {!collapsedCategories.has("all-in") && (
-                    <div
-                      style={{
-                        border: "1px solid var(--neuron-ui-border)",
-                        borderRadius: "8px",
-                        overflow: "hidden",
-                        backgroundColor: "white",
-                      }}
-                    >
-                    {/* Table Header - Sticky */}
-                    <div
-                      style={{
-                        position: "sticky",
-                        top: 0,
-                        backgroundColor: "#F9FAFB",
-                        borderBottom: "1px solid var(--neuron-ui-border)",
-                        zIndex: 10,
-                      }}
-                    >
-                      <div
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "24px 1fr 120px 90px 150px 100px 80px",
-                          gap: "12px",
-                          padding: "10px 16px",
-                          fontSize: "11px",
-                          fontWeight: 600,
-                          color: "#6B7280",
-                          textTransform: "uppercase",
-                          letterSpacing: "0.5px",
-                        }}
-                      >
-                        <div style={{ textAlign: "center" }}>•</div>
-                        <div>Company</div>
-                        <div>Location</div>
-                        <div>Phone</div>
-                        <div>Contact</div>
-                        <div>Mobile</div>
-                        <div>Services</div>
-                      </div>
-                    </div>
-
-                    {/* Grouped Rows */}
-                    {groupedAllIn.map(([country, partners]) => {
-                      const isCollapsed = collapsedCountries.has(country);
-                      
-                      return (
-                        <div key={country}>
-                          {/* Country Header */}
-                          <div
-                            onClick={() => toggleCountry(country)}
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: "8px",
-                              padding: "8px 16px",
-                              backgroundColor: "#F3F4F6",
-                              borderBottom: "1px solid #E5E7EB",
-                              cursor: "pointer",
-                              transition: "background-color 0.15s",
-                              position: "sticky",
-                              top: "41px",
-                              zIndex: 9,
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.backgroundColor = "#E5E7EB";
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.backgroundColor = "#F3F4F6";
-                            }}
-                          >
-                            {isCollapsed ? (
-                              <ChevronRight size={16} color="#6B7280" />
-                            ) : (
-                              <ChevronDown size={16} color="#6B7280" />
-                            )}
-                            <span
-                              style={{
-                                fontSize: "13px",
-                                fontWeight: 600,
-                                color: "#374151",
-                                textTransform: "uppercase",
-                                letterSpacing: "0.3px",
-                              }}
-                            >
-                              {country}
-                            </span>
-                            <span
-                              style={{
-                                fontSize: "12px",
-                                color: "#6B7280",
-                                fontWeight: 500,
-                              }}
-                            >
-                              • {partners.length}
-                            </span>
-                          </div>
-
-                          {/* Partner Rows */}
-                          {!isCollapsed && partners.map((partner, index) => {
-                            const statusColor = getStatusColor(partner);
-                            const statusLabel = getStatusLabel(partner);
-                            
-                            return (
-                              <div
-                                key={partner.id}
-                                onClick={() => setSelectedPartner(partner)}
-                                style={{
-                                  display: "grid",
-                                  gridTemplateColumns: "24px 1fr 120px 90px 150px 100px 80px",
-                                  gap: "12px",
-                                  padding: "10px 16px",
-                                  borderBottom: "1px solid #F3F4F6",
-                                  cursor: "pointer",
-                                  transition: "background-color 0.1s ease",
-                                  backgroundColor: index % 2 === 0 ? "white" : "#FAFAFA",
-                                }}
-                                onMouseEnter={(e) => {
-                                  e.currentTarget.style.backgroundColor = "#F0F9FF";
-                                }}
-                                onMouseLeave={(e) => {
-                                  e.currentTarget.style.backgroundColor = index % 2 === 0 ? "white" : "#FAFAFA";
-                                }}
-                              >
-                                {/* Status Dot */}
-                                <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
-                                  <div
-                                    style={{
-                                      width: "8px",
-                                      height: "8px",
-                                      borderRadius: "50%",
-                                      backgroundColor: statusColor,
-                                    }}
-                                    title={statusLabel}
-                                  />
-                                </div>
-
-                                {/* Company */}
-                                <div style={{ display: "flex", alignItems: "center", gap: "6px", minWidth: 0 }}>
-                                  <span
-                                    style={{
-                                      fontSize: "12px",
-                                      fontWeight: 500,
-                                      color: "var(--neuron-ink-primary)",
-                                      overflow: "hidden",
-                                      textOverflow: "ellipsis",
-                                      whiteSpace: "nowrap",
-                                    }}
-                                    title={partner.company_name}
-                                  >
-                                    {partner.company_name}
-                                  </span>
-                                </div>
-
-                                {/* Location */}
-                                <div style={{ display: "flex", alignItems: "center" }}>
-                                  <span style={{ fontSize: "12px", color: "var(--neuron-ink-secondary)" }}>
-                                    {partner.territory ? `${partner.country} · ${partner.territory.substring(0, 3)}` : partner.country}
-                                  </span>
-                                </div>
-
-                                {/* Phone */}
-                                <div style={{ display: "flex", alignItems: "center" }}>
-                                  {partner.phone ? (
-                                    <span
-                                      style={{
-                                        fontSize: "11px",
-                                        color: "#6B7280",
-                                        overflow: "hidden",
-                                        textOverflow: "ellipsis",
-                                        whiteSpace: "nowrap",
-                                      }}
-                                      title={partner.phone}
-                                    >
-                                      {partner.phone}
-                                    </span>
-                                  ) : (
-                                    <span style={{ fontSize: "12px", color: "#D1D5DB" }}>—</span>
-                                  )}
-                                </div>
-
-                                {/* Contact */}
-                                <div style={{ display: "flex", alignItems: "center", minWidth: 0 }}>
-                                  <span
-                                    style={{
-                                      fontSize: "12px",
-                                      color: "var(--neuron-ink-secondary)",
-                                      overflow: "hidden",
-                                      textOverflow: "ellipsis",
-                                      whiteSpace: "nowrap",
-                                    }}
-                                    title={partner.contact_person || "No contact"}
-                                  >
-                                    {partner.contact_person || "—"}
-                                  </span>
-                                </div>
-
-                                {/* Mobile */}
-                                <div style={{ display: "flex", alignItems: "center" }}>
-                                  {partner.mobile ? (
-                                    <span
-                                      style={{
-                                        fontSize: "11px",
-                                        color: "#6B7280",
-                                        overflow: "hidden",
-                                        textOverflow: "ellipsis",
-                                        whiteSpace: "nowrap",
-                                      }}
-                                      title={partner.mobile}
-                                    >
-                                      {partner.mobile}
-                                    </span>
-                                  ) : (
-                                    <span style={{ fontSize: "12px", color: "#D1D5DB" }}>—</span>
-                                  )}
-                                </div>
-
-                                {/* Services */}
-                                <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                                  {partner.services.map((service, i) => (
-                                    <React.Fragment key={i}>
-                                      {getServiceIcon(service)}
-                                    </React.Fragment>
-                                  ))}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      );
-                    })}
-                  </div>
-                    )}
-                  </>
-                )}
+              </table>
             </div>
           )}
         </div>
+
+        {/* Partner Sheet */}
+        <PartnerSheet
+          isOpen={isPartnerSheetOpen}
+          onClose={() => setIsPartnerSheetOpen(false)}
+          onSave={handleSavePartner}
+        />
       </div>
-
-      {/* Right Slide-out Panel */}
-      {selectedPartner && (
-        <>
-          {/* Backdrop */}
-          <div
-            style={{
-              position: "fixed",
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              backgroundColor: "rgba(0, 0, 0, 0.3)",
-              zIndex: 999,
-            }}
-            onClick={() => setSelectedPartner(null)}
-          />
-
-          {/* Slide-out Panel */}
-          <div
-            style={{
-              position: "fixed",
-              top: 0,
-              right: 0,
-              bottom: 0,
-              width: "480px",
-              backgroundColor: "white",
-              boxShadow: "-4px 0 24px rgba(0, 0, 0, 0.1)",
-              zIndex: 1000,
-              display: "flex",
-              flexDirection: "column",
-              animation: "slideIn 0.2s ease-out",
-            }}
-          >
-            <style>
-              {`
-                @keyframes slideIn {
-                  from {
-                    transform: translateX(100%);
-                  }
-                  to {
-                    transform: translateX(0);
-                  }
-                }
-              `}
-            </style>
-
-            {/* Panel Header */}
-            <div
-              style={{
-                padding: "24px",
-                borderBottom: "1px solid var(--neuron-ui-border)",
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "flex-start",
-              }}
-            >
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px", flexWrap: "wrap" }}>
-                  <h2
-                    style={{
-                      fontSize: "18px",
-                      fontWeight: 600,
-                      color: "var(--neuron-ink-primary)",
-                      margin: 0,
-                    }}
-                  >
-                    {selectedPartner.company_name}
-                  </h2>
-                  {selectedPartner.is_wca_conference && (
-                    <span
-                      style={{
-                        padding: "3px 8px",
-                        borderRadius: "10px",
-                        fontSize: "10px",
-                        fontWeight: 600,
-                        backgroundColor: "#EDE9FE",
-                        color: "#7C3AED",
-                        border: "1px solid #7C3AED30",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "3px",
-                      }}
-                    >
-                      <Award size={10} />
-                      WCA
-                    </span>
-                  )}
-                </div>
-                <div style={{ fontSize: "13px", color: "var(--neuron-ink-muted)" }}>
-                  {selectedPartner.country}
-                  {selectedPartner.territory && ` • ${selectedPartner.territory}`}
-                </div>
-              </div>
-              <button
-                onClick={() => setSelectedPartner(null)}
-                style={{
-                  padding: "6px",
-                  border: "none",
-                  background: "none",
-                  cursor: "pointer",
-                  color: "#6B7280",
-                  borderRadius: "4px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  marginLeft: "12px",
-                }}
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            {/* Panel Content */}
-            <div style={{ flex: 1, overflow: "auto", padding: "24px" }}>
-              {/* Status */}
-              <div style={{ marginBottom: "24px" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "10px" }}>
-                  <Calendar size={14} color="#6B7280" />
-                  <span style={{ fontSize: "12px", fontWeight: 600, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                    Partnership Status
-                  </span>
-                </div>
-                {selectedPartner.expires ? (
-                  <div>
-                    <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "8px" }}>
-                      <span
-                        style={{
-                          padding: "5px 12px",
-                          borderRadius: "10px",
-                          fontSize: "12px",
-                          fontWeight: 600,
-                          backgroundColor: isExpired(selectedPartner.expires) ? "#FEE2E2" : 
-                                         expiresSoon(selectedPartner.expires) ? "#FEF3C7" : 
-                                         "#D1FAE5",
-                          color: isExpired(selectedPartner.expires) ? "#DC2626" : 
-                                expiresSoon(selectedPartner.expires) ? "#D97706" : 
-                                "#047857",
-                          border: `1px solid ${isExpired(selectedPartner.expires) ? "#DC2626" : 
-                                              expiresSoon(selectedPartner.expires) ? "#D97706" : 
-                                              "#047857"}30`,
-                        }}
-                      >
-                        {getStatusLabel(selectedPartner)}
-                      </span>
-                      <span style={{ fontSize: "13px", color: "var(--neuron-ink-secondary)" }}>
-                        {formatExpiryDate(selectedPartner.expires)}
-                      </span>
-                    </div>
-                    {(isExpired(selectedPartner.expires) || expiresSoon(selectedPartner.expires)) && (
-                      <div
-                        style={{
-                          padding: "10px",
-                          borderRadius: "6px",
-                          backgroundColor: isExpired(selectedPartner.expires) ? "#FEE2E2" : "#FEF3C7",
-                          border: `1px solid ${isExpired(selectedPartner.expires) ? "#DC2626" : "#D97706"}30`,
-                          display: "flex",
-                          alignItems: "flex-start",
-                          gap: "8px",
-                        }}
-                      >
-                        <AlertCircle size={14} color={isExpired(selectedPartner.expires) ? "#DC2626" : "#D97706"} style={{ marginTop: "1px", flexShrink: 0 }} />
-                        <div>
-                          <div style={{ fontSize: "12px", fontWeight: 600, color: isExpired(selectedPartner.expires) ? "#DC2626" : "#D97706", marginBottom: "3px" }}>
-                            {isExpired(selectedPartner.expires) ? "Partnership Expired" : "Renewal Required Soon"}
-                          </div>
-                          <div style={{ fontSize: "11px", color: isExpired(selectedPartner.expires) ? "#991B1B" : "#92400E" }}>
-                            {isExpired(selectedPartner.expires) 
-                              ? "Contact agent to renew partnership."
-                              : `Expires in ${getDaysUntilExpiry(selectedPartner.expires)} days.`
-                            }
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div style={{ fontSize: "13px", color: "var(--neuron-ink-muted)" }}>
-                    No expiration date on file
-                  </div>
-                )}
-              </div>
-
-              {/* WCA ID */}
-              {selectedPartner.wca_id && (
-                <div style={{ marginBottom: "24px" }}>
-                  <div style={{ fontSize: "12px", fontWeight: 600, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "8px" }}>
-                    WCA ID
-                  </div>
-                  <div
-                    style={{
-                      fontSize: "15px",
-                      color: "var(--neuron-ink-primary)",
-                      backgroundColor: "#F9FAFB",
-                      padding: "8px 12px",
-                      borderRadius: "6px",
-                      fontFamily: "monospace",
-                      fontWeight: 600,
-                      display: "inline-block",
-                    }}
-                  >
-                    {selectedPartner.wca_id}
-                  </div>
-                </div>
-              )}
-
-              {/* Contact Information */}
-              <div style={{ marginBottom: "24px" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "10px" }}>
-                  <Mail size={14} color="#6B7280" />
-                  <span style={{ fontSize: "12px", fontWeight: 600, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                    Contact Information
-                  </span>
-                </div>
-                {selectedPartner.contact_person && (
-                  <div style={{ marginBottom: "12px" }}>
-                    <div style={{ fontSize: "11px", color: "#6B7280", marginBottom: "4px" }}>Contact Person</div>
-                    <div style={{ fontSize: "14px", fontWeight: 500, color: "var(--neuron-ink-primary)" }}>
-                      {selectedPartner.contact_person}
-                    </div>
-                  </div>
-                )}
-                {selectedPartner.emails.length > 0 && (
-                  <div style={{ marginBottom: "12px" }}>
-                    <div style={{ fontSize: "11px", color: "#6B7280", marginBottom: "6px" }}>Email Address{selectedPartner.emails.length > 1 ? "es" : ""}</div>
-                    {selectedPartner.emails.map((email, i) => (
-                      <a
-                        key={i}
-                        href={`mailto:${email}`}
-                        style={{
-                          display: "block",
-                          fontSize: "13px",
-                          color: "#0F766E",
-                          textDecoration: "none",
-                          marginBottom: "5px",
-                          padding: "6px 10px",
-                          backgroundColor: "#F0FDF4",
-                          borderRadius: "4px",
-                          border: "1px solid #BBF7D0",
-                          transition: "all 0.2s",
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.backgroundColor = "#DCFCE7";
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.backgroundColor = "#F0FDF4";
-                        }}
-                      >
-                        {email}
-                      </a>
-                    ))}
-                  </div>
-                )}
-                {selectedPartner.phone && (
-                  <div style={{ marginBottom: "12px" }}>
-                    <div style={{ fontSize: "11px", color: "#6B7280", marginBottom: "4px" }}>Phone</div>
-                    <div style={{ fontSize: "13px", fontWeight: 500, color: "var(--neuron-ink-primary)" }}>
-                      {selectedPartner.phone}
-                    </div>
-                  </div>
-                )}
-                {selectedPartner.mobile && (
-                  <div style={{ marginBottom: "12px" }}>
-                    <div style={{ fontSize: "11px", color: "#6B7280", marginBottom: "4px" }}>Mobile</div>
-                    <div style={{ fontSize: "13px", fontWeight: 500, color: "var(--neuron-ink-primary)" }}>
-                      {selectedPartner.mobile}
-                    </div>
-                  </div>
-                )}
-                {selectedPartner.website && (
-                  <div style={{ marginBottom: "12px" }}>
-                    <div style={{ fontSize: "11px", color: "#6B7280", marginBottom: "4px" }}>Website</div>
-                    <a
-                      href={`https://${selectedPartner.website.replace(/^https?:\/\//, '')}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{
-                        fontSize: "13px",
-                        color: "#0F766E",
-                        textDecoration: "underline",
-                      }}
-                    >
-                      {selectedPartner.website}
-                    </a>
-                  </div>
-                )}
-                {selectedPartner.address && (
-                  <div>
-                    <div style={{ fontSize: "11px", color: "#6B7280", marginBottom: "4px" }}>Address</div>
-                    <div style={{ fontSize: "13px", color: "var(--neuron-ink-secondary)", lineHeight: "1.5" }}>
-                      {selectedPartner.address}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Services */}
-              <div style={{ marginBottom: "24px" }}>
-                <div style={{ fontSize: "12px", fontWeight: 600, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "10px" }}>
-                  Services Offered
-                </div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-                  {selectedPartner.services.map((service, i) => (
-                    <span
-                      key={i}
-                      style={{
-                        padding: "5px 12px",
-                        borderRadius: "5px",
-                        fontSize: "12px",
-                        backgroundColor: "#E8F5F3",
-                        color: "#0F766E",
-                        fontWeight: 500,
-                        border: "1px solid #0F766E20",
-                      }}
-                    >
-                      {service}
-                    </span>
-                  ))}
-                </div>
-              </div>
-
-              {/* Notes */}
-              {selectedPartner.notes && (
-                <div>
-                  <div style={{ fontSize: "12px", fontWeight: 600, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "8px" }}>
-                    Notes
-                  </div>
-                  <div
-                    style={{
-                      fontSize: "13px",
-                      color: "var(--neuron-ink-secondary)",
-                      padding: "10px",
-                      backgroundColor: "#F9FAFB",
-                      borderRadius: "6px",
-                      border: "1px solid #E5E7EB",
-                      lineHeight: "1.5",
-                    }}
-                  >
-                    {selectedPartner.notes}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Panel Footer */}
-            <div
-              style={{
-                padding: "16px 24px",
-                borderTop: "1px solid var(--neuron-ui-border)",
-                display: "flex",
-                justifyContent: "flex-end",
-                gap: "10px",
-              }}
-            >
-              <button
-                onClick={() => setSelectedPartner(null)}
-                style={{
-                  padding: "8px 16px",
-                  fontSize: "13px",
-                  fontWeight: 600,
-                  color: "var(--neuron-ink-secondary)",
-                  backgroundColor: "white",
-                  border: "1px solid var(--neuron-ui-border)",
-                  borderRadius: "6px",
-                  cursor: "pointer",
-                }}
-              >
-                Close
-              </button>
-              <button
-                style={{
-                  padding: "8px 16px",
-                  fontSize: "13px",
-                  fontWeight: 600,
-                  color: "white",
-                  backgroundColor: "var(--neuron-brand-green)",
-                  border: "none",
-                  borderRadius: "6px",
-                  cursor: "pointer",
-                }}
-              >
-                Edit Details
-              </button>
-            </div>
-          </div>
-        </>
-      )}
     </div>
   );
 }

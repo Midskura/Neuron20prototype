@@ -1,5 +1,6 @@
-import { Calculator, DollarSign } from "lucide-react";
+import { Calculator, DollarSign, Info } from "lucide-react";
 import type { FinancialSummary } from "../../../types/pricing";
+import { useState } from "react";
 
 interface FinancialSummaryPanelProps {
   financialSummary: FinancialSummary;
@@ -12,15 +13,23 @@ interface FinancialSummaryPanelProps {
 
 export function FinancialSummaryPanel({
   financialSummary,
-  currency,
+  currency, // Note: This should ideally be PHP now, but we'll override display
   taxRate,
   setTaxRate,
   otherCharges,
   setOtherCharges
 }: FinancialSummaryPanelProps) {
   
+  // Local state for USD reference rate (default 58 PHP/USD)
+  const [usdRefRate, setUsdRefRate] = useState(58.00);
+  
   const formatAmount = (amount: number) => {
-    return amount.toFixed(2);
+    return amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  };
+
+  const calculateApproxUSD = () => {
+    if (usdRefRate <= 0) return 0;
+    return financialSummary.grand_total / usdRefRate;
   };
 
   return (
@@ -45,7 +54,7 @@ export function FinancialSummaryPanel({
             color: "var(--neuron-ink-primary)",
             margin: 0
           }}>
-            FINANCIAL SUMMARY
+            FINANCIAL SUMMARY (PHP)
           </h3>
         </div>
       </div>
@@ -68,14 +77,14 @@ export function FinancialSummaryPanel({
               fontWeight: 500,
               color: "var(--neuron-ink-secondary)"
             }}>
-              Subtotal (Non-Taxed)
+              Subtotal (PHP Non-Taxed)
             </span>
             <span style={{
               fontSize: "14px",
               fontWeight: 600,
               color: "var(--neuron-ink-primary)"
             }}>
-              {currency} {formatAmount(financialSummary.subtotal_non_taxed)}
+              ₱ {formatAmount(financialSummary.subtotal_non_taxed)}
             </span>
           </div>
 
@@ -93,14 +102,14 @@ export function FinancialSummaryPanel({
               fontWeight: 500,
               color: "var(--neuron-ink-secondary)"
             }}>
-              Subtotal (Taxable)
+              Subtotal (PHP Taxable)
             </span>
             <span style={{
               fontSize: "14px",
               fontWeight: 600,
               color: "var(--neuron-ink-primary)"
             }}>
-              {currency} {formatAmount(financialSummary.subtotal_taxed)}
+              ₱ {formatAmount(financialSummary.subtotal_taxed)}
             </span>
           </div>
 
@@ -125,7 +134,7 @@ export function FinancialSummaryPanel({
             <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
               <input
                 type="number"
-                value={taxRate * 100}
+                value={Number((taxRate * 100).toFixed(2))}
                 onChange={(e) => setTaxRate(Number(e.target.value) / 100)}
                 step="0.01"
                 min="0"
@@ -153,7 +162,7 @@ export function FinancialSummaryPanel({
               fontSize: "11px",
               color: "#92400E"
             }}>
-              Tax Amount: {currency} {formatAmount(financialSummary.tax_amount)}
+              Tax Amount: ₱ {formatAmount(financialSummary.tax_amount)}
             </div>
           </div>
 
@@ -172,7 +181,7 @@ export function FinancialSummaryPanel({
               textTransform: "uppercase",
               letterSpacing: "0.5px"
             }}>
-              Other Charges
+              Other Charges (PHP)
             </label>
             <input
               type="number"
@@ -199,7 +208,7 @@ export function FinancialSummaryPanel({
             margin: "8px 0"
           }} />
 
-          {/* Grand Total */}
+          {/* Grand Total (PHP) */}
           <div style={{
             padding: "16px",
             backgroundColor: "#E8F5F3",
@@ -214,7 +223,7 @@ export function FinancialSummaryPanel({
               textTransform: "uppercase",
               letterSpacing: "0.5px"
             }}>
-              GRAND TOTAL
+              TOTAL (PHP)
             </div>
             <div style={{
               fontSize: "28px",
@@ -222,7 +231,56 @@ export function FinancialSummaryPanel({
               color: "var(--neuron-brand-green)",
               lineHeight: 1
             }}>
-              {currency} {formatAmount(financialSummary.grand_total)}
+              ₱ {formatAmount(financialSummary.grand_total)}
+            </div>
+          </div>
+
+          {/* Approx USD Total */}
+          <div style={{
+            padding: "12px 16px",
+            backgroundColor: "white", 
+            border: "1px solid #E0E6E4", // Subtle grey
+            borderRadius: "6px"
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+              <div style={{
+                fontSize: "11px",
+                fontWeight: 600,
+                color: "#1E40AF",
+                textTransform: "uppercase",
+                letterSpacing: "0.5px"
+              }}>
+                APPROX. TOTAL (USD)
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <span style={{ fontSize: "11px", color: "#6B7A76", fontWeight: 500 }}>@ Rate:</span>
+                <input 
+                  type="number"
+                  value={usdRefRate}
+                  onChange={(e) => setUsdRefRate(Number(e.target.value) || 1)}
+                  style={{
+                    width: "50px",
+                    padding: "2px 4px",
+                    fontSize: "11px",
+                    border: "1px solid #E0E6E4",
+                    borderRadius: "4px",
+                    textAlign: "right",
+                    color: "#1E40AF",
+                    fontWeight: 600
+                  }}
+                />
+              </div>
+            </div>
+            <div style={{
+              fontSize: "20px",
+              fontWeight: 700,
+              color: "#1E40AF",
+              lineHeight: 1
+            }}>
+              $ {formatAmount(calculateApproxUSD())}
+            </div>
+            <div style={{ marginTop: "6px", fontSize: "10px", color: "#6B7A76" }}>
+              * Reference only based on manual rate
             </div>
           </div>
 

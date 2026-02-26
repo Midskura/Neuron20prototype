@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -190,6 +190,18 @@
     outline: none;
   }
 
+  /* Form inputs always show subtle green focus outline (overrides Tailwind focus:ring/outline) */
+  input:focus,
+  input:focus-visible,
+  textarea:focus,
+  textarea:focus-visible,
+  select:focus,
+  select:focus-visible {
+    outline: 2px solid rgba(15, 118, 110, 0.3) !important;
+    outline-offset: -1px;
+    box-shadow: none !important;
+  }
+
   body {
     @apply bg-background text-foreground;
   }
@@ -296,6 +308,18 @@
       letter-spacing: 0.002em;
       text-transform: uppercase;
     }
+  }
+}
+
+/* ✨ PHASE 7: Animation keyframes for vendor inline rates */
+@keyframes expandIn {
+  from {
+    opacity: 0;
+    transform: scaleY(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scaleY(1);
   }
 }
 
@@ -652,7 +676,6 @@ table th,
  * 
  * Font Family:
  * Inter (Google Fonts Variable)
- * Loaded via: @import url('https://fonts.googleapis.com/css2...')
  * 
  * CSS Variable:
  * :root {
@@ -864,6 +887,23 @@ input[type="number"].no-spinners::-webkit-inner-spin-button {
 
 input[type="number"].no-spinners {
   -moz-appearance: textfield;
+}
+
+/* ================================================================
+ * HIDE ALL NUMBER INPUT SPINNERS (Global)
+ * ================================================================
+ * Removes spinner controls from ALL number inputs across the app
+ */
+
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
 }
 
 /* ================================================================

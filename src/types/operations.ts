@@ -1,13 +1,20 @@
+import type { AppliedRate } from "./pricing";
+
 // ==================== STATUS TYPES ====================
 
 export type ExecutionStatus = 
   | "Draft"
+  | "Created"
   | "Confirmed"
+  | "For Delivery"
+  | "In Transit"
   | "In Progress"
+  | "Delivered"
+  | "Completed"
   | "Pending"
   | "On Hold"
-  | "Completed"
-  | "Cancelled";
+  | "Cancelled"
+  | "Closed";
 
 // ==================== SERVICE TYPES ====================
 
@@ -34,6 +41,47 @@ export interface ClientHandlerPreference {
   updated_at: string;
 }
 
+// ==================== SHIPMENT QUANTITIES ====================
+
+/**
+ * Structured numeric quantities for a booking's shipment.
+ * Used by the contract rate engine to calculate billing.
+ * 
+ * Maps 1:1 to BookingQuantities in contractRateEngine.ts:
+ *   containers → per_container rates
+ *   bls        → per_bl rates
+ *   sets       → per_set rates
+ *   shipments  → per_shipment rates
+ *
+ * @see /docs/blueprints/BOOKING_QUANTITIES_BLUEPRINT.md
+ */
+export interface ShipmentQuantities {
+  /** Number of containers (FCL) or trucks (Trucking). Default: 1 */
+  containers: number;
+  /** Number of bills of lading. Default: 1 */
+  bls: number;
+  /** Number of document sets (stamps, certificates, etc.). Default: 1 */
+  sets: number;
+  /** Number of shipments — almost always 1 per booking. Default: 1 */
+  shipments: number;
+}
+
+/** Default shipment quantities for new bookings */
+export const DEFAULT_SHIPMENT_QUANTITIES: ShipmentQuantities = {
+  containers: 1,
+  shipments: 1,
+  bls: 1,
+  sets: 1,
+};
+
+// ==================== EXAMINATION & PENALTY TRACKING ====================
+
+/**
+ * Customs examination types that may occur during brokerage processing.
+ * These are operational facts that can have billing implications.
+ */
+export type ExaminationType = "None" | "DEA" | "Physical" | "X-Ray";
+
 // ==================== FORWARDING BOOKING ====================
 
 export interface ForwardingBooking {
@@ -42,8 +90,16 @@ export interface ForwardingBooking {
   createdAt: string;
   updatedAt: string;
 
+  // ✨ CONTRACT: Link to active contract quotation (for contractual clients)
+  contract_id?: string;
+  contract_applied_rates?: AppliedRate[];
+
+  // 📦 SHIPMENT QUANTITIES: Structured counts for billing calculation
+  shipment_quantities?: ShipmentQuantities;
+
   // General Information
   customerName: string;
+  movement: "IMPORT" | "EXPORT";
   accountOwner: string;
   accountHandler: string;
   services: string[];
@@ -78,11 +134,16 @@ export interface ForwardingBooking {
   cancellationReason?: string;
   cancelledDate?: string;
 
+  // General Export Fields
+  incoterms?: string;
+  cargoNature?: string;
+
   // Shipment Information
   consignee: string;
   shipper: string;
   mblMawb: string;
   hblHawb: string;
+  bookingReferenceNumber?: string; // Export specific
   registryNumber: string;
   carrier: string;
   aolPol: string;
@@ -94,6 +155,9 @@ export interface ForwardingBooking {
   grossWeight: string;
   dimensions: string;
   eta: string;
+  lct?: string; // Export specific (Last Cargo Time)
+  transitTime?: string; // Export specific
+  route?: string; // Export specific
 
   // FCL-specific fields
   containerNumbers?: string[];
@@ -102,6 +166,12 @@ export interface ForwardingBooking {
   detDemValidity?: string;
   storageValidity?: string;
   croAvailability?: string;
+  tareWeight?: string; // Export specific
+  vgm?: string; // Export specific
+  warehouseAddress?: string; // Export specific
+  truckingName?: string; // Export specific
+  plateNumber?: string; // Export specific
+  pickupLocation?: string; // Export specific (Collection Address)
 
   // LCL/AIR-specific fields
   warehouseLocation?: string;
@@ -115,8 +185,20 @@ export interface BrokerageBooking {
   createdAt: string;
   updatedAt: string;
 
+  // ✨ CONTRACT: Link to active contract quotation (for contractual clients)
+  contract_id?: string;
+  contract_applied_rates?: AppliedRate[];
+
+  // 📦 SHIPMENT QUANTITIES: Structured counts for billing calculation
+  shipment_quantities?: ShipmentQuantities;
+
+  // 🔍 EXAMINATION & PENALTIES: Operational events with billing implications
+  examination_type?: ExaminationType;
+  penalty_flags?: string[];
+
   // General Information
   customerName: string;
+  movement: "IMPORT" | "EXPORT";
   accountOwner?: string;
   accountHandler?: string;
   service?: string; // Service/s
@@ -139,6 +221,7 @@ export interface BrokerageBooking {
   consignee?: string;
   shipper?: string;
   mblMawb?: string;
+  bookingConfirmationNumber?: string; // Export specific
   hblHawb?: string;
   registryNumber?: string;
   carrier?: string;
@@ -153,11 +236,17 @@ export interface BrokerageBooking {
   etd?: string;
   etb?: string;
   eta?: string;
+  lct?: string; // Export specific (Last Cargo Time)
 
   // FCL Information
   containerNumbers?: string;
   containerDeposit?: string;
   detDem?: string;
+  tareWeight?: string; // Export specific
+  vgm?: string; // Export specific
+  truckingName?: string; // Export specific
+  plateNumber?: string; // Export specific
+  pickupLocation?: string; // Export specific (Collection Address)
 }
 
 // ==================== TRUCKING BOOKING ====================
@@ -168,8 +257,16 @@ export interface TruckingBooking {
   createdAt: string;
   updatedAt: string;
 
+  // ✨ CONTRACT: Link to active contract quotation (for contractual clients)
+  contract_id?: string;
+  contract_applied_rates?: AppliedRate[];
+
+  // 📦 SHIPMENT QUANTITIES: Structured counts for billing calculation
+  shipment_quantities?: ShipmentQuantities;
+
   // General Information
   customerName: string;
+  movement: "IMPORT" | "EXPORT";
   accountOwner?: string;
   accountHandler?: string;
   service?: string;
@@ -194,8 +291,10 @@ export interface TruckingBooking {
   vehicleReferenceNumber?: string;
   pullOut?: string;
   deliveryAddress?: string;
+  warehouseAddress?: string; // Export specific
   deliveryInstructions?: string;
   dateDelivered?: string;
+  withGps?: boolean; // Export specific
 
   // FCL Information
   tabsBooking?: string;
@@ -203,6 +302,7 @@ export interface TruckingBooking {
   cyFee?: string;
   eirAvailability?: string;
   earlyGateIn?: string;
+  gateIn?: string; // Export specific
   detDemValidity?: string;
   storageValidity?: string;
   shippingLine?: string;
@@ -216,8 +316,13 @@ export interface MarineInsuranceBooking {
   createdAt: string;
   updatedAt: string;
 
+  // ✨ CONTRACT: Link to active contract quotation (for contractual clients)
+  contract_id?: string;
+  contract_applied_rates?: AppliedRate[];
+
   // General Information
   customerName: string;
+  movement: "IMPORT" | "EXPORT";
   accountOwner?: string;
   accountHandler?: string;
   service?: string;
@@ -272,8 +377,16 @@ export interface OthersBooking {
   createdAt: string;
   updatedAt: string;
 
+  // ✨ CONTRACT: Link to active contract quotation (for contractual clients)
+  contract_id?: string;
+  contract_applied_rates?: AppliedRate[];
+
+  // 📦 SHIPMENT QUANTITIES: Structured counts for billing calculation
+  shipment_quantities?: ShipmentQuantities;
+
   // General Information
   customerName: string;
+  movement: "IMPORT" | "EXPORT";
   accountOwner?: string;
   accountHandler?: string;
   service?: string;
@@ -387,4 +500,5 @@ export interface Expense {
   category?: string;
   status: "Pending" | "Approved" | "Paid";
   notes?: string;
+  isBillable?: boolean;
 }

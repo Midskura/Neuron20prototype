@@ -1,10 +1,10 @@
 import { useState, useEffect } from "react";
 import { Plus, Clock, FileText, Building2, Users } from "lucide-react";
-import { MyEVouchersList } from "./evouchers/MyEVouchersList";
-import { AllEVouchersList } from "./evouchers/AllEVouchersList";
 import { CreateEVoucherForm } from "./evouchers/CreateEVoucherForm";
 import { BudgetRequestDetailPanel } from "../bd/BudgetRequestDetailPanel";
-import { PendingApprovalsList } from "./evouchers/PendingApprovalsList";
+import { UnifiedEVouchersTable } from "./evouchers/UnifiedEVouchersTable";
+import { useEVouchers } from "../../hooks/useEVouchers";
+import { NeuronRefreshButton } from "../shared/NeuronRefreshButton";
 
 type EVoucherView = "pending" | "my-evouchers" | "all";
 
@@ -31,194 +31,111 @@ export function EVouchersContent() {
     }
   }, [hasApprovalAccess]);
 
+  // Use Hook for Data
+  const { evouchers, isLoading, refresh } = useEVouchers(activeView, currentUser?.id);
+
+  // Listen for manual refresh triggers
+  useEffect(() => {
+    if (refreshTrigger > 0) {
+      refresh();
+    }
+  }, [refreshTrigger, refresh]);
+
   return (
-    <div
-      style={{
-        height: "100%",
-        display: "flex",
-        flexDirection: "column",
-        backgroundColor: "#FFFFFF"
-      }}
-    >
-      {/* Header */}
-      <div style={{ padding: "32px 48px", borderBottom: "1px solid var(--neuron-ui-border)" }}>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            marginBottom: "24px"
-          }}
-        >
+    <div className="flex flex-col h-full bg-white">
+      {/* Header Container */}
+      <div className="px-12 pt-8 pb-0">
+        <div className="flex items-start justify-between mb-8">
           <div>
-            <h1
-              style={{
-                fontSize: "32px",
-                fontWeight: 600,
-                color: "#12332B",
-                marginBottom: "4px",
-                letterSpacing: "-1.2px"
-              }}
-            >
+            <h1 className="text-[32px] font-semibold text-[#12332B] mb-1 tracking-tight">
               E-Vouchers
             </h1>
-            <p style={{ fontSize: "14px", color: "#667085" }}>
+            <p className="text-[14px] text-[#667085]">
               {hasApprovalAccess
                 ? "Universal transaction approval system for all financial activities"
                 : "Create and track your expense vouchers"}
             </p>
           </div>
-
-          {/* Action Buttons */}
-          <div style={{ display: "flex", gap: "12px" }}>
-            <button
-              onClick={() => setShowCreateModal(true)}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "8px",
-                padding: "10px 20px",
-                backgroundColor: "#0F766E",
-                color: "#FFFFFF",
-                border: "none",
-                borderRadius: "8px",
-                cursor: "pointer",
-                fontSize: "14px",
-                fontWeight: 500
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = "#0D6560";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = "#0F766E";
-              }}
-            >
-              <Plus size={18} />
-              New E-Voucher
-            </button>
+          
+          <div className="flex items-center gap-3">
+             {/* Refresh Button */}
+             <NeuronRefreshButton 
+               onRefresh={async () => { refresh(); }}
+               label="Refresh e-vouchers"
+             />
+             <button
+               onClick={() => setShowCreateModal(true)}
+               className="flex items-center gap-2 px-4 py-2 bg-[#0F766E] text-white rounded-lg hover:bg-[#0D6559] transition-colors font-medium text-[14px]"
+             >
+               <Plus size={16} />
+               New E-Voucher
+             </button>
           </div>
         </div>
 
         {/* View Tabs */}
-        <div style={{ display: "flex", gap: "8px", borderBottom: "1px solid var(--neuron-ui-border)" }}>
+        <div className="flex items-center gap-8 border-b border-[#E5E9F0]">
           {hasApprovalAccess && (
             <button
               onClick={() => setActiveView("pending")}
-              style={{
-                padding: "12px 20px",
-                fontSize: "14px",
-                fontWeight: 500,
-                color: activeView === "pending" ? "#0F766E" : "#6B7280",
-                backgroundColor: "transparent",
-                border: "none",
-                borderBottom: activeView === "pending" ? "2px solid #0F766E" : "2px solid transparent",
-                cursor: "pointer",
-                transition: "all 0.2s",
-                display: "flex",
-                alignItems: "center",
-                gap: "8px"
-              }}
+              className={`flex items-center gap-2 py-4 relative group ${activeView === "pending" ? "text-[#0F766E]" : "text-[#6B7280]"}`}
             >
-              <Clock size={16} />
-              Pending Approvals
+              <Clock size={18} strokeWidth={activeView === "pending" ? 2.5 : 2} />
+              <span className={`text-[14px] ${activeView === "pending" ? "font-semibold" : "font-medium"}`}>
+                Pending Approvals
+              </span>
+              {activeView === "pending" && (
+                <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-[#0F766E] rounded-t-[2px]" />
+              )}
             </button>
           )}
+          
           <button
             onClick={() => setActiveView("my-evouchers")}
-            style={{
-              padding: "12px 20px",
-              fontSize: "14px",
-              fontWeight: 500,
-              color: activeView === "my-evouchers" ? "#0F766E" : "#6B7280",
-              backgroundColor: "transparent",
-              border: "none",
-              borderBottom: activeView === "my-evouchers" ? "2px solid #0F766E" : "2px solid transparent",
-              cursor: "pointer",
-              transition: "all 0.2s",
-              display: "flex",
-              alignItems: "center",
-              gap: "8px"
-            }}
+            className={`flex items-center gap-2 py-4 relative group ${activeView === "my-evouchers" ? "text-[#0F766E]" : "text-[#6B7280]"}`}
           >
-            <FileText size={16} />
-            My E-Vouchers
+            <FileText size={18} strokeWidth={activeView === "my-evouchers" ? 2.5 : 2} />
+            <span className={`text-[14px] ${activeView === "my-evouchers" ? "font-semibold" : "font-medium"}`}>
+              My E-Vouchers
+            </span>
+            {activeView === "my-evouchers" && (
+              <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-[#0F766E] rounded-t-[2px]" />
+            )}
           </button>
+
           {hasApprovalAccess && (
             <button
               onClick={() => setActiveView("all")}
-              style={{
-                padding: "12px 20px",
-                fontSize: "14px",
-                fontWeight: 500,
-                color: activeView === "all" ? "#0F766E" : "#6B7280",
-                backgroundColor: "transparent",
-                border: "none",
-                borderBottom: activeView === "all" ? "2px solid #0F766E" : "2px solid transparent",
-                cursor: "pointer",
-                transition: "all 0.2s",
-                display: "flex",
-                alignItems: "center",
-                gap: "8px"
-              }}
+              className={`flex items-center gap-2 py-4 relative group ${activeView === "all" ? "text-[#0F766E]" : "text-[#6B7280]"}`}
             >
-              <Building2 size={16} />
-              All E-Vouchers
+              <Building2 size={18} strokeWidth={activeView === "all" ? 2.5 : 2} />
+              <span className={`text-[14px] ${activeView === "all" ? "font-semibold" : "font-medium"}`}>
+                All E-Vouchers
+              </span>
+              {activeView === "all" && (
+                <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-[#0F766E] rounded-t-[2px]" />
+              )}
             </button>
           )}
         </div>
       </div>
 
       {/* Content Area */}
-      <div
-        style={{
-          flex: 1,
-          overflow: "auto",
-          padding: "32px 48px"
-        }}
-      >
-        {/* Pending Approvals View (Accounting/Executive Staff Only) */}
-        {activeView === "pending" && hasApprovalAccess && (
-          <PendingApprovalsList
-            onViewDetail={(evoucher) => setSelectedEvoucher(evoucher)}
-            refreshTrigger={refreshTrigger}
-          />
-        )}
-
-        {/* My E-Vouchers View */}
-        {activeView === "my-evouchers" && currentUser && (
-          <MyEVouchersList
-            userId={currentUser.id}
-            onViewDetail={(evoucher) => setSelectedEvoucher(evoucher)}
-            onCreateNew={() => setShowCreateModal(true)}
-            refreshTrigger={refreshTrigger}
-          />
-        )}
-
-        {/* All E-Vouchers View (Accounting/Executive Staff Only) */}
-        {activeView === "all" && hasApprovalAccess && (
-          <AllEVouchersList
-            onViewDetail={(evoucher) => setSelectedEvoucher(evoucher)}
-            refreshTrigger={refreshTrigger}
-          />
-        )}
-
-        {/* No User State */}
-        {!currentUser && (
-          <div
-            style={{
-              padding: "48px",
-              textAlign: "center",
-              color: "#6B7280"
-            }}
-          >
-            <Users size={48} style={{ margin: "0 auto 16px", color: "#D1D5DB" }} />
-            <h3 style={{ fontSize: "16px", fontWeight: 600, color: "#374151", marginBottom: "8px" }}>
-              Please Log In
-            </h3>
-            <p style={{ fontSize: "14px", color: "#6B7280" }}>
-              You need to be logged in to view E-Vouchers
-            </p>
+      <div className="flex-1 p-12 overflow-auto bg-white">
+        {!currentUser ? (
+          <div className="py-12 text-center text-[#6B7280]">
+            <Users size={48} className="mx-auto mb-4 text-[#D1D5DB]" />
+            <h3 className="text-[16px] font-semibold text-[#374151] mb-2">Please Log In</h3>
+            <p className="text-[14px]">You need to be logged in to view E-Vouchers</p>
           </div>
+        ) : (
+          <UnifiedEVouchersTable 
+             evouchers={evouchers}
+             view={activeView}
+             onViewDetail={setSelectedEvoucher}
+             onRefresh={refresh}
+             isLoading={isLoading}
+          />
         )}
       </div>
 
@@ -231,8 +148,7 @@ export function EVouchersContent() {
           defaultRequestor={currentUser?.name}
           onSuccess={() => {
             setShowCreateModal(false);
-            // Trigger refresh
-            setRefreshTrigger(refreshTrigger + 1);
+            setRefreshTrigger(prev => prev + 1);
           }}
         />
       )}
@@ -245,8 +161,7 @@ export function EVouchersContent() {
           currentUser={currentUser}
           onStatusChange={() => {
             setSelectedEvoucher(null);
-            // Trigger refresh
-            setRefreshTrigger(refreshTrigger + 1);
+            setRefreshTrigger(prev => prev + 1);
           }}
           showAccountingControls={hasApprovalAccess}
         />

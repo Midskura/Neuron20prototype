@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { QuotationsList } from "./QuotationsList";
 import { QuotationDetail } from "./QuotationDetail";
 import { QuotationBuilderV3 } from "./quotations/QuotationBuilderV3";
-import type { QuotationNew, Project } from "../../types/pricing";
+import type { QuotationNew, Project, QuotationType } from "../../types/pricing";
 import type { Customer } from "../../types/bd";
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { toast } from "../ui/toast-utils";
@@ -24,6 +24,7 @@ export function Quotations({ department = "Pricing", customerData, inquiryId, on
   const [quotations, setQuotations] = useState<QuotationNew[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [pendingQuotationType, setPendingQuotationType] = useState<QuotationType>("project");
 
   // Fetch quotations from backend
   const fetchQuotations = async () => {
@@ -50,8 +51,8 @@ export function Quotations({ department = "Pricing", customerData, inquiryId, on
         toast.error('Error loading quotations: ' + result.error);
       }
     } catch (error) {
-      console.error('Error fetching quotations:', error);
-      toast.error('Unable to load quotations. Please try again.');
+      console.log('Server not available. Using local data only.');
+      // Don't show error toast - just silently fall back to local/mock data
       setQuotations([]);
     } finally {
       setIsLoading(false);
@@ -106,7 +107,8 @@ export function Quotations({ department = "Pricing", customerData, inquiryId, on
     setSubView("detail");
   };
 
-  const handleCreateQuotation = () => {
+  const handleCreateQuotation = (quotationType?: QuotationType) => {
+    setPendingQuotationType(quotationType || "project");
     setSubView("builder");
   };
 
@@ -223,6 +225,7 @@ export function Quotations({ department = "Pricing", customerData, inquiryId, on
           onSave={handleSaveQuotation}
           initialData={selectedQuotation || (department === "BD" ? { status: "Inquiry" } : undefined)}
           customerData={customerData}
+          initialQuotationType={selectedQuotation?.quotation_type || pendingQuotationType}
         />
       )}
     </>

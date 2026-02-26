@@ -43,6 +43,8 @@ export function Admin({ users = [], onAddUser, onDeleteUser }: AdminProps) {
   const [isClearingSeed, setIsClearingSeed] = useState(false);
   const [isMigratingContactNames, setIsMigratingContactNames] = useState(false);
   const [isSeedingUsers, setIsSeedingUsers] = useState(false);
+  const [isSeedingBalanceSheet, setIsSeedingBalanceSheet] = useState(false);
+  const [isSeedingIncomeStatement, setIsSeedingIncomeStatement] = useState(false);
 
   // Mock users data
   const mockUsers: User[] = [
@@ -305,6 +307,60 @@ export function Admin({ users = [], onAddUser, onDeleteUser }: AdminProps) {
       toast.error("Failed to seed users. Check console for details.");
     } finally {
       setIsSeedingUsers(false);
+    }
+  };
+
+  const handleSeedBalanceSheet = async () => {
+    setIsSeedingBalanceSheet(true);
+    try {
+      const API_URL = `https://${projectId}.supabase.co/functions/v1/make-server-c142e950`;
+      const response = await fetch(`${API_URL}/seed/coa-balance-sheet`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${publicAnonKey}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        toast.success(`🎉 Balance Sheet COA Seeded Successfully!`);
+      } else {
+        toast.error(`Seed failed: ${result.error}`);
+      }
+    } catch (error) {
+      console.error("Error seeding Balance Sheet:", error);
+      toast.error("Failed to seed Balance Sheet. Check console for details.");
+    } finally {
+      setIsSeedingBalanceSheet(false);
+    }
+  };
+
+  const handleSeedIncomeStatement = async () => {
+    setIsSeedingIncomeStatement(true);
+    try {
+      const API_URL = `https://${projectId}.supabase.co/functions/v1/make-server-c142e950`;
+      const response = await fetch(`${API_URL}/seed/coa-income-statement`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${publicAnonKey}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        toast.success(`🎉 Income Statement COA Seeded Successfully!`);
+      } else {
+        toast.error(`Seed failed: ${result.error}`);
+      }
+    } catch (error) {
+      console.error("Error seeding Income Statement:", error);
+      toast.error("Failed to seed Income Statement. Check console for details.");
+    } finally {
+      setIsSeedingIncomeStatement(false);
     }
   };
 
@@ -698,6 +754,63 @@ export function Admin({ users = [], onAddUser, onDeleteUser }: AdminProps) {
                   </div>
                   <div style={{ padding: "12px", background: "#F9FAFB", borderRadius: "8px", border: "1px solid #E5E7EB" }}>
                     <p style={{ fontSize: "14px", color: "#667085" }}>Example: ND-2025-0001</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Chart of Accounts Configuration */}
+              <div style={{ background: "white", border: "1px solid #E5E9F0", borderRadius: "16px", padding: "24px" }}>
+                <h3 style={{ fontSize: "18px", fontWeight: 600, color: "#12332B", marginBottom: "16px" }}>Chart of Accounts Configuration</h3>
+                <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                  <p style={{ fontSize: "14px", color: "#667085" }}>
+                    Initialize or reset the Chart of Accounts (COA) structure. This will create the standard hierarchy for Balance Sheet and Income Statement accounts.
+                  </p>
+                  <div style={{ display: "flex", gap: "12px" }}>
+                    <button
+                      onClick={handleSeedBalanceSheet}
+                      disabled={isSeedingBalanceSheet}
+                      style={{
+                        height: "40px",
+                        padding: "0 20px",
+                        borderRadius: "12px",
+                        background: isSeedingBalanceSheet ? "#F3F4F6" : "#0F766E",
+                        border: "none",
+                        color: isSeedingBalanceSheet ? "#9CA3AF" : "#FFFFFF",
+                        fontSize: "14px",
+                        fontWeight: 600,
+                        cursor: isSeedingBalanceSheet ? "not-allowed" : "pointer",
+                        transition: "all 150ms ease",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px"
+                      }}
+                    >
+                      <RefreshCw className={`w-4 h-4 ${isSeedingBalanceSheet ? 'animate-spin' : ''}`} />
+                      {isSeedingBalanceSheet ? "Seeding..." : "Seed Balance Sheet"}
+                    </button>
+                    
+                    <button
+                      onClick={handleSeedIncomeStatement}
+                      disabled={isSeedingIncomeStatement}
+                      style={{
+                        height: "40px",
+                        padding: "0 20px",
+                        borderRadius: "12px",
+                        background: isSeedingIncomeStatement ? "#F3F4F6" : "#0F766E",
+                        border: "none",
+                        color: isSeedingIncomeStatement ? "#9CA3AF" : "#FFFFFF",
+                        fontSize: "14px",
+                        fontWeight: 600,
+                        cursor: isSeedingIncomeStatement ? "not-allowed" : "pointer",
+                        transition: "all 150ms ease",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px"
+                      }}
+                    >
+                      <RefreshCw className={`w-4 h-4 ${isSeedingIncomeStatement ? 'animate-spin' : ''}`} />
+                      {isSeedingIncomeStatement ? "Seeding..." : "Seed Income Statement"}
+                    </button>
                   </div>
                 </div>
               </div>

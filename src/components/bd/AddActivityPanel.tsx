@@ -1,5 +1,5 @@
-import { X, Upload, Phone, Mail, Users, MessageSquare, Send, MessageCircle, Linkedin, StickyNote } from "lucide-react";
-import { useState, useEffect } from "react";
+import { X, Upload, Phone, Mail, Users, MessageSquare, Send, MessageCircle, Linkedin, StickyNote, FileText, Trash2 } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
 import type { Activity, ActivityType } from "../../types/bd";
 import { CustomDropdown } from "./CustomDropdown";
 import { projectId, publicAnonKey } from "../../utils/supabase/info";
@@ -47,6 +47,8 @@ export function AddActivityPanel({ isOpen, onClose, onSave }: AddActivityPanelPr
   const [attachments, setAttachments] = useState<File[]>([]);
   const [contacts, setContacts] = useState<BackendContact[]>([]);
   const [customers, setCustomers] = useState<BackendCustomer[]>([]);
+  
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Fetch dropdown data when panel opens
   useEffect(() => {
@@ -91,7 +93,12 @@ export function AddActivityPanel({ isOpen, onClose, onSave }: AddActivityPanelPr
       onSave({
         ...activityData,
         id: `act-${Date.now()}`,
-        created_at: new Date().toISOString()
+        created_at: new Date().toISOString(),
+        attachments: attachments.map(file => ({
+          name: file.name,
+          size: file.size,
+          type: file.type
+        }))
       });
       handleClose();
     }
@@ -112,6 +119,25 @@ export function AddActivityPanel({ isOpen, onClose, onSave }: AddActivityPanelPr
     });
     setAttachments([]);
     onClose();
+  };
+  
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      const newFiles = Array.from(e.target.files);
+      setAttachments(prev => [...prev, ...newFiles]);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    if (e.dataTransfer.files) {
+      const newFiles = Array.from(e.dataTransfer.files);
+      setAttachments(prev => [...prev, ...newFiles]);
+    }
+  };
+
+  const removeAttachment = (index: number) => {
+    setAttachments(prev => prev.filter((_, i) => i !== index));
   };
 
   // Group contacts by customer for better UX
@@ -292,9 +318,21 @@ export function AddActivityPanel({ isOpen, onClose, onSave }: AddActivityPanelPr
               <label className="block text-[11px] font-medium uppercase tracking-wide mb-2" style={{ color: "#667085" }}>
                 Attachments (Optional)
               </label>
+              
+              <input 
+                type="file" 
+                ref={fileInputRef} 
+                onChange={handleFileSelect} 
+                className="hidden" 
+                multiple 
+              />
+              
               <div 
                 className="border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors"
                 style={{ borderColor: "var(--neuron-ui-border)", backgroundColor: "#FFFFFF" }}
+                onClick={() => fileInputRef.current?.click()}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={handleDrop}
                 onMouseEnter={(e) => {
                   e.currentTarget.style.borderColor = "#0F766E";
                   e.currentTarget.style.backgroundColor = "#E8F5F3";
@@ -312,6 +350,33 @@ export function AddActivityPanel({ isOpen, onClose, onSave }: AddActivityPanelPr
                   Supported: PDF, DOC, XLS, images, screenshots
                 </p>
               </div>
+
+              {/* Attachments List */}
+              {attachments.length > 0 && (
+                <div className="mt-3 space-y-2">
+                  {attachments.map((file, index) => (
+                    <div 
+                      key={index} 
+                      className="flex items-center justify-between p-2 rounded-lg border border-gray-200 bg-gray-50"
+                    >
+                      <div className="flex items-center gap-2 overflow-hidden">
+                        <FileText size={14} className="text-gray-500 flex-shrink-0" />
+                        <span className="text-[12px] text-gray-700 truncate">{file.name}</span>
+                        <span className="text-[11px] text-gray-400 flex-shrink-0">
+                          ({(file.size / 1024).toFixed(0)} KB)
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => removeAttachment(index)}
+                        className="text-gray-400 hover:text-red-500 transition-colors p-1"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </form>

@@ -1,5 +1,5 @@
 // Comprehensive 1-Month Seed Data - Complete services_metadata for all quotations
-import * as kv from "./kv_store.tsx";
+import * as kv from "./kv_store_robust.tsx";
 
 const daysAgo = (days: number) => new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 const dateOnly = (days: number) => new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
