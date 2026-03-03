@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { Project } from "../../types/pricing";
 import { NeuronStatusPill } from "../NeuronStatusPill";
-import { Search, Briefcase, CheckCircle, Package, Calendar, CircleDot, Ship, Truck, Shield, User, TrendingUp, TrendingDown, DollarSign, AlertCircle } from "lucide-react";
+import { Search, Briefcase, CheckCircle, Package, Calendar, CircleDot, User, TrendingUp, TrendingDown, DollarSign, AlertCircle, Building2 } from "lucide-react";
 import { CustomDropdown } from "../bd/CustomDropdown";
+import { CustomDatePicker } from "../common/CustomDatePicker";
 import { useProjectsFinancialsMap } from "../../hooks/useProjectsFinancialsMap";
 import { SkeletonTable, SkeletonControlBar } from "../shared/NeuronSkeleton";
 import { NeuronRefreshButton } from "../shared/NeuronRefreshButton";
@@ -30,14 +31,14 @@ export function ProjectsList({
   onRefresh,
 }: ProjectsListProps) {
   const [searchQuery, setSearchQuery] = useState("");
-  const [activeTab, setActiveTab] = useState<"all" | "my" | "active" | "completed">("all");
+  const [activeTab, setActiveTab] = useState<"all" | "active" | "completed">("all");
   
   // Filters
-  const [timePeriodFilter, setTimePeriodFilter] = useState<string>("all");
+  const [dateFrom, setDateFrom] = useState<string>("");
+  const [dateTo, setDateTo] = useState<string>("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [bookingStatusFilter, setBookingStatusFilter] = useState<string>("all");
-  const [serviceFilter, setServiceFilter] = useState<string>("all");
   const [ownerFilter, setOwnerFilter] = useState<string>("all");
+  const [customerFilter, setCustomerFilter] = useState<string>("all");
   const [marginFilter, setMarginFilter] = useState<string>("all");
   const [profitFilter, setProfitFilter] = useState<string>("all");
 
@@ -55,19 +56,11 @@ export function ProjectsList({
   };
 
   const uniqueOwners = Array.from(new Set(projects.map(p => p.bd_owner_user_name).filter(Boolean)));
-  const uniqueServices = Array.from(new Set(projects.flatMap(p => p.services || [])));
+  const uniqueCustomers = Array.from(new Set(projects.map(p => p.customer_name).filter(Boolean))).sort();
 
   // Filter projects based on active tab
   const getFilteredByTab = () => {
     let filtered = projects;
-
-    // "My Projects" tab logic (Only for BD/Ops)
-    if (activeTab === "my") {
-      filtered = projects.filter(p => 
-        p.bd_owner_user_name === currentUser?.name ||
-        p.bd_owner_email === currentUser?.email
-      );
-    }
 
     if (activeTab === "active") {
       return filtered.filter(p => p.status === "Active");
@@ -91,19 +84,24 @@ export function ProjectsList({
       if (!matchesSearch) return false;
     }
     
-    // Time period filter
-    if (timePeriodFilter !== "all") {
+    // Time period filter (date range)
+    if (dateFrom) {
+      const fromDate = new Date(dateFrom);
       const projectDate = new Date(project.created_at);
-      const now = new Date();
-      const daysDiff = Math.floor((now.getTime() - projectDate.getTime()) / (1000 * 60 * 60 * 24));
-      
-      if (timePeriodFilter === "7days" && daysDiff > 7) return false;
-      if (timePeriodFilter === "30days" && daysDiff > 30) return false;
-      if (timePeriodFilter === "90days" && daysDiff > 90) return false;
+      if (projectDate < fromDate) return false;
+    }
+    if (dateTo) {
+      const toDate = new Date(dateTo);
+      toDate.setHours(23, 59, 59, 999);
+      const projectDate = new Date(project.created_at);
+      if (projectDate > toDate) return false;
     }
     
     // Financial Data for filtering
     const stats = financialsMap[project.project_number] || { income: 0, costs: 0, grossProfit: 0, margin: 0 };
+
+    // Customer filter
+    if (customerFilter !== "all" && project.customer_name !== customerFilter) return false;
 
     if (department === "Accounting") {
       // Margin Filter
@@ -124,17 +122,6 @@ export function ProjectsList({
       // Status filter
       if (statusFilter !== "all" && project.status !== statusFilter) return false;
       
-      // Booking status filter
-      if (bookingStatusFilter !== "all") {
-        const projectBookingStatus = project.booking_status || "No Bookings Yet";
-        if (projectBookingStatus !== bookingStatusFilter) return false;
-      }
-      
-      // Service filter
-      if (serviceFilter !== "all") {
-        if (!project.services?.includes(serviceFilter)) return false;
-      }
-      
       // Owner filter
       if (ownerFilter !== "all" && project.bd_owner_user_name !== ownerFilter) return false;
     }
@@ -144,10 +131,6 @@ export function ProjectsList({
 
   // Calculate counts
   const allCount = projects.length;
-  const myCount = projects.filter(p => 
-    p.bd_owner_user_name === currentUser?.name ||
-    p.bd_owner_email === currentUser?.email
-  ).length;
   const activeCount = projects.filter(p => p.status === "Active").length;
   const completedCount = projects.filter(p => p.status === "Completed").length;
 
@@ -224,17 +207,28 @@ export function ProjectsList({
           flexWrap: "wrap"
         }}>
           {/* Common: Time Period Filter */}
+          <div style={{ minWidth: "140px" }}>
+            <CustomDatePicker value={dateFrom} onChange={setDateFrom} placeholder="Start Date" minWidth="100%" className="w-full px-4 py-2" />
+          </div>
+          <span className="text-[13px] text-[#6B7280] font-medium px-2">to</span>
+          <div style={{ minWidth: "140px" }}>
+            <CustomDatePicker value={dateTo} onChange={setDateTo} placeholder="End Date" minWidth="100%" className="w-full px-4 py-2" />
+          </div>
+
+          {/* Customer Filter - Common to all departments */}
           <div style={{ minWidth: "120px" }}>
             <CustomDropdown
-              value={timePeriodFilter}
-              onChange={setTimePeriodFilter}
+              value={customerFilter}
+              onChange={setCustomerFilter}
               options={[
-                { value: "all", label: "All Time", icon: <Calendar size={16} /> },
-                { value: "7days", label: "Last 7 days", icon: <Calendar size={16} /> },
-                { value: "30days", label: "Last 30 days", icon: <Calendar size={16} /> },
-                { value: "90days", label: "Last 90 days", icon: <Calendar size={16} /> }
+                { value: "all", label: "All Customers", icon: <Building2 size={16} /> },
+                ...uniqueCustomers.map(customer => ({ 
+                  value: customer, 
+                  label: customer, 
+                  icon: <Building2 size={16} style={{ color: "#0F766E" }} /> 
+                }))
               ]}
-              placeholder="Select time period"
+              placeholder="Select customer"
             />
           </div>
 
@@ -286,43 +280,6 @@ export function ProjectsList({
                     { value: "Cancelled", label: "Cancelled", icon: <CircleDot size={16} style={{ color: "#EF4444" }} /> }
                   ]}
                   placeholder="Select status"
-                />
-              </div>
-
-              {/* Booking Status Filter */}
-              <div style={{ minWidth: "150px" }}>
-                <CustomDropdown
-                  value={bookingStatusFilter}
-                  onChange={setBookingStatusFilter}
-                  options={[
-                    { value: "all", label: "All Booking Statuses", icon: <Package size={16} /> },
-                    { value: "No Bookings Yet", label: "No Bookings Yet", icon: <Package size={16} style={{ color: "#6B7280" }} /> },
-                    { value: "Partially Booked", label: "Partially Booked", icon: <Package size={16} style={{ color: "#F59E0B" }} /> },
-                    { value: "Fully Booked", label: "Fully Booked", icon: <CheckCircle size={16} style={{ color: "#10B981" }} /> }
-                  ]}
-                  placeholder="Select booking status"
-                />
-              </div>
-
-              {/* Service Filter */}
-              <div style={{ minWidth: "120px" }}>
-                <CustomDropdown
-                  value={serviceFilter}
-                  onChange={setServiceFilter}
-                  options={[
-                    { value: "all", label: "All Services", icon: <Briefcase size={16} /> },
-                    ...uniqueServices.map(service => {
-                      const getServiceIcon = () => {
-                        if (service === "Brokerage") return <Briefcase size={16} style={{ color: "#0F766E" }} />;
-                        if (service === "Forwarding") return <Ship size={16} style={{ color: "#0F766E" }} />;
-                        if (service === "Trucking") return <Truck size={16} style={{ color: "#0F766E" }} />;
-                        if (service === "Marine Insurance") return <Shield size={16} style={{ color: "#0F766E" }} />;
-                        return <Package size={16} style={{ color: "#0F766E" }} />;
-                      };
-                      return { value: service, label: service, icon: getServiceIcon() };
-                    })
-                  ]}
-                  placeholder="Select service"
                 />
               </div>
 
@@ -388,44 +345,6 @@ export function ProjectsList({
               {allCount}
             </span>
           </button>
-
-          {department !== "Accounting" && (
-            <button
-              onClick={() => setActiveTab("my")}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "8px",
-                padding: "12px 20px",
-                background: "transparent",
-                border: "none",
-                borderBottom: activeTab === "my" ? "2px solid #0F766E" : "2px solid transparent",
-                color: activeTab === "my" ? "#0F766E" : "#667085",
-                fontSize: "14px",
-                fontWeight: 600,
-                cursor: "pointer",
-                transition: "all 0.2s ease",
-                marginBottom: "-1px"
-              }}
-            >
-              <User size={18} />
-              My Projects
-              <span
-                style={{
-                  padding: "2px 8px",
-                  borderRadius: "12px",
-                  fontSize: "11px",
-                  fontWeight: 700,
-                  background: activeTab === "my" ? "#0F766E" : "#0F766E15",
-                  color: activeTab === "my" ? "#FFFFFF" : "#0F766E",
-                  minWidth: "20px",
-                  textAlign: "center"
-                }}
-              >
-                {myCount}
-              </span>
-            </button>
-          )}
           
           <button
             onClick={() => setActiveTab("active")}

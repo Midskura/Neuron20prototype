@@ -789,8 +789,14 @@ export async function processCollectionPosting(evoucherId: string, user_id: stri
     // Credit: Accounts Receivable (1200)
     // USE NEW PREFIX: accounting:account:
     const allAccounts = await kv.getByPrefix("accounting:account:");
-    const cashAccount = allAccounts.find((a: any) => a.code === "1000") || allAccounts.find((a: any) => a.type === "Asset");
-    const arAccount = allAccounts.find((a: any) => a.code === "1200") || allAccounts.find((a: any) => a.subtype === "Accounts Receivable");
+    const cashAccount = allAccounts.find((a: any) => a.code === "1000") || allAccounts.find((a: any) => a.type === "Asset" && !a.is_folder);
+    const arAccount = allAccounts.find((a: any) => a.code === "105" && !a.is_folder)
+      || allAccounts.find((a: any) => a.code === "1200")
+      || allAccounts.find((a: any) => {
+        const name = (a.name || '').toUpperCase();
+        const sub = (a.subtype || '').toUpperCase();
+        return (name === 'ACCOUNTS RECEIVABLE' || sub === 'ACCOUNTS RECEIVABLE') && !a.is_folder;
+      });
 
     let jeId = null;
 
@@ -977,15 +983,23 @@ export async function createInvoice(c: Context) {
     // --- Journal Entry: DR Accounts Receivable / CR Revenue ---
     const revenueAccountId = body.revenue_account_id;
     const totalAmount = Number(body.total_amount) || 0;
+    console.log(`[createInvoice] JE check — revenue_account_id: "${revenueAccountId}", total_amount: ${totalAmount}`);
     let jeId: string | null = null;
     let txnId: string | null = null;
 
     if (revenueAccountId && totalAmount > 0) {
-      // Auto-lookup AR account (code 1200 or subtype "Accounts Receivable")
+      // Auto-lookup AR account — search by code "105", name, or subtype (case-insensitive)
       const allAccounts = await kv.getByPrefix("accounting:account:");
-      const arAccount = allAccounts.find((a: any) => a.code === "1200")
-        || allAccounts.find((a: any) => a.subtype === "Accounts Receivable");
+      const arAccount = allAccounts.find((a: any) => a.code === "105" && !a.is_folder)
+        || allAccounts.find((a: any) => a.code === "1200")
+        || allAccounts.find((a: any) => {
+          const name = (a.name || '').toUpperCase();
+          const sub = (a.subtype || '').toUpperCase();
+          return (name === 'ACCOUNTS RECEIVABLE' || sub === 'ACCOUNTS RECEIVABLE') && !a.is_folder;
+        });
       const revenueAccount = await kv.get(`accounting:account:${revenueAccountId}`);
+
+      console.log(`[createInvoice] AR lookup: found=${!!arAccount} (code=${arAccount?.code}, name=${arAccount?.name}), Revenue lookup: found=${!!revenueAccount} (name=${revenueAccount?.name})`);
 
       if (!arAccount || !revenueAccount) {
         console.warn(`⚠️ GL accounts missing for invoice JE (AR: ${!!arAccount}, Revenue: ${!!revenueAccount}). Skipping JE, but invoice saved.`);

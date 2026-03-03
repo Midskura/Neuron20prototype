@@ -1,4 +1,4 @@
-import { ArrowLeft, Calendar, Flag, User, Building2, Mail, Phone, Edit, Upload, Paperclip, Clock, MessageSquare, Send, Trash2, CheckCircle, Users, MessageCircle, Linkedin, CheckSquare, StickyNote } from "lucide-react";
+import { ArrowLeft, Calendar, Flag, User, Building2, Mail, Phone, Edit, Upload, Paperclip, Clock, MessageSquare, Send, Trash2, CheckCircle, Users, MessageCircle, Linkedin, CheckSquare, StickyNote, CircleCheckBig } from "lucide-react";
 import { useState } from "react";
 import type { Task, TaskType, TaskPriority, TaskStatus } from "../../types/bd";
 import { CustomDropdown } from "./CustomDropdown";
@@ -28,6 +28,8 @@ export function TaskDetailInline({ task, onBack, onUpdate, onDelete, customers, 
   const [newComment, setNewComment] = useState("");
   const [comments, setComments] = useState<Comment[]>([]);
   const [attachments, setAttachments] = useState<string[]>([]);
+
+  const isCompleted = editedTask.status === 'Completed';
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -260,7 +262,7 @@ export function TaskDetailInline({ task, onBack, onUpdate, onDelete, customers, 
           </button>
 
           {/* Mark as Complete CTA - Only show if not already completed */}
-          {editedTask.status !== 'Completed' && (
+          {editedTask.status !== 'Completed' ? (
             <button
               onClick={handleMarkAsComplete}
               className="px-4 py-2 rounded-lg text-[13px] font-medium text-white transition-colors flex items-center gap-2"
@@ -278,6 +280,18 @@ export function TaskDetailInline({ task, onBack, onUpdate, onDelete, customers, 
               <CheckCircle size={16} />
               Mark as Complete
             </button>
+          ) : (
+            <span
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-[13px] font-medium"
+              style={{
+                backgroundColor: "#E8F5F3",
+                color: "#0F766E",
+                border: "1px solid #0F766E30"
+              }}
+            >
+              <CircleCheckBig size={15} />
+              Completed
+            </span>
           )}
         </div>
       </div>
@@ -355,6 +369,7 @@ export function TaskDetailInline({ task, onBack, onUpdate, onDelete, customers, 
                     setEditedTask({ ...editedTask, type: value as TaskType });
                     handleSave();
                   }}
+                  disabled={isCompleted}
                 />
               </div>
 
@@ -370,11 +385,13 @@ export function TaskDetailInline({ task, onBack, onUpdate, onDelete, customers, 
                     setEditedTask({ ...editedTask, due_date: e.target.value });
                     handleSave();
                   }}
+                  disabled={isCompleted}
                   className="w-full px-3 py-2.5 rounded-lg text-[13px] focus:outline-none focus:ring-2"
                   style={{
                     border: "1px solid var(--neuron-ui-border)",
-                    backgroundColor: "#FFFFFF",
-                    color: "#12332B"
+                    backgroundColor: isCompleted ? "#F9FAFB" : "#FFFFFF",
+                    color: isCompleted ? "#9CA3AF" : "#12332B",
+                    cursor: isCompleted ? "not-allowed" : undefined
                   }}
                 />
               </div>
@@ -407,11 +424,13 @@ export function TaskDetailInline({ task, onBack, onUpdate, onDelete, customers, 
                   onBlur={handleSave}
                   placeholder="Add remarks..."
                   rows={3}
+                  disabled={isCompleted}
                   className="w-full px-3 py-2.5 rounded-lg text-[13px] focus:outline-none focus:ring-2 resize-none"
                   style={{
                     border: "1px solid var(--neuron-ui-border)",
-                    backgroundColor: "#FFFFFF",
-                    color: "#12332B"
+                    backgroundColor: isCompleted ? "#F9FAFB" : "#FFFFFF",
+                    color: isCompleted ? "#9CA3AF" : "#12332B",
+                    cursor: isCompleted ? "not-allowed" : undefined
                   }}
                 />
               </div>
@@ -426,6 +445,14 @@ export function TaskDetailInline({ task, onBack, onUpdate, onDelete, customers, 
                   <span className="text-[11px] uppercase tracking-wide" style={{ color: "#667085" }}>Last Updated</span>
                   <span className="text-[13px]" style={{ color: "#12332B" }}>{formatDateTime(task.updated_at)}</span>
                 </div>
+                {isCompleted && (
+                  <div className="flex items-center gap-1.5 pt-2">
+                    <CircleCheckBig size={12} style={{ color: "#0F766E" }} />
+                    <span className="text-[11px]" style={{ color: "#0F766E" }}>
+                      Converted to activity
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
           </div>

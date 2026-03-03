@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { CustomCheckbox } from "../../bd/CustomCheckbox";
 import { CustomDropdown } from "../../bd/CustomDropdown";
 import { FormattedNumberInput } from "./FormattedNumberInput";
+import { CatalogItemCombobox } from "./CatalogItemCombobox";
 
 export interface PricingItemData {
   id: string;
@@ -21,6 +22,7 @@ export interface PricingItemData {
   service_tag?: string; // For compatibility
   status?: string; // For Billing (unbilled/billed/paid)
   created_at?: string; // For Billing
+  catalog_item_id?: string; // Catalog linkage (Item Master reference)
 }
 
 export interface UniversalPricingRowProps {
@@ -43,6 +45,8 @@ export interface UniversalPricingRowProps {
     onRemove?: () => void;
   };
   customActions?: React.ReactNode;
+  serviceType?: string; // For CatalogItemCombobox service-type-aware sorting
+  itemType?: "expense" | "charge" | "both"; // For CatalogItemCombobox auto-type on create
 }
 
 export function UniversalPricingRow({
@@ -57,7 +61,9 @@ export function UniversalPricingRow({
     priceEditable: false
   },
   handlers,
-  customActions
+  customActions,
+  serviceType,
+  itemType
 }: UniversalPricingRowProps) {
   const { simpleMode, showCost, showMarkup, showTax, showForex, priceEditable, showPHPConversion } = config;
   const isViewMode = mode === "view";
@@ -112,41 +118,48 @@ export function UniversalPricingRow({
           alignItems: "center"
         }}
       >
-        {/* Item */}
+        {/* Item — CatalogItemCombobox in edit mode, plain text in view mode */}
         <div style={{ display: "flex", flexDirection: "column" }}>
-          <input
-            type="text"
-            value={data.description}
-            onChange={(e) => handleFieldChange('description', e.target.value)}
-            placeholder="Item description"
-            title={data.description}
-            disabled={isViewMode}
-            style={{
-              width: "100%",
-              padding: "6px 8px",
-              fontSize: "13px",
-              border: "1px solid #E0E6E4",
-              borderRadius: "6px",
-              backgroundColor: isViewMode ? "#F9FAFB" : "white",
-              fontWeight: 500,
-              color: "#2C3E38",
-              transition: "all 0.15s ease",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-              cursor: isViewMode ? "default" : "text"
-            }}
-            onFocus={(e) => {
-              if (isViewMode) return;
-              e.currentTarget.style.borderColor = "var(--neuron-brand-teal)";
-              e.currentTarget.style.boxShadow = "0 0 0 3px rgba(15, 118, 110, 0.08)";
-            }}
-            onBlur={(e) => {
-              if (isViewMode) return;
-              e.currentTarget.style.borderColor = "#E0E6E4";
-              e.currentTarget.style.boxShadow = "none";
-            }}
-          />
+          {isViewMode ? (
+            <div
+              title={data.description}
+              style={{
+                width: "100%",
+                padding: "6px 8px",
+                fontSize: "13px",
+                border: "1px solid #E0E6E4",
+                borderRadius: "6px",
+                backgroundColor: "#F9FAFB",
+                fontWeight: 500,
+                color: "#2C3E38",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+                cursor: "default",
+              }}
+            >
+              {data.description || "\u00A0"}
+            </div>
+          ) : (
+            <CatalogItemCombobox
+              value={data.description}
+              catalogItemId={data.catalog_item_id}
+              serviceType={serviceType}
+              itemType={itemType}
+              onChange={(description, catalogItemId, defaults) => {
+                handleFieldChange('description', description);
+                if (catalogItemId !== undefined) {
+                  handleFieldChange('catalog_item_id', catalogItemId);
+                }
+                // Apply defaults from catalog when selecting an item
+                if (defaults) {
+                  if (defaults.currency) handleFieldChange('currency', defaults.currency);
+                  if (defaults.is_taxable !== undefined) handleFieldChange('is_taxed', defaults.is_taxable);
+                }
+              }}
+              placeholder="Item description"
+            />
+          )}
           {/* Date Subtitle for Billing Mode */}
           {simpleMode && data.created_at && (
              <span style={{ fontSize: "11px", color: "#9CA3AF", marginTop: "4px", paddingLeft: "4px" }}>

@@ -23,12 +23,12 @@ interface ContractStatusSelectorProps {
   showIcon?: boolean;
 }
 
-const STATUS_CONFIG: Record<ContractStatus, { text: string; bg: string; borderColor?: string; icon: any }> = {
-  Draft:    { text: "#6B7280", bg: "#F3F4F6", icon: FileText },
-  Active:   { text: "#059669", bg: "#D1FAE5", icon: CheckCircle },
-  Expiring: { text: "#D97706", bg: "#FEF3C7", icon: AlertTriangle },
-  Expired:  { text: "#6B7280", bg: "#F3F4F6", borderColor: "#D1D5DB", icon: Clock },
-  Renewed:  { text: "#7C3AED", bg: "#EDE9FE", icon: RefreshCw },
+const STATUS_CONFIG: Record<ContractStatus, { color: string; icon: any }> = {
+  Draft:    { color: "#6B7280", icon: FileText },
+  Active:   { color: "#059669", icon: CheckCircle },
+  Expiring: { color: "#D97706", icon: AlertTriangle },
+  Expired:  { color: "#6B7280", icon: Clock },
+  Renewed:  { color: "#7C3AED", icon: RefreshCw },
 };
 
 export function ContractStatusSelector({
@@ -65,9 +65,9 @@ export function ContractStatusSelector({
           className
         )}
         style={{
-          backgroundColor: config.bg,
-          color: config.text,
-          border: config.borderColor ? `1px solid ${config.borderColor}` : undefined,
+          backgroundColor: "#FFFFFF",
+          color: config.color,
+          border: "1px solid #E5E7EB",
         }}
       >
         {showIcon && Icon && <Icon size={16} />}
@@ -84,9 +84,9 @@ export function ContractStatusSelector({
       size="md"
       buttonClassName={cn("rounded-full font-medium min-w-[140px]", className)}
       buttonStyle={{
-        backgroundColor: config.bg,
-        color: config.text,
-        border: config.borderColor ? `1px solid ${config.borderColor}` : undefined,
+        backgroundColor: "#FFFFFF",
+        color: config.color,
+        border: "1px solid #E5E7EB",
       }}
     />
   );

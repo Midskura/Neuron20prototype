@@ -54,9 +54,9 @@ export function ProjectStatusSelector({
           className
         )}
         style={{
-          backgroundColor: style.bg,
+          backgroundColor: "#FFFFFF",
           color: style.text,
-          border: style.borderColor ? `1px solid ${style.borderColor}` : undefined
+          border: "1px solid #E5E7EB",
         }}
       >
         {showIcon && Icon && <Icon size={16} />}
@@ -74,9 +74,9 @@ export function ProjectStatusSelector({
       size="md"
       buttonClassName={cn("rounded-full font-medium min-w-[140px]", className)}
       buttonStyle={{
-        backgroundColor: style.bg,
+        backgroundColor: "#FFFFFF",
         color: style.text,
-        border: style.borderColor ? `1px solid ${style.borderColor}` : undefined
+        border: "1px solid #E5E7EB",
       }}
     />
   );

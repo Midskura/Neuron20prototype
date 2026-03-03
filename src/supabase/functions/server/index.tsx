@@ -7,6 +7,7 @@ import * as accountingHandlers from "./accounting-handlers.tsx";
 import * as newAccounting from "./accounting-new-api.ts";
 import * as coaSeeder from "./seed_coa_balance_sheet.tsx";
 import * as coaSeederIS from "./seed_coa_income_statement.tsx";
+import * as catalogHandlers from "./catalog-handlers.tsx";
 
 const app = new Hono();
 
@@ -4838,6 +4839,7 @@ app.post("/make-server-c142e950/forwarding-bookings", async (c) => {
     const newBooking = {
       ...bookingData,
       bookingId,
+      serviceType: "Forwarding",
       createdAt: timestamp,
       updatedAt: timestamp,
     };
@@ -5023,6 +5025,7 @@ app.post("/make-server-c142e950/trucking-bookings", async (c) => {
     const newBooking = {
       ...bookingData,
       bookingId,
+      serviceType: "Trucking",
       createdAt: timestamp,
       updatedAt: timestamp,
     };
@@ -5208,6 +5211,7 @@ app.post("/make-server-c142e950/marine-insurance-bookings", async (c) => {
     const newBooking = {
       ...bookingData,
       bookingId,
+      serviceType: "Marine Insurance",
       createdAt: timestamp,
       updatedAt: timestamp,
     };
@@ -5393,6 +5397,7 @@ app.post("/make-server-c142e950/brokerage-bookings", async (c) => {
     const newBooking = {
       ...bookingData,
       bookingId,
+      serviceType: "Brokerage",
       createdAt: timestamp,
       updatedAt: timestamp,
     };
@@ -5578,6 +5583,7 @@ app.post("/make-server-c142e950/others-bookings", async (c) => {
     const newBooking = {
       ...bookingData,
       bookingId,
+      serviceType: "Others",
       createdAt: timestamp,
       updatedAt: timestamp,
     };
@@ -10967,5 +10973,37 @@ app.get("/make-server-c142e950/contracts/by-customer/:customerName", async (c) =
     return c.json({ success: false, error: `Error fetching customer contracts: ${String(error)}` }, 500);
   }
 });
+
+// ==================== EXPENSE & CHARGE CATALOG API ====================
+
+// List catalog items (with optional search, service_type, type filters)
+app.get("/make-server-c142e950/catalog/items", (c) => catalogHandlers.listCatalogItems(c));
+
+// Get single catalog item
+app.get("/make-server-c142e950/catalog/items/:id", (c) => catalogHandlers.getCatalogItem(c));
+
+// Create catalog item
+app.post("/make-server-c142e950/catalog/items", (c) => catalogHandlers.createCatalogItem(c));
+
+// Update catalog item
+app.put("/make-server-c142e950/catalog/items/:id", (c) => catalogHandlers.updateCatalogItem(c));
+
+// Soft-delete (deactivate) catalog item
+app.delete("/make-server-c142e950/catalog/items/:id", (c) => catalogHandlers.deleteCatalogItem(c));
+
+// List catalog categories
+app.get("/make-server-c142e950/catalog/categories", (c) => catalogHandlers.listCatalogCategories(c));
+
+// Create catalog category
+app.post("/make-server-c142e950/catalog/categories", (c) => catalogHandlers.createCatalogCategory(c));
+
+// Seed catalog with common Philippine freight forwarding items (idempotent)
+app.post("/make-server-c142e950/catalog/seed", (c) => catalogHandlers.seedCatalogItems(c));
+
+// Audit matrix: pivot table of bookings × catalog items
+app.get("/make-server-c142e950/catalog/audit/matrix", (c) => catalogHandlers.auditMatrix(c));
+
+// Audit summary: per-catalog-item aggregation
+app.get("/make-server-c142e950/catalog/audit/summary", (c) => catalogHandlers.auditSummary(c));
 
 Deno.serve(app.fetch);

@@ -23,6 +23,7 @@ interface UnifiedInvoicesTabProps {
   onRefresh?: () => void;
   title?: string;
   subtitle?: string;
+  readOnly?: boolean;
 }
 
 export function UnifiedInvoicesTab({ 
@@ -32,6 +33,7 @@ export function UnifiedInvoicesTab({
   onRefresh,
   title,
   subtitle,
+  readOnly = false,
 }: UnifiedInvoicesTabProps) {
   const { invoices, collections, billingItems: rawBillingItems, refresh } = financials;
 
@@ -263,13 +265,15 @@ export function UnifiedInvoicesTab({
         </div>
         
         <div className="flex items-center gap-3">
-           <button
-             onClick={() => setInterfaceMode('create')}
-             className="flex items-center gap-2 px-4 py-2 bg-[#0F766E] text-white rounded-lg hover:bg-[#0D6559] transition-colors font-medium text-[14px]"
-           >
-             <Plus size={16} />
-             New Invoice
-           </button>
+           {!readOnly && (
+             <button
+               onClick={() => setInterfaceMode('create')}
+               className="flex items-center gap-2 px-4 py-2 bg-[#0F766E] text-white rounded-lg hover:bg-[#0D6559] transition-colors font-medium text-[14px]"
+             >
+               <Plus size={16} />
+               New Invoice
+             </button>
+           )}
         </div>
       </div>
 

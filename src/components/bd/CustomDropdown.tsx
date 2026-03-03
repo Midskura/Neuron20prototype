@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { ChevronDown, Check } from "lucide-react";
 
 interface DropdownOption {
@@ -47,18 +48,49 @@ export function CustomDropdown({
 }: CustomDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number; minWidth: number } | null>(null);
 
-  // Close dropdown when clicking outside
+  // Compute position when opening
   useEffect(() => {
+    if (isOpen && buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      setMenuPos({ top: rect.bottom + 4, left: rect.left, minWidth: rect.width });
+    }
+  }, [isOpen]);
+
+  // Close dropdown when clicking outside (check both trigger and portal menu)
+  useEffect(() => {
+    if (!isOpen) return;
     const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (
+        dropdownRef.current && !dropdownRef.current.contains(target) &&
+        menuRef.current && !menuRef.current.contains(target)
+      ) {
         setIsOpen(false);
       }
     };
 
     document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [isOpen]);
+
+  // Reposition menu on scroll so it stays anchored to the button
+  useEffect(() => {
+    if (!isOpen || !buttonRef.current) return;
+    const updatePosition = () => {
+      if (buttonRef.current) {
+        const rect = buttonRef.current.getBoundingClientRect();
+        setMenuPos({ top: rect.bottom + 4, left: rect.left, minWidth: rect.width });
+      }
+    };
+    window.addEventListener("scroll", updatePosition, true);
+    return () => window.removeEventListener("scroll", updatePosition, true);
+  }, [isOpen]);
 
   const selectedOption = options.find(opt => opt.value === value);
   const displayValue = multiSelect
@@ -109,6 +141,7 @@ export function CustomDropdown({
     return (
       <div ref={dropdownRef} className="relative">
         <button
+          ref={buttonRef}
           onClick={() => !disabled && setIsOpen(!isOpen)}
           disabled={disabled}
           type="button"
@@ -134,7 +167,9 @@ export function CustomDropdown({
           }}
         >
           <span style={{ 
-            color: (multiSelect ? multiValue.length > 0 : value) ? "#12332B" : "#9CA3AF",
+            color: buttonStyle?.color 
+              ? "inherit" 
+              : (multiSelect ? multiValue.length > 0 : value) ? "#12332B" : "#9CA3AF",
             flex: 1, 
             textAlign: "left", 
             display: "flex", 
@@ -151,7 +186,7 @@ export function CustomDropdown({
           <ChevronDown 
             size={currentSize.iconSize} 
             style={{ 
-              color: "#667085",
+              color: buttonStyle?.color ? "inherit" : "#667085",
               transition: "transform 0.2s",
               transform: isOpen ? "rotate(180deg)" : "rotate(0deg)",
               flexShrink: 0
@@ -160,66 +195,76 @@ export function CustomDropdown({
         </button>
 
         {/* Dropdown Menu */}
-        {isOpen && !disabled && (
-          <div
-            className="absolute top-full left-0 mt-1 rounded-lg overflow-hidden z-50 min-w-full"
-            style={{
-              backgroundColor: "#FFFFFF",
-              border: "1px solid var(--neuron-ui-border)",
-              boxShadow: "0px 4px 6px -2px rgba(16, 24, 40, 0.03), 0px 12px 16px -4px rgba(16, 24, 40, 0.08)",
-              maxHeight: "240px",
-              overflowY: "auto"
-            }}
-          >
-            {options.map((option) => {
-              const isSelected = multiSelect
-                ? multiValue.includes(option.value)
-                : value === option.value;
-              return (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => {
-                    if (multiSelect) {
-                      handleMultiToggle(option.value);
-                    } else {
-                      onChange(option.value);
-                      setIsOpen(false);
-                    }
-                  }}
-                  className={`w-full ${currentSize.padding} text-left ${currentSize.fontSize} transition-colors flex items-center ${currentSize.gap}`}
-                  style={{
-                    backgroundColor: isSelected ? "#E8F5F3" : "#FFFFFF",
-                    color: isSelected ? "#0F766E" : "#12332B",
-                    borderBottom: "1px solid #F3F4F6"
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!isSelected) {
-                      e.currentTarget.style.backgroundColor = "#F9FAFB";
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = isSelected ? "#E8F5F3" : "#FFFFFF";
-                  }}
-                >
-                  {multiSelect && (
-                    <span style={{
-                      width: "16px", height: "16px",
-                      borderRadius: "3px",
-                      border: isSelected ? "none" : "1.5px solid #D1D5DB",
-                      backgroundColor: isSelected ? "#0F766E" : "transparent",
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      flexShrink: 0,
-                    }}>
-                      {isSelected && <Check size={11} color="white" strokeWidth={3} />}
-                    </span>
-                  )}
-                  {option.icon && <span style={{ display: "flex", alignItems: "center" }}>{option.icon}</span>}
-                  {option.label}
-                </button>
-              );
-            })}
-          </div>
+        {isOpen && !disabled && menuPos && (
+          createPortal(
+            <div
+              ref={menuRef}
+              className="rounded-lg overflow-hidden min-w-full"
+              style={{
+                position: "fixed",
+                backgroundColor: "#FFFFFF",
+                border: "1px solid var(--neuron-ui-border)",
+                boxShadow: "0px 4px 6px -2px rgba(16, 24, 40, 0.03), 0px 12px 16px -4px rgba(16, 24, 40, 0.08)",
+                maxHeight: "240px",
+                overflowY: "auto",
+                zIndex: 9999,
+                top: menuPos.top,
+                left: menuPos.left,
+                minWidth: menuPos.minWidth,
+                width: "max-content"
+              }}
+            >
+              {options.map((option) => {
+                const isSelected = multiSelect
+                  ? multiValue.includes(option.value)
+                  : value === option.value;
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => {
+                      if (multiSelect) {
+                        handleMultiToggle(option.value);
+                      } else {
+                        onChange(option.value);
+                        setIsOpen(false);
+                      }
+                    }}
+                    className={`w-full ${currentSize.padding} text-left ${currentSize.fontSize} transition-colors flex items-center ${currentSize.gap}`}
+                    style={{
+                      backgroundColor: isSelected ? "#E8F5F3" : "#FFFFFF",
+                      color: isSelected ? "#0F766E" : "#12332B",
+                      borderBottom: "1px solid #F3F4F6"
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!isSelected) {
+                        e.currentTarget.style.backgroundColor = "#F9FAFB";
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = isSelected ? "#E8F5F3" : "#FFFFFF";
+                    }}
+                  >
+                    {multiSelect && (
+                      <span style={{
+                        width: "16px", height: "16px",
+                        borderRadius: "3px",
+                        border: isSelected ? "none" : "1.5px solid #D1D5DB",
+                        backgroundColor: isSelected ? "#0F766E" : "transparent",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        flexShrink: 0,
+                      }}>
+                        {isSelected && <Check size={11} color="white" strokeWidth={3} />}
+                      </span>
+                    )}
+                    {option.icon && <span style={{ display: "flex", alignItems: "center" }}>{option.icon}</span>}
+                    {option.label}
+                  </button>
+                );
+              })}
+            </div>,
+            document.body
+          )
         )}
       </div>
     );
@@ -237,6 +282,7 @@ export function CustomDropdown({
       {/* Dropdown */}
       <div ref={dropdownRef} className="relative">
         <button
+          ref={buttonRef}
           onClick={() => !disabled && setIsOpen(!isOpen)}
           disabled={disabled}
           type="button"
@@ -274,66 +320,76 @@ export function CustomDropdown({
         </button>
 
         {/* Dropdown Menu */}
-        {isOpen && !disabled && (
-          <div
-            className="absolute top-full left-0 mt-1 rounded-lg overflow-hidden z-50 w-full"
-            style={{
-              backgroundColor: "#FFFFFF",
-              border: "1px solid #E5E7EB",
-              boxShadow: "0px 4px 6px -2px rgba(16, 24, 40, 0.03), 0px 12px 16px -4px rgba(16, 24, 40, 0.08)",
-              maxHeight: "240px",
-              overflowY: "auto"
-            }}
-          >
-            {options.map((option, index) => {
-              const isSelected = multiSelect
-                ? multiValue.includes(option.value)
-                : value === option.value;
-              return (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => {
-                    if (multiSelect) {
-                      handleMultiToggle(option.value);
-                    } else {
-                      onChange(option.value);
-                      setIsOpen(false);
-                    }
-                  }}
-                  className="w-full px-3.5 py-2.5 text-left text-sm transition-colors flex items-center gap-2"
-                  style={{
-                    backgroundColor: isSelected ? "#E8F5F3" : "#FFFFFF",
-                    color: isSelected ? "#0F766E" : "#0a1d4d",
-                    borderBottom: index < options.length - 1 ? "1px solid #F3F4F6" : "none"
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!isSelected) {
-                      e.currentTarget.style.backgroundColor = "#F9FAFB";
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = isSelected ? "#E8F5F3" : "#FFFFFF";
-                  }}
-                >
-                  {multiSelect && (
-                    <span style={{
-                      width: "16px", height: "16px",
-                      borderRadius: "3px",
-                      border: isSelected ? "none" : "1.5px solid #D1D5DB",
-                      backgroundColor: isSelected ? "#0F766E" : "transparent",
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      flexShrink: 0,
-                    }}>
-                      {isSelected && <Check size={11} color="white" strokeWidth={3} />}
-                    </span>
-                  )}
-                  {option.icon && <span style={{ display: "flex", alignItems: "center" }}>{option.icon}</span>}
-                  {option.label}
-                </button>
-              );
-            })}
-          </div>
+        {isOpen && !disabled && menuPos && (
+          createPortal(
+            <div
+              ref={menuRef}
+              className="rounded-lg overflow-hidden"
+              style={{
+                position: "fixed",
+                backgroundColor: "#FFFFFF",
+                border: "1px solid #E5E7EB",
+                boxShadow: "0px 4px 6px -2px rgba(16, 24, 40, 0.03), 0px 12px 16px -4px rgba(16, 24, 40, 0.08)",
+                maxHeight: "240px",
+                overflowY: "auto",
+                zIndex: 9999,
+                top: menuPos.top,
+                left: menuPos.left,
+                minWidth: menuPos.minWidth,
+                width: "max-content"
+              }}
+            >
+              {options.map((option, index) => {
+                const isSelected = multiSelect
+                  ? multiValue.includes(option.value)
+                  : value === option.value;
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => {
+                      if (multiSelect) {
+                        handleMultiToggle(option.value);
+                      } else {
+                        onChange(option.value);
+                        setIsOpen(false);
+                      }
+                    }}
+                    className="w-full px-3.5 py-2.5 text-left text-sm transition-colors flex items-center gap-2"
+                    style={{
+                      backgroundColor: isSelected ? "#E8F5F3" : "#FFFFFF",
+                      color: isSelected ? "#0F766E" : "#0a1d4d",
+                      borderBottom: index < options.length - 1 ? "1px solid #F3F4F6" : "none"
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!isSelected) {
+                        e.currentTarget.style.backgroundColor = "#F9FAFB";
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = isSelected ? "#E8F5F3" : "#FFFFFF";
+                    }}
+                  >
+                    {multiSelect && (
+                      <span style={{
+                        width: "16px", height: "16px",
+                        borderRadius: "3px",
+                        border: isSelected ? "none" : "1.5px solid #D1D5DB",
+                        backgroundColor: isSelected ? "#0F766E" : "transparent",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        flexShrink: 0,
+                      }}>
+                        {isSelected && <Check size={11} color="white" strokeWidth={3} />}
+                      </span>
+                    )}
+                    {option.icon && <span style={{ display: "flex", alignItems: "center" }}>{option.icon}</span>}
+                    {option.label}
+                  </button>
+                );
+              })}
+            </div>,
+            document.body
+          )
         )}
       </div>
     </div>

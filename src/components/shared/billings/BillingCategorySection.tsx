@@ -376,6 +376,8 @@ export function BillingCategorySection({
                     key={item.id}
                     data={pricingData}
                     mode={effectiveViewMode ? "view" : "edit"} // Controlled by parent
+                    serviceType={item.service_type}
+                    itemType="charge"
                     config={{
                       simpleMode: true,
                       showCost: false,

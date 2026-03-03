@@ -27,6 +27,7 @@ import { OperationsReports } from "./components/operations/OperationsReports";
 import { DiagnosticsPage } from "./components/DiagnosticsPage";
 import { UserProvider, useUser } from "./hooks/useUser";
 import { NeuronCacheProvider } from "./hooks/useNeuronCache";
+import { AppModeProvider, useAppMode } from "./config/appMode";
 import { toast, Toaster } from "sonner@2.0.3";
 import type { Customer } from "./types/bd";
 import logoImage from "figma:asset/28c84ed117b026fbf800de0882eb478561f37f4f.png";
@@ -34,6 +35,7 @@ import { DesignSystemGuide } from "./components/DesignSystemGuide";
 
 function LoginPage() {
   const { setUser } = useUser();
+  const { mode, setMode } = useAppMode();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -134,6 +136,35 @@ function LoginPage() {
           </button>
         </form>
 
+        {/* App Mode Toggle */}
+        <div className="mt-6">
+          <p className="text-center text-[#667085] text-xs font-medium mb-2.5">System Mode</p>
+          <div className="flex rounded-lg border border-gray-200 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setMode("essentials")}
+              className="flex-1 py-2 px-3 text-xs font-medium transition-all duration-150"
+              style={{
+                backgroundColor: mode === "essentials" ? "#12332B" : "transparent",
+                color: mode === "essentials" ? "#fff" : "#667085",
+              }}
+            >
+              Essentials
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode("full")}
+              className="flex-1 py-2 px-3 text-xs font-medium transition-all duration-150 border-l border-gray-200"
+              style={{
+                backgroundColor: mode === "full" ? "#12332B" : "transparent",
+                color: mode === "full" ? "#fff" : "#667085",
+              }}
+            >
+              Full Suite
+            </button>
+          </div>
+        </div>
+
         {/* Footer */}
         <div className="mt-8 text-center">
           <p className="text-gray-400 text-sm">
@@ -183,13 +214,16 @@ function RouteWrapper({ children, page }: { children: React.ReactNode; page: str
     if (path.startsWith("/accounting/transactions")) return "acct-transactions";
     if (path.startsWith("/accounting/coa")) return "acct-coa";
     if (path.startsWith("/accounting/evouchers")) return "acct-evouchers";
+    if (path.startsWith("/accounting/invoices")) return "acct-invoices";
     if (path.startsWith("/accounting/billings")) return "acct-billings";
     if (path.startsWith("/accounting/collections")) return "acct-collections";
     if (path.startsWith("/accounting/expenses")) return "acct-expenses";
     if (path.startsWith("/accounting/ledger")) return "acct-ledger";
     if (path.startsWith("/accounting/projects")) return "acct-projects";
+    if (path.startsWith("/accounting/contracts")) return "acct-contracts";
     if (path.startsWith("/accounting/customers")) return "acct-customers";
     if (path.startsWith("/accounting/reports")) return "acct-reports";
+    if (path.startsWith("/accounting/catalog")) return "acct-catalog";
     if (path.startsWith("/hr")) return "hr";
     if (path.startsWith("/calendar")) return "calendar";
     if (path.startsWith("/inbox")) return "inbox";
@@ -234,13 +268,16 @@ function RouteWrapper({ children, page }: { children: React.ReactNode; page: str
       "acct-transactions": "/accounting/transactions",
       "acct-coa": "/accounting/coa",
       "acct-evouchers": "/accounting/evouchers",
+      "acct-invoices": "/accounting/invoices",
       "acct-billings": "/accounting/billings",
       "acct-collections": "/accounting/collections",
       "acct-expenses": "/accounting/expenses",
       "acct-ledger": "/accounting/ledger",
       "acct-projects": "/accounting/projects",
+      "acct-contracts": "/accounting/contracts",
       "acct-customers": "/accounting/customers",
       "acct-reports": "/accounting/reports",
+      "acct-catalog": "/accounting/catalog",
       "hr": "/hr",
       "calendar": "/calendar",
       "inbox": "/inbox",
@@ -739,6 +776,14 @@ function AccountingEVouchersPage() {
   );
 }
 
+function AccountingInvoicesPage() {
+  return (
+    <RouteWrapper page="acct-invoices">
+      <Accounting view="invoices" />
+    </RouteWrapper>
+  );
+}
+
 function AccountingBillingsPage() {
   return (
     <RouteWrapper page="acct-billings">
@@ -795,10 +840,26 @@ function AccountingProjectsPage() {
   );
 }
 
+function AccountingContractsPage() {
+  return (
+    <RouteWrapper page="acct-contracts">
+      <Accounting view="contracts" />
+    </RouteWrapper>
+  );
+}
+
 function AccountingCustomersPage() {
   return (
     <RouteWrapper page="acct-customers">
       <Accounting view="customers" />
+    </RouteWrapper>
+  );
+}
+
+function AccountingCatalogPage() {
+  return (
+    <RouteWrapper page="acct-catalog">
+      <Accounting view="catalog" />
     </RouteWrapper>
   );
 }
@@ -997,14 +1058,17 @@ function AppContent() {
 
         {/* Accounting */}
         <Route path="/accounting/evouchers" element={<AccountingEVouchersPage />} />
+        <Route path="/accounting/invoices" element={<AccountingInvoicesPage />} />
         <Route path="/accounting/billings" element={<AccountingBillingsPage />} />
         <Route path="/accounting/collections" element={<AccountingCollectionsPage />} />
         <Route path="/accounting/expenses" element={<AccountingExpensesPage />} />
         <Route path="/accounting/coa" element={<AccountingCoaPage />} />
         <Route path="/accounting/ledger" element={<AccountingLedgerPage />} />
         <Route path="/accounting/projects" element={<AccountingProjectsPage />} />
+        <Route path="/accounting/contracts" element={<AccountingContractsPage />} />
         <Route path="/accounting/customers" element={<AccountingCustomersPage />} />
         <Route path="/accounting/reports" element={<AccountingReportsPage />} />
+        <Route path="/accounting/catalog" element={<AccountingCatalogPage />} />
         
         {/* Other */}
         <Route path="/hr" element={<HRPage />} />
@@ -1044,9 +1108,11 @@ export default function App() {
   return (
     <UserProvider>
       <NeuronCacheProvider>
-        <BrowserRouter>
-          <AppContent />
-        </BrowserRouter>
+        <AppModeProvider>
+          <BrowserRouter>
+            <AppContent />
+          </BrowserRouter>
+        </AppModeProvider>
       </NeuronCacheProvider>
     </UserProvider>
   );

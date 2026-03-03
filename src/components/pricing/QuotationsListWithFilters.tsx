@@ -1,7 +1,9 @@
+import { getServiceIcon, getQuotationStatusColor, getQuotationStatusBgColor, formatShortDate } from "../../utils/quotation-helpers";
 import { Search, Briefcase, Ship, Shield, Truck, SlidersHorizontal, Calendar, CircleDot, Building2, FileText } from "lucide-react";
 import { useState, useRef, useMemo, useEffect } from "react";
 import type { QuotationNew, QuotationType } from "../../types/pricing";
 import { CustomDropdown } from "../bd/CustomDropdown";
+import { CustomDatePicker } from "../common/CustomDatePicker";
 import { CreateQuotationMenu } from "./CreateQuotationMenu";
 import { QuotationTypeIcon, QuotationTypeSubLabel, getQuotationTypeAccentStyle } from "./QuotationTypeIcons";
 
@@ -33,61 +35,8 @@ interface QuotationsListWithFiltersProps {
   quotations?: QuotationNew[];
   isLoading?: boolean;
   userDepartment?: "BD" | "PD";
+  onRefresh?: () => void;
 }
-
-// Get service icon based on service type
-const getServiceIcon = (service: string) => {
-  switch (service) {
-    case "Brokerage":
-      return <Briefcase size={16} style={{ color: "#667085" }} />;
-    case "Forwarding":
-      return <Ship size={16} style={{ color: "#667085" }} />;
-    case "Marine Insurance":
-      return <Shield size={16} style={{ color: "#667085" }} />;
-    case "Trucking":
-      return <Truck size={16} style={{ color: "#667085" }} />;
-    default:
-      return <FileText size={16} style={{ color: "#667085" }} />;
-  }
-};
-
-// Helper function to get status color
-const getStatusColor = (status: string): string => {
-  switch (status) {
-    case "Draft": return "#6B7280";
-    case "Pending Pricing": return "#F59E0B";
-    case "Quotation": return "#8B5CF6";
-    case "Approved": return "#10B981";
-    case "Disapproved": return "#EF4444";
-    case "Cancelled": return "#6B7280";
-    // Contract-specific statuses
-    case "Active": return "#10B981";
-    case "Sent": return "#3B82F6";
-    case "Expiring": return "#F59E0B";
-    case "Expired": return "#6B7280";
-    case "Renewed": return "#8B5CF6";
-    default: return "#6B7280";
-  }
-};
-
-// Status badge background color
-const getStatusBgColor = (status: string): string => {
-  switch (status) {
-    case "Draft": return "#F3F4F6";
-    case "Pending Pricing": return "#FEF3C7";
-    case "Quotation": return "#EDE9FE";
-    case "Approved": return "#D1FAE5";
-    case "Disapproved": return "#FEE2E2";
-    case "Cancelled": return "#F3F4F6";
-    // Contract-specific statuses
-    case "Active": return "#D1FAE5";
-    case "Sent": return "#DBEAFE";
-    case "Expiring": return "#FEF3C7";
-    case "Expired": return "#F3F4F6";
-    case "Renewed": return "#EDE9FE";
-    default: return "#F3F4F6";
-  }
-};
 
 interface QuotationTableRowProps {
   item: QuotationNew;
@@ -109,15 +58,6 @@ function QuotationTableRow({ item, index, totalItems, onItemClick, gridTemplateC
   // ✨ CONTRACT: Detect contract quotations
   const isContract = item.quotation_type === "contract";
   const contractStatus = isContract ? (item.contract_status || item.status) : null;
-
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', { 
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric'
-    });
-  };
 
   const handleMouseEnter = () => {
     if (iconRef.current) {
@@ -241,7 +181,7 @@ function QuotationTableRow({ item, index, totalItems, onItemClick, gridTemplateC
             color: "#6B7280",
           }}>
             {item.contract_validity_start && item.contract_validity_end
-              ? `${formatDate(item.contract_validity_start)} - ${formatDate(item.contract_validity_end)}`
+              ? `${formatShortDate(item.contract_validity_start)} - ${formatShortDate(item.contract_validity_end)}`
               : "No validity set"
             }
           </span>
@@ -258,7 +198,7 @@ function QuotationTableRow({ item, index, totalItems, onItemClick, gridTemplateC
       {/* Date */}
       <div style={{ display: "flex", alignItems: "center" }}>
         <span style={{ fontSize: "13px", color: "#6B7280" }}>
-          {formatDate(item.created_date)}
+          {formatShortDate(item.created_date)}
         </span>
       </div>
 
@@ -268,8 +208,8 @@ function QuotationTableRow({ item, index, totalItems, onItemClick, gridTemplateC
           <span
             style={{
               fontSize: "13px",
-              color: getStatusColor(isContract ? (contractStatus || "Draft") : item.status),
-              backgroundColor: getStatusBgColor(isContract ? (contractStatus || "Draft") : item.status),
+              color: getQuotationStatusColor(isContract ? (contractStatus || "Draft") : item.status),
+              backgroundColor: getQuotationStatusBgColor(isContract ? (contractStatus || "Draft") : item.status),
               padding: "4px 8px",
               borderRadius: "4px",
               fontWeight: 500
@@ -283,9 +223,10 @@ function QuotationTableRow({ item, index, totalItems, onItemClick, gridTemplateC
   );
 }
 
-export function QuotationsListWithFilters({ onViewItem, onCreateQuotation, quotations, isLoading, userDepartment }: QuotationsListWithFiltersProps) {
+export function QuotationsListWithFilters({ onViewItem, onCreateQuotation, quotations, isLoading, userDepartment, onRefresh }: QuotationsListWithFiltersProps) {
   const [searchQuery, setSearchQuery] = useState("");
-  const [dateFilter, setDateFilter] = useState("All Time");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [statusFilter, setStatusFilter] = useState("All Statuses");
   const [serviceFilter, setServiceFilter] = useState("All Services");
   const [customerFilter, setCustomerFilter] = useState("All Customers");
@@ -412,6 +353,17 @@ export function QuotationsListWithFilters({ onViewItem, onCreateQuotation, quota
       filtered = filtered.filter(item => item.customer_name === customerFilter);
     }
 
+    // Date range filter
+    if (dateFrom) {
+      const fromDate = new Date(dateFrom);
+      filtered = filtered.filter(item => new Date(item.created_date) >= fromDate);
+    }
+    if (dateTo) {
+      const toDate = new Date(dateTo);
+      toDate.setHours(23, 59, 59, 999);
+      filtered = filtered.filter(item => new Date(item.created_date) <= toDate);
+    }
+
     // Workflow tab filter
     if (workflowTab === "Inquiries") {
       // Unpriced quotations (Draft + Pending Pricing + Needs Revision)
@@ -438,7 +390,7 @@ export function QuotationsListWithFilters({ onViewItem, onCreateQuotation, quota
     }
 
     return filtered;
-  }, [quotations, searchQuery, statusFilter, serviceFilter, customerFilter, workflowTab, typeFilter]);
+  }, [quotations, searchQuery, dateFrom, dateTo, statusFilter, serviceFilter, customerFilter, workflowTab, typeFilter]);
 
   // Calculate tab counts
   const tabCounts = useMemo(() => {
@@ -553,22 +505,16 @@ export function QuotationsListWithFilters({ onViewItem, onCreateQuotation, quota
         <div style={{ 
           display: "flex",
           gap: "4px",
+          alignItems: "center",
           marginBottom: "20px"
         }}>
           {/* Date Filter */}
-          <div style={{ minWidth: "120px" }}>
-            <CustomDropdown
-              value={dateFilter}
-              onChange={setDateFilter}
-              options={[
-                { value: "All Time", label: "All Time", icon: <Calendar size={16} /> },
-                { value: "Today", label: "Today", icon: <Calendar size={16} /> },
-                { value: "This Week", label: "This Week", icon: <Calendar size={16} /> },
-                { value: "This Month", label: "This Month", icon: <Calendar size={16} /> },
-                { value: "This Quarter", label: "This Quarter", icon: <Calendar size={16} /> }
-              ]}
-              placeholder="Select time period"
-            />
+          <div style={{ minWidth: "140px" }}>
+            <CustomDatePicker value={dateFrom} onChange={setDateFrom} placeholder="Start Date" minWidth="100%" className="w-full px-4 py-2" />
+          </div>
+          <span className="text-[13px] text-[#6B7280] font-medium px-2">to</span>
+          <div style={{ minWidth: "140px" }}>
+            <CustomDatePicker value={dateTo} onChange={setDateTo} placeholder="End Date" minWidth="100%" className="w-full px-4 py-2" />
           </div>
 
           {/* ✨ CONTRACT: Type Filter (dropdown, matching other filters) */}
@@ -597,9 +543,13 @@ export function QuotationsListWithFilters({ onViewItem, onCreateQuotation, quota
                 { value: "All Statuses", label: "All Statuses", icon: <CircleDot size={16} /> },
                 { value: "Draft", label: "Draft", icon: <CircleDot size={16} style={{ color: "#6B7280" }} /> },
                 { value: "Pending Pricing", label: "Pending Pricing", icon: <CircleDot size={16} style={{ color: "#F59E0B" }} /> },
-                { value: "Quotation", label: "Quotation", icon: <CircleDot size={16} style={{ color: "#8B5CF6" }} /> },
-                { value: "Approved", label: "Approved", icon: <CircleDot size={16} style={{ color: "#10B981" }} /> },
-                { value: "Disapproved", label: "Disapproved", icon: <CircleDot size={16} style={{ color: "#EF4444" }} /> },
+                { value: "Priced", label: "Priced", icon: <CircleDot size={16} style={{ color: "#8B5CF6" }} /> },
+                { value: "Sent to Client", label: "Sent to Client", icon: <CircleDot size={16} style={{ color: "#3B82F6" }} /> },
+                { value: "Needs Revision", label: "Needs Revision", icon: <CircleDot size={16} style={{ color: "#F59E0B" }} /> },
+                { value: "Accepted by Client", label: "Accepted by Client", icon: <CircleDot size={16} style={{ color: "#10B981" }} /> },
+                { value: "Rejected by Client", label: "Rejected by Client", icon: <CircleDot size={16} style={{ color: "#EF4444" }} /> },
+                { value: "Disapproved", label: "Disapproved", icon: <CircleDot size={16} style={{ color: "#DC2626" }} /> },
+                { value: "Converted to Project", label: "Converted to Project", icon: <CircleDot size={16} style={{ color: "#10B981" }} /> },
                 { value: "Cancelled", label: "Cancelled", icon: <CircleDot size={16} style={{ color: "#6B7280" }} /> }
               ]}
               placeholder="Select status"

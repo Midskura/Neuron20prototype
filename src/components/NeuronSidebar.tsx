@@ -25,12 +25,14 @@ import {
   Briefcase,
   Palette,
   CreditCard,
-  Handshake
+  Handshake,
+  ClipboardCheck
 } from "lucide-react";
 import logoImage from "figma:asset/28c84ed117b026fbf800de0882eb478561f37f4f.png";
 import { useUser } from "../hooks/useUser";
+import { useAppMode } from "../config/appMode";
 
-type Page = "dashboard" | "bd-contacts" | "bd-customers" | "bd-inquiries" | "projects" | "bd-projects" | "bd-contracts" | "bd-tasks" | "bd-activities" | "bd-budget-requests" | "bd-reports" | "pricing-contacts" | "pricing-customers" | "pricing-quotations" | "pricing-projects" | "pricing-contracts" | "pricing-vendors" | "pricing-reports" | "ops-forwarding" | "ops-brokerage" | "ops-trucking" | "ops-marine-insurance" | "ops-others" | "ops-reports" | "operations" | "acct-transactions" | "acct-evouchers" | "acct-billings" | "acct-collections" | "acct-expenses" | "acct-ledger" | "acct-coa" | "acct-reports" | "acct-projects" | "acct-customers" | "hr" | "calendar" | "inbox" | "ticket-queue" | "profile" | "admin" | "ticket-testing" | "activity-log" | "design-system";
+type Page = "dashboard" | "bd-contacts" | "bd-customers" | "bd-inquiries" | "projects" | "bd-projects" | "bd-contracts" | "bd-tasks" | "bd-activities" | "bd-budget-requests" | "bd-reports" | "pricing-contacts" | "pricing-customers" | "pricing-quotations" | "pricing-projects" | "pricing-contracts" | "pricing-vendors" | "pricing-reports" | "ops-forwarding" | "ops-brokerage" | "ops-trucking" | "ops-marine-insurance" | "ops-others" | "ops-reports" | "operations" | "acct-transactions" | "acct-evouchers" | "acct-billings" | "acct-invoices" | "acct-collections" | "acct-expenses" | "acct-ledger" | "acct-coa" | "acct-reports" | "acct-projects" | "acct-contracts" | "acct-customers" | "acct-catalog" | "hr" | "calendar" | "inbox" | "ticket-queue" | "profile" | "admin" | "ticket-testing" | "activity-log" | "design-system";
 
 // SVG for Philippine Peso icon
 const Vector = () => (
@@ -122,6 +124,7 @@ export function NeuronSidebar({ currentPage, onNavigate, currentUser }: NeuronSi
   
   // Use effectiveDepartment from context for dev role override support
   const { effectiveDepartment, effectiveRole } = useUser();
+  const { isEssentials } = useAppMode();
   
   // Determine what modules to show based on effective department
   const userDepartment = effectiveDepartment || currentUser?.department || "Operations";
@@ -172,18 +175,29 @@ export function NeuronSidebar({ currentPage, onNavigate, currentUser }: NeuronSi
     { id: "ops-reports" as Page, label: "Reports", icon: BarChart3 },
   ];
 
-  // Accounting sub-items
-  const acctSubItems = [
-    { id: "acct-transactions" as Page, label: "Transactions", icon: CreditCard },
-    { id: "acct-customers" as Page, label: "Customers", icon: Users },
-    { id: "acct-projects" as Page, label: "Projects", icon: Briefcase },
-    { id: "acct-evouchers" as Page, label: "E-Vouchers", icon: FileText },
-    { id: "acct-billings" as Page, label: "Billings", icon: Banknote },
-    { id: "acct-collections" as Page, label: "Collections", icon: Palette },
-    { id: "acct-expenses" as Page, label: "Expenses", icon: Palette },
-    { id: "acct-coa" as Page, label: "Chart of Accounts", icon: ListTodo },
-    { id: "acct-reports" as Page, label: "Reports", icon: BarChart3 },
-  ];
+  // Accounting sub-items — mode-aware
+  const acctSubItems = isEssentials
+    ? [
+        { id: "acct-billings" as Page, label: "Billings", icon: Banknote },
+        { id: "acct-expenses" as Page, label: "Expenses", icon: Palette },
+        { id: "acct-invoices" as Page, label: "Invoices", icon: FileText },
+        { id: "acct-collections" as Page, label: "Collections", icon: Palette },
+        { id: "acct-reports" as Page, label: "Reports", icon: BarChart3 },
+      ]
+    : [
+        { id: "acct-transactions" as Page, label: "Transactions", icon: CreditCard },
+        { id: "acct-customers" as Page, label: "Customers", icon: Users },
+        { id: "acct-projects" as Page, label: "Projects", icon: Briefcase },
+        { id: "acct-contracts" as Page, label: "Contracts", icon: Handshake },
+        { id: "acct-evouchers" as Page, label: "E-Vouchers", icon: FileText },
+        { id: "acct-billings" as Page, label: "Billings", icon: Banknote },
+        { id: "acct-invoices" as Page, label: "Invoices", icon: FileText },
+        { id: "acct-collections" as Page, label: "Collections", icon: Palette },
+        { id: "acct-expenses" as Page, label: "Expenses", icon: Palette },
+        { id: "acct-catalog" as Page, label: "Auditing", icon: ClipboardCheck },
+        { id: "acct-coa" as Page, label: "Chart of Accounts", icon: ListTodo },
+        { id: "acct-reports" as Page, label: "Reports", icon: BarChart3 },
+      ];
   
   // Check if any BD page is active
   const isBDActive = currentPage.startsWith("bd-");
@@ -648,7 +662,7 @@ export function NeuronSidebar({ currentPage, onNavigate, currentUser }: NeuronSi
             {/* Accounting Sub-items */}
             <div 
               style={{
-                maxHeight: isAcctExpanded ? "360px" : "0px",
+                maxHeight: isAcctExpanded ? "400px" : "0px",
                 opacity: isAcctExpanded ? 1 : 0,
                 overflow: "hidden",
                 transition: "max-height 0.3s ease-in-out, opacity 0.25s ease-in-out",

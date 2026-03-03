@@ -18,6 +18,7 @@ interface UnifiedExpensesTabProps {
   bookingType?: "forwarding" | "brokerage" | "trucking" | "marine-insurance" | "others";
   title?: string;
   subtitle?: string;
+  readOnly?: boolean;
 }
 
 const formatCurrency = (amount: number, currency: string = "PHP") => {
@@ -49,6 +50,7 @@ export function UnifiedExpensesTab({
   bookingType,
   title,
   subtitle,
+  readOnly = false,
 }: UnifiedExpensesTabProps) {
   
   // -- Local State for Filters & UI --
@@ -155,13 +157,15 @@ export function UnifiedExpensesTab({
           </div>
           
           <div className="flex flex-col items-end">
-            <button
-              onClick={() => setIsAddExpenseModalOpen(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-[#0F766E] text-white rounded-lg hover:bg-[#0D6559] transition-colors shadow-sm font-medium text-[14px]"
-            >
-              <Plus size={16} />
-              Add Expense
-            </button>
+            {!readOnly && (
+              <button
+                onClick={() => setIsAddExpenseModalOpen(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-[#0F766E] text-white rounded-lg hover:bg-[#0D6559] transition-colors shadow-sm font-medium text-[14px]"
+              >
+                <Plus size={16} />
+                Add Expense
+              </button>
+            )}
           </div>
         </div>
       )}

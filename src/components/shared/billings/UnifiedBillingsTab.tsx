@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from "react";
-import { Search, X, Plus, Filter, Download, Loader2, Pencil, Check } from "lucide-react";
+import { Search, X, Plus, Filter, Download, Loader2, Pencil, Check, Layers, Briefcase } from "lucide-react";
 import { CustomDropdown } from "../../bd/CustomDropdown";
 import { CustomDatePicker } from "../../common/CustomDatePicker";
 import { BillingsTable } from "./BillingsTable";
@@ -26,6 +26,7 @@ export interface BillingItem {
   source_quotation_item_id?: string; // Matching backend field for imported items
   source_type?: 'quotation_item' | 'billable_expense' | 'manual';
   is_virtual?: boolean;
+  catalog_item_id?: string; // Catalog linkage (Item Master reference)
   [key: string]: any;
 }
 
@@ -43,6 +44,10 @@ interface UnifiedBillingsTabProps {
   subtitle?: string;
   /** Optional extra action buttons rendered alongside "Add Billing" */
   extraActions?: React.ReactNode;
+  /** Enable group-by toggle (only for contract billings). When set, shows Booking/Category toggle. */
+  enableGroupByToggle?: boolean;
+  /** Linked bookings metadata for booking-grouped view headers */
+  linkedBookings?: any[];
 }
 
 const formatCurrency = (amount: number, currency: string = "PHP") => {
@@ -63,7 +68,9 @@ export function UnifiedBillingsTab({
   readOnly = false,
   title,
   subtitle,
-  extraActions
+  extraActions,
+  enableGroupByToggle = false,
+  linkedBookings = [],
 }: UnifiedBillingsTabProps) {
   
   // -- Local State --
@@ -77,6 +84,8 @@ export function UnifiedBillingsTab({
   // Removed isImporting state as import button is gone
   // Removed isEditing state - now derived from readOnly
   const [pendingChanges, setPendingChanges] = useState(false);
+  // ✨ Group-by toggle state
+  const [groupBy, setGroupBy] = useState<"category" | "booking">(enableGroupByToggle ? "booking" : "category");
 
   // Category Dropdown State
   const [showAddCategoryDropdown, setShowAddCategoryDropdown] = useState(false);
@@ -206,7 +215,8 @@ export function UnifiedBillingsTab({
         const matchesSearch = 
           (item.description || "").toLowerCase().includes(query) ||
           (item.service_type || "").toLowerCase().includes(query) ||
-          (item.quotation_category || "").toLowerCase().includes(query);
+          (item.quotation_category || "").toLowerCase().includes(query) ||
+          (item.booking_id || "").toLowerCase().includes(query);
         
         if (!matchesSearch) return false;
       }
@@ -548,6 +558,44 @@ export function UnifiedBillingsTab({
         )}
       </div>
 
+      {/* ✨ Group-by Toggle (only for contract billings) */}
+      {enableGroupByToggle && (
+        <div className="flex items-center gap-2 mb-4">
+          <span style={{ fontSize: "12px", fontWeight: 600, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+            Group by:
+          </span>
+          <div className="flex items-center rounded-lg overflow-hidden" style={{ border: "1px solid #D1D5DB" }}>
+            <button
+              onClick={() => setGroupBy("booking")}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium transition-colors"
+              style={{
+                backgroundColor: groupBy === "booking" ? "#0F766E" : "white",
+                color: groupBy === "booking" ? "white" : "#6B7280",
+                border: "none",
+                cursor: "pointer",
+                borderRight: "1px solid #D1D5DB",
+              }}
+            >
+              <Briefcase size={13} />
+              Booking
+            </button>
+            <button
+              onClick={() => setGroupBy("category")}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium transition-colors"
+              style={{
+                backgroundColor: groupBy === "category" ? "#0F766E" : "white",
+                color: groupBy === "category" ? "white" : "#6B7280",
+                border: "none",
+                cursor: "pointer",
+              }}
+            >
+              <Layers size={13} />
+              Category
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Table Component */}
       <BillingsTable
         data={filteredItems.map(item => ({
@@ -581,6 +629,8 @@ export function UnifiedBillingsTab({
         onRenameCategory={!readOnly ? handleRenameCategory : undefined}
         onDeleteCategory={!readOnly ? handleDeleteCategory : undefined}
         onAddItem={!readOnly ? handleAddItemToCategory : undefined}
+        groupBy={groupBy}
+        linkedBookings={linkedBookings}
       />
     </div>
   );

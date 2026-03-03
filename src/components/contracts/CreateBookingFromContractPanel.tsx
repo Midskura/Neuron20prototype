@@ -5,12 +5,13 @@
  * Structural mirror of CreateBookingFromProjectPanel.tsx — same pattern,
  * different source entity.
  *
- * Supports all 5 contract-eligible services:
+ * Supports contract-eligible services only:
  *   - Brokerage (Standard)
  *   - Trucking
  *   - Others
- *   - Forwarding
- *   - Marine Insurance
+ *
+ * NOTE: Forwarding and Marine Insurance are NOT eligible for contracts.
+ * Filtering is enforced in ContractDetailView's contractServices array.
  *
  * On successful creation:
  *   1. Sets contract_id on the booking

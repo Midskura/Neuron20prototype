@@ -13,7 +13,7 @@
  */
 
 import { useState, useEffect, useMemo } from "react";
-import { ArrowLeft, Edit3, RefreshCw, FileText, Calendar, Building2, Briefcase, Ship, Shield, Truck, Clock, Zap, Plus, ChevronDown, Layout, Layers, Users, Receipt, FileStack, DollarSign, TrendingUp, Paperclip, MessageSquare, Eye } from "lucide-react";
+import { ArrowLeft, Edit3, RefreshCw, FileText, Calendar, Building2, Briefcase, Ship, Shield, Truck, Clock, Zap, Plus, ChevronDown, Layout, Layers, Users, Receipt, FileStack, DollarSign, TrendingUp, Paperclip, MessageSquare, Eye, MoreVertical } from "lucide-react";
 import type { QuotationNew, ContractRateMatrix } from "../../types/pricing";
 import { ContractRateCardV2 as ContractRateMatrixEditor } from "./quotations/ContractRateCardV2";
 import { projectId, publicAnonKey } from "../../utils/supabase/info";
@@ -31,6 +31,7 @@ import { ProjectBookingReadOnlyView } from "../projects/ProjectBookingReadOnlyVi
 import { EntityAttachmentsTab } from "../shared/EntityAttachmentsTab";
 import { CommentsTab } from "../shared/CommentsTab";
 import { ContractStatusSelector } from "../contracts/ContractStatusSelector";
+import { getServiceIcon as getServiceIconShared, formatShortDate } from "../../utils/quotation-helpers";
 
 // ============================================
 // TYPES
@@ -52,11 +53,8 @@ type TabCategory = "dashboard" | "operations" | "accounting" | "collaboration";
 // HELPERS
 // ============================================
 
-const formatDate = (dateStr?: string) => {
-  if (!dateStr) return "—";
-  const d = new Date(dateStr);
-  return d.toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" });
-};
+/** Alias shared formatShortDate — same format as original local formatDate */
+const formatDate = formatShortDate;
 
 const getStatusColor = (status: string) => {
   switch (status) {
@@ -70,16 +68,8 @@ const getStatusColor = (status: string) => {
   }
 };
 
-const getServiceIcon = (service: string) => {
-  const iconProps = { size: 15, style: { color: "#0F766E" } };
-  switch (service) {
-    case "Brokerage": return <Briefcase {...iconProps} />;
-    case "Forwarding": return <Ship {...iconProps} />;
-    case "Trucking": return <Truck {...iconProps} />;
-    case "Marine Insurance": return <Shield {...iconProps} />;
-    default: return <FileText {...iconProps} />;
-  }
-};
+/** Contract uses teal icons at size 15 */
+const getServiceIcon = (service: string) => getServiceIconShared(service, { size: 15, color: "#0F766E" });
 
 const getDaysRemaining = (endDate?: string) => {
   if (!endDate) return null;
@@ -126,6 +116,7 @@ export function ContractDetailView({
 
   // ✨ CONTRACTS MODULE: Activate contract state
   const [isActivating, setIsActivating] = useState(false);
+  const [showActionsMenu, setShowActionsMenu] = useState(false);
 
   // ✨ CONTRACT PARITY Phase 3: Booking drill-down + Generate Billing state
   const [selectedBooking, setSelectedBooking] = useState<{ bookingId: string; bookingType: string } | null>(null);
@@ -303,9 +294,8 @@ export function ContractDetailView({
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            bookingId,
-            bookingType: serviceType,
-            filterByService: true,
+            booking_id: bookingId,
+            service_type: serviceType,
           }),
         }
       );
@@ -367,10 +357,14 @@ export function ContractDetailView({
   );
 
   // ✨ PHASE 3: Get contract services as InquiryService array
-  const contractServices: InquiryService[] = (quotation.services || []).map((s: string) => {
-    const meta = quotation.services_metadata?.find(m => m.service_type === s);
-    return meta || { service_type: s as any, service_details: {} };
-  });
+  // Contracts only support Brokerage, Trucking, and Others — exclude Forwarding & Marine Insurance
+  const CONTRACT_ELIGIBLE_SERVICES = ["Brokerage", "Trucking", "Others"];
+  const contractServices: InquiryService[] = (quotation.services || [])
+    .filter((s: string) => CONTRACT_ELIGIBLE_SERVICES.includes(s))
+    .map((s: string) => {
+      const meta = quotation.services_metadata?.find(m => m.service_type === s);
+      return meta || { service_type: s as any, service_details: {} };
+    });
 
   const handleCreateBookingForService = (service: InquiryService) => {
     setCreateBookingService(service);
@@ -497,7 +491,14 @@ export function ContractDetailView({
           </div>
           {linkedBookings.map((booking: any, idx: number) => {
             const bookingId = booking.bookingId || booking.id;
-            const serviceType = booking.serviceType || booking.bookingType || "Others";
+            // Resolve serviceType: explicit field → infer from ID prefix → fallback
+            const serviceType = booking.serviceType || booking.bookingType
+              || (bookingId?.startsWith("FWD-") ? "Forwarding"
+                : bookingId?.startsWith("BRK-") ? "Brokerage"
+                : bookingId?.startsWith("TRK-") ? "Trucking"
+                : bookingId?.startsWith("INS-") ? "Marine Insurance"
+                : bookingId?.startsWith("OTH-") ? "Others"
+                : "Others");
             const isGenerating = generatingBillingId === bookingId;
             return (
             <div
@@ -593,6 +594,8 @@ export function ContractDetailView({
         readOnly={true}
         title="Contract Billings"
         subtitle={`Read-only aggregate across ${linkedBookingIds.length} linked booking${linkedBookingIds.length !== 1 ? "s" : ""} — ${quotation.quote_number} · ${quotation.customer_name}`}
+        enableGroupByToggle={true}
+        linkedBookings={linkedBookings}
       />
     </div>
   );
@@ -781,249 +784,232 @@ export function ContractDetailView({
 
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", backgroundColor: "white" }}>
-      {/* Top bar */}
+      {/* Header Bar — matches ProjectDetail pattern */}
       <div style={{
-        padding: "16px 48px",
+        padding: "20px 48px",
         borderBottom: "1px solid var(--neuron-ui-border)",
+        backgroundColor: "white",
         display: "flex",
-        alignItems: "center",
         justifyContent: "space-between",
+        alignItems: "center"
       }}>
-        <button
-          onClick={onBack}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "8px",
-            padding: "8px 12px",
-            background: "none",
-            border: "none",
-            cursor: "pointer",
-            fontSize: "13px",
-            fontWeight: 500,
-            color: "var(--neuron-ink-secondary)",
-          }}
-        >
-          <ArrowLeft size={16} />
-          Back to Contracts
-        </button>
-
-        <div style={{ display: "flex", gap: "8px" }}>
-          {/* ✨ CONTRACTS MODULE: Activate Contract CTA — show when approved but not yet active */}
-          {showActivateCTA && (
-            <button
-              onClick={handleActivateContract}
-              disabled={isActivating}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "6px",
-                padding: "8px 16px",
-                fontSize: "13px",
-                fontWeight: 600,
-                color: "white",
-                backgroundColor: isActivating ? "#9CA3AF" : "var(--neuron-brand-green)",
-                border: "none",
-                borderRadius: "6px",
-                cursor: isActivating ? "not-allowed" : "pointer",
-                transition: "all 0.2s ease",
-              }}
-              onMouseEnter={(e) => {
-                if (!isActivating) e.currentTarget.style.backgroundColor = "#0D5F58";
-              }}
-              onMouseLeave={(e) => {
-                if (!isActivating) e.currentTarget.style.backgroundColor = "var(--neuron-brand-green)";
-              }}
-            >
-              <Zap size={14} />
-              {isActivating ? "Activating..." : "Activate Contract"}
-            </button>
-          )}
-          {/* ✨ PHASE 5: Renew button — only show for Active/Expiring/Expired contracts */}
-          {["Active", "Expiring", "Expired"].includes(contractStatus) && (
-            <button
-              onClick={() => setShowRenewModal(true)}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "6px",
-                padding: "8px 16px",
-                fontSize: "13px",
-                fontWeight: 500,
-                color: "#7C3AED",
-                backgroundColor: "white",
-                border: "1px solid #DDD6FE",
-                borderRadius: "6px",
-                cursor: "pointer",
-              }}
-            >
-              <RefreshCw size={14} />
-              Renew Contract
-            </button>
-          )}
+        <div>
           <button
-            onClick={onEdit}
+            onClick={onBack}
             style={{
               display: "flex",
               alignItems: "center",
-              gap: "6px",
-              padding: "8px 16px",
-              fontSize: "13px",
-              fontWeight: 500,
-              color: "var(--neuron-brand-green)",
-              backgroundColor: "white",
-              border: "1px solid var(--neuron-ui-border)",
-              borderRadius: "6px",
+              gap: "8px",
+              background: "none",
+              border: "none",
+              color: "var(--neuron-ink-secondary)",
               cursor: "pointer",
+              fontSize: "13px",
+              marginBottom: "12px",
+              padding: "0"
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.color = "var(--neuron-brand-green)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.color = "var(--neuron-ink-secondary)";
             }}
           >
-            <Edit3 size={14} />
-            Edit Contract
+            <ArrowLeft size={16} />
+            Back to Contracts
           </button>
+          
+          <h1 style={{ 
+            fontSize: "20px",
+            fontWeight: 600,
+            color: "var(--neuron-ink-primary)",
+            marginBottom: "4px"
+          }}>
+            {quotation.quotation_name || quotation.quote_number}
+          </h1>
+          <p style={{ fontSize: "13px", color: "var(--neuron-ink-muted, #6B7280)", margin: 0, display: "flex", alignItems: "center", gap: "8px" }}>
+            <span className="font-mono">{quotation.quote_number}</span>
+            <span className="text-[#D1D5DB]">•</span>
+            <span>{quotation.customer_name}</span>
+          </p>
         </div>
-      </div>
 
-      {/* Header */}
-      <div style={{ padding: "32px 48px 0" }}>
-        {/* Contract title line */}
-        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: "20px" }}>
-          <div>
-            <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "6px" }}>
-              <h1 style={{
-                fontSize: "24px",
-                fontWeight: 600,
-                color: "#12332B",
-                margin: 0,
-                letterSpacing: "-0.5px",
-              }}>
-                {quotation.quotation_name || quotation.quote_number}
-              </h1>
-              {/* Status badge */}
-              <ContractStatusSelector
-                status={contractStatus as any}
-                onUpdateStatus={async (newStatus) => {
-                  try {
-                    const response = await fetch(
-                      `https://${projectId}.supabase.co/functions/v1/make-server-c142e950/contracts/${quotation.id}/status`,
-                      {
-                        method: "PATCH",
-                        headers: {
-                          "Content-Type": "application/json",
-                          Authorization: `Bearer ${publicAnonKey}`,
-                        },
-                        body: JSON.stringify({
-                          status: newStatus,
-                          user: currentUser?.name || "Unknown",
-                        }),
-                      }
-                    );
-                    const data = await response.json();
-                    if (data.success) {
-                      toast.success(`Status changed to ${newStatus}`);
-                      if (onUpdate) onUpdate({ ...quotation, contract_status: newStatus });
-                    } else {
-                      toast.error(data.error || "Failed to update status");
-                    }
-                  } catch (err) {
-                    console.error("Error updating contract status:", err);
-                    toast.error("Failed to update status");
-                  }
+        {/* Actions Area */}
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            {/* ✨ Activate Contract CTA — prominent primary action */}
+            {showActivateCTA && (
+              <button
+                onClick={handleActivateContract}
+                disabled={isActivating}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  padding: "8px 16px",
+                  fontSize: "13px",
+                  fontWeight: 600,
+                  color: "white",
+                  backgroundColor: isActivating ? "#9CA3AF" : "var(--neuron-brand-green)",
+                  border: "none",
+                  borderRadius: "6px",
+                  cursor: isActivating ? "not-allowed" : "pointer",
+                  transition: "all 0.2s ease",
                 }}
-              />
-              {/* CONTRACT type badge */}
-              <span style={{
-                fontSize: "10px",
-                fontWeight: 700,
-                color: "#12332B",
-                backgroundColor: "#E8F2EE",
-                border: "1px solid #12332B",
-                padding: "3px 8px",
-                borderRadius: "4px",
-                textTransform: "uppercase",
-                letterSpacing: "0.5px",
-              }}>
-                Contract
-              </span>
-            </div>
-            <p style={{ fontSize: "13px", color: "var(--neuron-ink-muted)", margin: 0 }}>
-              {quotation.quote_number}
-            </p>
-          </div>
-        </div>
+                onMouseEnter={(e) => {
+                  if (!isActivating) e.currentTarget.style.backgroundColor = "#0D5F58";
+                }}
+                onMouseLeave={(e) => {
+                  if (!isActivating) e.currentTarget.style.backgroundColor = "var(--neuron-brand-green)";
+                }}
+              >
+                <Zap size={14} />
+                {isActivating ? "Activating..." : "Activate Contract"}
+              </button>
+            )}
 
-        {/* Meta info row */}
-        <div style={{
-          display: "flex",
-          gap: "32px",
-          marginBottom: "24px",
-          flexWrap: "wrap",
-        }}>
-          {/* Customer */}
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <Building2 size={14} style={{ color: "var(--neuron-ink-muted)" }} />
-            <div>
-              <p style={{ fontSize: "11px", color: "var(--neuron-ink-muted)", margin: "0 0 2px", textTransform: "uppercase", letterSpacing: "0.3px", fontWeight: 600 }}>Customer</p>
-              <p style={{ fontSize: "13px", color: "var(--neuron-ink-primary)", margin: 0, fontWeight: 500 }}>{quotation.customer_name}</p>
-            </div>
-          </div>
+            <ContractStatusSelector
+              status={contractStatus as any}
+              onUpdateStatus={async (newStatus) => {
+                try {
+                  const response = await fetch(
+                    `https://${projectId}.supabase.co/functions/v1/make-server-c142e950/contracts/${quotation.id}/status`,
+                    {
+                      method: "PATCH",
+                      headers: {
+                        "Content-Type": "application/json",
+                        Authorization: `Bearer ${publicAnonKey}`,
+                      },
+                      body: JSON.stringify({
+                        status: newStatus,
+                        user: currentUser?.name || "Unknown",
+                      }),
+                    }
+                  );
+                  const data = await response.json();
+                  if (data.success) {
+                    toast.success(`Status changed to ${newStatus}`);
+                    if (onUpdate) onUpdate({ ...quotation, contract_status: newStatus });
+                  } else {
+                    toast.error(data.error || "Failed to update status");
+                  }
+                } catch (err) {
+                  console.error("Error updating contract status:", err);
+                  toast.error("Failed to update status");
+                }
+              }}
+              className="mr-2"
+            />
 
-          {/* Validity */}
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <Calendar size={14} style={{ color: "var(--neuron-ink-muted)" }} />
-            <div>
-              <p style={{ fontSize: "11px", color: "var(--neuron-ink-muted)", margin: "0 0 2px", textTransform: "uppercase", letterSpacing: "0.3px", fontWeight: 600 }}>Validity Period</p>
-              <p style={{ fontSize: "13px", color: "var(--neuron-ink-primary)", margin: 0, fontWeight: 500 }}>
-                {formatDate(quotation.contract_validity_start)} — {formatDate(quotation.contract_validity_end)}
-                {daysRemaining !== null && (
-                  <span style={{
-                    marginLeft: "8px",
-                    fontSize: "11px",
-                    fontWeight: 600,
-                    color: daysRemaining <= 0 ? "#DC2626" : daysRemaining <= 30 ? "#D97706" : "#059669",
-                  }}>
-                    {daysRemaining <= 0 ? "Expired" : `${daysRemaining}d remaining`}
-                  </span>
-                )}
-              </p>
-            </div>
-          </div>
+            {/* Actions Menu (⋮) — Edit, Renew, etc. */}
+            <div style={{ position: "relative" }}>
+              <button
+                onClick={() => setShowActionsMenu(!showActionsMenu)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  padding: "10px",
+                  backgroundColor: "white",
+                  border: "1.5px solid #D1D5DB",
+                  borderRadius: "8px",
+                  cursor: "pointer",
+                  transition: "all 0.2s ease"
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.borderColor = "var(--neuron-brand-green)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.borderColor = "#D1D5DB";
+                }}
+              >
+                <MoreVertical size={18} color="var(--neuron-ink-secondary)" />
+              </button>
 
-          {/* Services */}
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <Briefcase size={14} style={{ color: "var(--neuron-ink-muted)" }} />
-            <div>
-              <p style={{ fontSize: "11px", color: "var(--neuron-ink-muted)", margin: "0 0 2px", textTransform: "uppercase", letterSpacing: "0.3px", fontWeight: 600 }}>Services</p>
-              <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
-                {quotation.services.map((s) => (
-                  <span key={s} style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: "4px",
-                    fontSize: "12px",
-                    fontWeight: 500,
-                    color: "#0F766E",
-                    backgroundColor: "#E8F5F3",
-                    padding: "3px 8px",
-                    borderRadius: "4px",
-                  }}>
-                    {getServiceIcon(s)}
-                    {s}
-                  </span>
-                ))}
-              </div>
+              {showActionsMenu && (
+                <>
+                  <div 
+                    style={{
+                      position: "fixed",
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      zIndex: 10
+                    }}
+                    onClick={() => setShowActionsMenu(false)}
+                  />
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: "calc(100% + 4px)",
+                      right: 0,
+                      backgroundColor: "white",
+                      border: "1px solid #E5E7EB",
+                      borderRadius: "8px",
+                      boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)",
+                      minWidth: "180px",
+                      zIndex: 20,
+                      overflow: "hidden"
+                    }}
+                  >
+                    <button
+                      onClick={() => {
+                        onEdit();
+                        setShowActionsMenu(false);
+                      }}
+                      style={{
+                        width: "100%",
+                        padding: "12px 16px",
+                        textAlign: "left",
+                        border: "none",
+                        background: "none",
+                        cursor: "pointer",
+                        fontSize: "14px",
+                        color: "var(--neuron-ink-primary)",
+                        transition: "background-color 0.15s ease"
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = "#F9FAFB";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = "transparent";
+                      }}
+                    >
+                      <Edit3 size={16} style={{ display: "inline", marginRight: "8px", verticalAlign: "middle" }} />
+                      Edit Contract
+                    </button>
+                    {["Active", "Expiring", "Expired"].includes(contractStatus) && (
+                      <button
+                        onClick={() => {
+                          setShowRenewModal(true);
+                          setShowActionsMenu(false);
+                        }}
+                        style={{
+                          width: "100%",
+                          padding: "10px 16px",
+                          textAlign: "left",
+                          border: "none",
+                          background: "none",
+                          fontSize: "14px",
+                          color: "#7C3AED",
+                          cursor: "pointer",
+                          transition: "background-color 0.2s ease"
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = "#F5F3FF";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.backgroundColor = "transparent";
+                        }}
+                      >
+                        <RefreshCw size={16} style={{ display: "inline", marginRight: "8px", verticalAlign: "middle" }} />
+                        Renew Contract
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
-          </div>
-
-          {/* Credit Terms */}
-          {quotation.credit_terms && (
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              <Clock size={14} style={{ color: "var(--neuron-ink-muted)" }} />
-              <div>
-                <p style={{ fontSize: "11px", color: "var(--neuron-ink-muted)", margin: "0 0 2px", textTransform: "uppercase", letterSpacing: "0.3px", fontWeight: 600 }}>Credit Terms</p>
-                <p style={{ fontSize: "13px", color: "var(--neuron-ink-primary)", margin: 0, fontWeight: 500 }}>{quotation.credit_terms}</p>
-              </div>
-            </div>
-          )}
         </div>
       </div>
 

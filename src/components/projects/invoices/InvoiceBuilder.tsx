@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
-import { Loader2, ZoomIn, ZoomOut, Maximize, ChevronDown, User, Layout, Check, FileText, Calendar, Box, Truck, CreditCard, ArrowLeft, Download, Printer, RefreshCw, Coins, Wallet } from "lucide-react";
+import { Loader2, ZoomIn, ZoomOut, Maximize, ChevronDown, User, Layout, Check, FileText, Calendar, Box, Truck, CreditCard, ArrowLeft, Download, Printer, RefreshCw, Coins } from "lucide-react";
 import { toast } from "../../ui/toast-utils";
 import type { Project } from "../../../types/pricing";
 import { Invoice, BillingLineItem, Billing, Account } from "../../../types/accounting";
@@ -8,6 +8,7 @@ import { projectId, publicAnonKey } from "../../../utils/supabase/info";
 import { InvoiceDocument, InvoicePrintOptions } from "./InvoiceDocument";
 import { SignatoryControl } from "../quotation/screen/controls/SignatoryControl";
 import { DisplayOptionsControl } from "../quotation/screen/controls/DisplayOptionsControl";
+import { CustomDropdown } from "../../bd/CustomDropdown";
 
 const API_URL = `https://${projectId}.supabase.co/functions/v1/make-server-c142e950`;
 
@@ -135,14 +136,18 @@ export function InvoiceBuilder({
             try {
                 const accs = await getAccounts();
                 // Filter to Income-type accounts for revenue recognition (DR AR / CR Revenue)
-                const incomeAccounts = accs.filter(a => 
-                  (a.type === 'Income' || a.type === 'income') && !a.is_folder
-                );
+                // Match any casing: "Income", "income", "INCOME", "Revenue"
+                const incomeAccounts = accs.filter(a => {
+                  const t = (a.type || '').toLowerCase();
+                  return (t === 'income' || t === 'revenue') && !a.is_folder;
+                });
+                console.log(`[InvoiceBuilder] Loaded ${accs.length} accounts, ${incomeAccounts.length} income accounts`, incomeAccounts.map(a => ({ id: a.id, name: a.name, type: a.type })));
                 setAccounts(incomeAccounts);
                 
-                // Auto-select first revenue account (e.g., Forwarding Income)
-                const defaultAcc = incomeAccounts[0];
-                if (defaultAcc) setRevenueAccountId(defaultAcc.id);
+                // Auto-select first revenue account only if nothing is currently selected
+                if (!revenueAccountId && incomeAccounts.length > 0) {
+                  setRevenueAccountId(incomeAccounts[0].id);
+                }
             } catch (e) {
                 console.error("Failed to load revenue accounts for GL posting", e);
             } finally {
@@ -151,7 +156,7 @@ export function InvoiceBuilder({
         };
         loadAccounts();
     }
-  }, [mode, targetCurrency]); // Re-run when target currency changes to auto-select
+  }, [mode]); // Revenue accounts don't depend on currency — load once on mount
 
   // 2. Fetch Customer Address on Mount (Only for Create Mode)
   useEffect(() => {
@@ -453,6 +458,7 @@ export function InvoiceBuilder({
           }
       }
 
+      console.log(`[InvoiceBuilder] Submitting invoice — revenue_account_id: "${revenueAccountId}", total: ${draftInvoice.total_amount}`);
       const payload = {
         project_number: project.project_number,
         customer_id: project.customer_id,
@@ -475,7 +481,8 @@ export function InvoiceBuilder({
         tax_amount: draftInvoice.tax_amount,
         
         // GL Posting: Revenue account for JE (DR AR / CR Revenue)
-        revenue_account_id: revenueAccountId || undefined,
+        // IMPORTANT: Always send the field (even as empty string) so the server sees it
+        revenue_account_id: revenueAccountId,
         
         metadata: {
             signatories,
@@ -507,8 +514,12 @@ export function InvoiceBuilder({
         const hasJE = result.data?.journal_entry_id;
         if (hasJE) {
             toast.success(`Invoice ${result.data.invoice_number} posted to ledger`);
-        } else {
+        } else if (!revenueAccountId) {
             toast.success(`Invoice ${result.data.invoice_number} created (no revenue account selected — GL entry skipped)`);
+        } else {
+            // Revenue account was selected but JE still wasn't created — likely AR account missing
+            console.warn(`[InvoiceBuilder] JE not created despite revenue_account_id="${revenueAccountId}". Check server logs.`);
+            toast.success(`Invoice ${result.data.invoice_number} created (GL entry could not be posted — check AR account setup)`);
         }
         if (onSuccess) onSuccess();
       } else {
@@ -678,21 +689,20 @@ export function InvoiceBuilder({
                                   <label className="text-[11px] font-semibold text-[#667085] uppercase tracking-[0.05em] mb-1.5 block">
                                       Revenue Account
                                   </label>
-                                  <div className="relative">
-                                      <select
-                                          value={revenueAccountId}
-                                          onChange={(e) => setRevenueAccountId(e.target.value)}
-                                          className="w-full h-9 pl-3 pr-8 text-sm border border-gray-300 rounded-md focus:ring-[#0F766E] focus:border-[#0F766E] appearance-none bg-white"
-                                      >
-                                          <option value="">Select Revenue Account...</option>
-                                          {accounts.map(acc => (
-                                              <option key={acc.id} value={acc.id}>
-                                                  {acc.code ? `${acc.code} - ` : ''}{acc.name}
-                                              </option>
-                                          ))}
-                                      </select>
-                                      <ChevronDown className="absolute right-2.5 top-2.5 w-4 h-4 text-gray-400 pointer-events-none" />
-                                  </div>
+                                  <CustomDropdown
+                                      value={revenueAccountId}
+                                      onChange={(val) => {
+                                          console.log(`[InvoiceBuilder] Revenue account selected: "${val}"`);
+                                          setRevenueAccountId(val);
+                                      }}
+                                      options={accounts.map(acc => ({
+                                          value: acc.id,
+                                          label: acc.code ? `${acc.code} - ${acc.name}` : acc.name
+                                      }))}
+                                      placeholder="Select Revenue Account..."
+                                      fullWidth
+                                      size="sm"
+                                  />
                               </div>
                           </div>
                           

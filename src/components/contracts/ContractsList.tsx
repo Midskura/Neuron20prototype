@@ -11,8 +11,9 @@
 import { useState } from "react";
 import type { QuotationNew } from "../../types/pricing";
 import { NeuronStatusPill } from "../NeuronStatusPill";
-import { Search, Handshake, CheckCircle, Package, Calendar, CircleDot, Ship, Truck, Shield, User, Clock, Briefcase, AlertCircle } from "lucide-react";
+import { Search, Handshake, CheckCircle, Package, Calendar, CircleDot, Ship, Truck, Shield, User, Clock, Briefcase, AlertCircle, Building2 } from "lucide-react";
 import { CustomDropdown } from "../bd/CustomDropdown";
+import { CustomDatePicker } from "../common/CustomDatePicker";
 import { SkeletonTable, SkeletonControlBar } from "../shared/NeuronSkeleton";
 import { NeuronRefreshButton } from "../shared/NeuronRefreshButton";
 
@@ -39,13 +40,14 @@ export function ContractsList({
   onRefresh,
 }: ContractsListProps) {
   const [searchQuery, setSearchQuery] = useState("");
-  const [activeTab, setActiveTab] = useState<"all" | "my" | "active" | "expiring">("all");
+  const [activeTab, setActiveTab] = useState<"all" | "active" | "expiring">("all");
   
   // Filters
-  const [timePeriodFilter, setTimePeriodFilter] = useState<string>("all");
+  const [dateFrom, setDateFrom] = useState<string>("");
+  const [dateTo, setDateTo] = useState<string>("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [serviceFilter, setServiceFilter] = useState<string>("all");
   const [ownerFilter, setOwnerFilter] = useState<string>("all");
+  const [customerFilter, setCustomerFilter] = useState<string>("all");
 
   // Grid template constant
   const GRID_COLS = "240px 200px 160px 100px 140px 100px";
@@ -64,7 +66,7 @@ export function ContractsList({
   };
 
   const uniqueOwners = Array.from(new Set(contracts.map(c => c.bd_owner).filter(Boolean)));
-  const uniqueServices = Array.from(new Set(contracts.flatMap(c => c.services || [])));
+  const uniqueCustomers = Array.from(new Set(contracts.map(c => c.customer_name).filter(Boolean))).sort();
 
   // Derive contract_status for filtering
   const getContractStatus = (c: QuotationNew) => c.contract_status || "Draft";
@@ -72,14 +74,6 @@ export function ContractsList({
   // Filter contracts based on active tab
   const getFilteredByTab = () => {
     let filtered = contracts;
-
-    // "My Contracts" tab logic
-    if (activeTab === "my") {
-      filtered = contracts.filter(c => 
-        c.bd_owner === currentUser?.name ||
-        c.bd_owner === currentUser?.email
-      );
-    }
 
     if (activeTab === "active") {
       return filtered.filter(c => getContractStatus(c) === "Active");
@@ -103,23 +97,23 @@ export function ContractsList({
     }
     
     // Time period filter
-    if (timePeriodFilter !== "all") {
+    if (dateFrom) {
+      const fromDate = new Date(dateFrom);
       const contractDate = new Date(contract.created_at);
-      const now = new Date();
-      const daysDiff = Math.floor((now.getTime() - contractDate.getTime()) / (1000 * 60 * 60 * 24));
-      
-      if (timePeriodFilter === "7days" && daysDiff > 7) return false;
-      if (timePeriodFilter === "30days" && daysDiff > 30) return false;
-      if (timePeriodFilter === "90days" && daysDiff > 90) return false;
+      if (contractDate < fromDate) return false;
+    }
+    if (dateTo) {
+      const toDate = new Date(dateTo);
+      toDate.setHours(23, 59, 59, 999);
+      const contractDate = new Date(contract.created_at);
+      if (contractDate > toDate) return false;
     }
     
     // Status filter
     if (statusFilter !== "all" && getContractStatus(contract) !== statusFilter) return false;
     
-    // Service filter
-    if (serviceFilter !== "all") {
-      if (!contract.services?.includes(serviceFilter)) return false;
-    }
+    // Customer filter
+    if (customerFilter !== "all" && contract.customer_name !== customerFilter) return false;
     
     // Owner filter
     if (ownerFilter !== "all" && contract.bd_owner !== ownerFilter) return false;
@@ -129,10 +123,6 @@ export function ContractsList({
 
   // Calculate counts
   const allCount = contracts.length;
-  const myCount = contracts.filter(c => 
-    c.bd_owner === currentUser?.name ||
-    c.bd_owner === currentUser?.email
-  ).length;
   const activeCount = contracts.filter(c => getContractStatus(c) === "Active").length;
   const expiringCount = contracts.filter(c => getContractStatus(c) === "Expiring").length;
 
@@ -209,17 +199,28 @@ export function ContractsList({
           flexWrap: "wrap"
         }}>
           {/* Time Period Filter */}
+          <div style={{ minWidth: "140px" }}>
+            <CustomDatePicker value={dateFrom} onChange={setDateFrom} placeholder="Start Date" minWidth="100%" className="w-full px-4 py-2" />
+          </div>
+          <span className="text-[13px] text-[#6B7280] font-medium px-2">to</span>
+          <div style={{ minWidth: "140px" }}>
+            <CustomDatePicker value={dateTo} onChange={setDateTo} placeholder="End Date" minWidth="100%" className="w-full px-4 py-2" />
+          </div>
+
+          {/* Customer Filter */}
           <div style={{ minWidth: "120px" }}>
             <CustomDropdown
-              value={timePeriodFilter}
-              onChange={setTimePeriodFilter}
+              value={customerFilter}
+              onChange={setCustomerFilter}
               options={[
-                { value: "all", label: "All Time", icon: <Calendar size={16} /> },
-                { value: "7days", label: "Last 7 days", icon: <Calendar size={16} /> },
-                { value: "30days", label: "Last 30 days", icon: <Calendar size={16} /> },
-                { value: "90days", label: "Last 90 days", icon: <Calendar size={16} /> }
+                { value: "all", label: "All Customers", icon: <Building2 size={16} /> },
+                ...uniqueCustomers.map(customer => ({ 
+                  value: customer!, 
+                  label: customer!, 
+                  icon: <Building2 size={16} style={{ color: "#0F766E" }} /> 
+                }))
               ]}
-              placeholder="Select time period"
+              placeholder="Select customer"
             />
           </div>
 
@@ -237,28 +238,6 @@ export function ContractsList({
                 { value: "Draft", label: "Draft", icon: <CircleDot size={16} style={{ color: "#6B7280" }} /> }
               ]}
               placeholder="Select status"
-            />
-          </div>
-
-          {/* Service Filter */}
-          <div style={{ minWidth: "120px" }}>
-            <CustomDropdown
-              value={serviceFilter}
-              onChange={setServiceFilter}
-              options={[
-                { value: "all", label: "All Services", icon: <Briefcase size={16} /> },
-                ...uniqueServices.map(service => {
-                  const getServiceIcon = () => {
-                    if (service === "Brokerage") return <Briefcase size={16} style={{ color: "#0F766E" }} />;
-                    if (service === "Forwarding") return <Ship size={16} style={{ color: "#0F766E" }} />;
-                    if (service === "Trucking") return <Truck size={16} style={{ color: "#0F766E" }} />;
-                    if (service === "Marine Insurance") return <Shield size={16} style={{ color: "#0F766E" }} />;
-                    return <Package size={16} style={{ color: "#0F766E" }} />;
-                  };
-                  return { value: service, label: service, icon: getServiceIcon() };
-                })
-              ]}
-              placeholder="Select service"
             />
           </div>
 
@@ -322,44 +301,6 @@ export function ContractsList({
               {allCount}
             </span>
           </button>
-
-          {department !== "Accounting" && (
-            <button
-              onClick={() => setActiveTab("my")}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "8px",
-                padding: "12px 20px",
-                background: "transparent",
-                border: "none",
-                borderBottom: activeTab === "my" ? "2px solid #0F766E" : "2px solid transparent",
-                color: activeTab === "my" ? "#0F766E" : "#667085",
-                fontSize: "14px",
-                fontWeight: 600,
-                cursor: "pointer",
-                transition: "all 0.2s ease",
-                marginBottom: "-1px"
-              }}
-            >
-              <User size={18} />
-              My Contracts
-              <span
-                style={{
-                  padding: "2px 8px",
-                  borderRadius: "12px",
-                  fontSize: "11px",
-                  fontWeight: 700,
-                  background: activeTab === "my" ? "#0F766E" : "#0F766E15",
-                  color: activeTab === "my" ? "#FFFFFF" : "#0F766E",
-                  minWidth: "20px",
-                  textAlign: "center"
-                }}
-              >
-                {myCount}
-              </span>
-            </button>
-          )}
           
           <button
             onClick={() => setActiveTab("active")}

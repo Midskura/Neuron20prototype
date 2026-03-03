@@ -697,6 +697,7 @@ export function BusinessDevelopment({ view: initialView = "contacts", onCreateIn
                 quotations={quotations}
                 isLoading={isLoading}
                 userDepartment="BD"
+                onRefresh={fetchQuotations}
               />
             )}
             {subView === "detail" && selectedQuotation && (

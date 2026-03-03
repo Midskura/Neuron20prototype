@@ -70,6 +70,9 @@ export interface QuotationLineItemNew {
   buying_price?: number;
   vendor_id?: string;
   buying_amount?: number;
+
+  // Catalog linkage (Item Master reference)
+  catalog_item_id?: string;
 }
 
 /**
@@ -198,7 +201,7 @@ export interface QuotationNew {
   // Header
   quote_number: string;          // "IQ25120034"
   quotation_name?: string;       // Optional user-defined name
-  created_date: string;
+  created_date: string;          // User-visible business date (date-only, from builder)
   valid_until: string;
   customer_id: string;
   customer_name: string;
@@ -292,7 +295,7 @@ export interface QuotationNew {
   source_contract_number?: string;     // Contract quote_number for display
   
   created_by: string;
-  created_at: string;
+  created_at: string;            // Server-stamped ISO timestamp (set on creation)
   updated_at: string;
   notes?: string;
 }
@@ -448,9 +451,12 @@ export interface Project {
 
 export type QuotationStatus = 
   | "Draft" 
-  | "Inquiry" 
-  | "Quoted" 
-  | "Approved" 
+  | "Pending Pricing" 
+  | "Priced" 
+  | "Sent to Client" 
+  | "Accepted by Client" 
+  | "Rejected by Client" 
+  | "Needs Revision" 
   | "Disapproved" 
   | "Converted to Project" 
   | "Converted to Contract"
