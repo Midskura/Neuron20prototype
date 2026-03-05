@@ -3700,9 +3700,33 @@ app.get("/make-server-c142e950/bookings", async (c) => {
     
     let filtered = allBookings;
     
-    // ✨ CONTRACT: Filter by contract_id if provided
+    // ✨ CONTRACT: Filter by contract_id if provided, with service-type validation
     if (contract_id) {
       filtered = filtered.filter((b: any) => b.contract_id === contract_id);
+      
+      // Guard: also validate each booking's service matches the contract's eligible services
+      try {
+        const contract = await kv.get(`quotation:${contract_id}`);
+        if (contract?.services_metadata && Array.isArray(contract.services_metadata)) {
+          const eligibleServices = contract.services_metadata.map((s: any) =>
+            (s.service_type || "").toLowerCase()
+          );
+          filtered = filtered.filter((b: any) => {
+            let svc = (b.serviceType || b.bookingType || b.service_type || b.service || "").toLowerCase();
+            if (!svc) {
+              const bid = b.bookingId || b.id || "";
+              if (bid.startsWith("FWD-")) svc = "forwarding";
+              else if (bid.startsWith("BRK-")) svc = "brokerage";
+              else if (bid.startsWith("TRK-")) svc = "trucking";
+              else if (bid.startsWith("INS-")) svc = "marine insurance";
+              else if (bid.startsWith("OTH-")) svc = "others";
+            }
+            return eligibleServices.includes(svc);
+          });
+        }
+      } catch (e) {
+        console.log("Warning: could not validate booking service types against contract:", e);
+      }
     }
     
     // Filter by customer_id if provided

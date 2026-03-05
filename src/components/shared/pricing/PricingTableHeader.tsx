@@ -6,6 +6,7 @@ interface PricingTableHeaderProps {
   showTax?: boolean;
   showForex?: boolean;
   simpleMode?: boolean; // Kept for backward compat, but we'll use flags primarily
+  firstCellContent?: React.ReactNode; // Optional override for the first cell (default: "Item")
 }
 
 export function PricingTableHeader({
@@ -13,7 +14,8 @@ export function PricingTableHeader({
   showMarkup = true,
   showTax = true,
   showForex = true,
-  simpleMode = false
+  simpleMode = false,
+  firstCellContent
 }: PricingTableHeaderProps) {
 
   // Dynamic Grid Template Generator
@@ -71,7 +73,7 @@ export function PricingTableHeader({
       letterSpacing: "0.02em",
       borderBottom: "1px solid #EDF2F1"
     }}>
-      <div>Item</div>
+      <div>{firstCellContent ?? "Item"}</div>
       
       <div style={{ textAlign: "right" }}>Qty</div>
       

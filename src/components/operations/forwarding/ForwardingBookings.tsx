@@ -465,9 +465,9 @@ export function ForwardingBookings({ onSelectBooking, currentUser }: ForwardingB
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredBookings.map((booking) => (
+                  {filteredBookings.map((booking, index) => (
                     <tr
-                      key={booking.bookingId}
+                      key={`${booking.bookingId}-${index}`}
                       className="border-b border-[#12332B]/5 hover:bg-[#0F766E]/5 transition-colors cursor-pointer"
                       onClick={() => onSelectBooking(booking)}
                     >

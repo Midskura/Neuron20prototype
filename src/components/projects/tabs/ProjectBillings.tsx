@@ -19,6 +19,8 @@ export function ProjectBillings({ financials, project }: ProjectBillingsProps) {
           bookingId={undefined} // Project level view
           onRefresh={refresh}
           isLoading={isLoading}
+          enableGroupByToggle={true}
+          linkedBookings={project.linkedBookings || []}
       />
     </div>
   );

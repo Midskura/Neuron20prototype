@@ -24,6 +24,7 @@ interface UnifiedInvoicesTabProps {
   title?: string;
   subtitle?: string;
   readOnly?: boolean;
+  linkedBookings?: any[];
 }
 
 export function UnifiedInvoicesTab({ 
@@ -34,6 +35,7 @@ export function UnifiedInvoicesTab({
   title,
   subtitle,
   readOnly = false,
+  linkedBookings,
 }: UnifiedInvoicesTabProps) {
   const { invoices, collections, billingItems: rawBillingItems, refresh } = financials;
 
@@ -354,6 +356,7 @@ export function UnifiedInvoicesTab({
                     mode={interfaceMode === 'create' ? 'create' : 'view'}
                     project={project}
                     billingItems={billingItems} 
+                    linkedBookings={linkedBookings || project.linkedBookings || []}
                     invoice={selectedInvoice || undefined}
                     onSuccess={handleCreateSuccess}
                     onRefreshData={refresh}

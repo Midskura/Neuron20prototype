@@ -179,3 +179,30 @@ export function formatDayMonthYear(dateStr?: string): string {
     year: "numeric",
   });
 }
+
+// ============================================
+// BOOKING TYPE MAPPING
+// ============================================
+
+/**
+ * Maps a human-readable service type string (e.g. "Forwarding", "Marine Insurance")
+ * to a URL-safe booking type slug used by ProjectBookingReadOnlyView and booking endpoints.
+ */
+export function serviceTypeToBookingType(
+  serviceType: string
+): "forwarding" | "brokerage" | "trucking" | "marine-insurance" | "others" {
+  switch (serviceType?.toLowerCase()) {
+    case "forwarding":
+      return "forwarding";
+    case "brokerage":
+      return "brokerage";
+    case "trucking":
+      return "trucking";
+    case "marine insurance":
+      return "marine-insurance";
+    case "others":
+      return "others";
+    default:
+      return "others";
+  }
+}

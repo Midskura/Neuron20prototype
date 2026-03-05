@@ -32,6 +32,7 @@ import { EntityAttachmentsTab } from "../shared/EntityAttachmentsTab";
 import { CommentsTab } from "../shared/CommentsTab";
 import { ContractStatusSelector } from "../contracts/ContractStatusSelector";
 import { getServiceIcon as getServiceIconShared, formatShortDate } from "../../utils/quotation-helpers";
+import { BookingsTable } from "../shared/BookingsTable";
 
 // ============================================
 // TYPES
@@ -316,16 +317,26 @@ export function ContractDetailView({
     }
   };
 
-  // Map service type string to bookingType slug for ProjectBookingReadOnlyView
-  const serviceTypeToBookingType = (serviceType: string): "forwarding" | "brokerage" | "trucking" | "marine-insurance" | "others" => {
-    switch (serviceType?.toLowerCase()) {
-      case "forwarding": return "forwarding";
-      case "brokerage": return "brokerage";
-      case "trucking": return "trucking";
-      case "marine insurance": return "marine-insurance";
-      case "others": return "others";
-      default: return "others";
-    }
+  // ✨ PHASE 3: Get contract services as InquiryService array
+  // Contracts only support Brokerage, Trucking, and Others — exclude Forwarding & Marine Insurance
+  const CONTRACT_ELIGIBLE_SERVICES = ["Brokerage", "Trucking", "Others"];
+  const contractServices: InquiryService[] = (quotation.services || [])
+    .filter((s: string) => CONTRACT_ELIGIBLE_SERVICES.includes(s))
+    .map((s: string) => {
+      const meta = quotation.services_metadata?.find(m => m.service_type === s);
+      return meta || { service_type: s as any, service_details: {} };
+    });
+
+  const handleCreateBookingForService = (service: InquiryService) => {
+    setCreateBookingService(service);
+    setShowCreateBooking(true);
+    setShowServiceDropdown(false);
+  };
+
+  const handleBookingCreated = () => {
+    setShowCreateBooking(false);
+    setCreateBookingService(null);
+    fetchLinkedBookings(); // Refresh the list
   };
 
   // ============================================
@@ -355,28 +366,6 @@ export function ContractDetailView({
       )}
     </div>
   );
-
-  // ✨ PHASE 3: Get contract services as InquiryService array
-  // Contracts only support Brokerage, Trucking, and Others — exclude Forwarding & Marine Insurance
-  const CONTRACT_ELIGIBLE_SERVICES = ["Brokerage", "Trucking", "Others"];
-  const contractServices: InquiryService[] = (quotation.services || [])
-    .filter((s: string) => CONTRACT_ELIGIBLE_SERVICES.includes(s))
-    .map((s: string) => {
-      const meta = quotation.services_metadata?.find(m => m.service_type === s);
-      return meta || { service_type: s as any, service_details: {} };
-    });
-
-  const handleCreateBookingForService = (service: InquiryService) => {
-    setCreateBookingService(service);
-    setShowCreateBooking(true);
-    setShowServiceDropdown(false);
-  };
-
-  const handleBookingCreated = () => {
-    setShowCreateBooking(false);
-    setCreateBookingService(null);
-    fetchLinkedBookings(); // Refresh the list
-  };
 
   const renderBookingsTab = () => (
     <div style={{ padding: "24px 0" }}>
@@ -444,141 +433,25 @@ export function ContractDetailView({
         </div>
       )}
 
-      {isLoadingBookings ? (
-        <div style={{ padding: "48px", textAlign: "center", color: "var(--neuron-ink-muted)", fontSize: "13px" }}>
-          Loading bookings...
-        </div>
-      ) : linkedBookings.length === 0 ? (
-        <div style={{
-          padding: "48px 24px",
-          textAlign: "center",
-          color: "var(--neuron-ink-muted)",
-        }}>
-          <FileText size={40} style={{ marginBottom: "12px", opacity: 0.3, margin: "0 auto 12px" }} />
-          <p style={{ fontSize: "14px", fontWeight: 500, margin: "0 0 4px" }}>No bookings linked yet</p>
-          <p style={{ fontSize: "13px", margin: 0 }}>
-            {["Active", "Expiring"].includes(contractStatus)
-              ? 'Click "Create Booking" above to create a booking directly from this contract.'
-              : "When Operations creates bookings for this client, they'll appear here automatically."
-            }
-          </p>
-        </div>
-      ) : (
-        <div style={{
-          border: "1px solid var(--neuron-ui-border)",
-          borderRadius: "8px",
-          overflow: "hidden",
-        }}>
-          {/* Bookings table header */}
-          <div style={{
-            display: "grid",
-            gridTemplateColumns: "160px 1fr 120px 120px 140px",
-            gap: "12px",
-            padding: "10px 16px",
-            fontSize: "11px",
-            fontWeight: 600,
-            color: "var(--neuron-ink-muted)",
-            textTransform: "uppercase",
-            letterSpacing: "0.5px",
-            borderBottom: "1px solid var(--neuron-ui-border)",
-            backgroundColor: "#FAFCFB",
-          }}>
-            <div>Booking ID</div>
-            <div>Service</div>
-            <div>Date</div>
-            <div>Status</div>
-            <div style={{ textAlign: "right" }}>Actions</div>
+      <BookingsTable
+        bookings={linkedBookings}
+        isLoading={isLoadingBookings}
+        onViewBooking={(bookingId, bookingType) => setSelectedBooking({ bookingId, bookingType })}
+        onGenerateBilling={handleGenerateBilling}
+        generatingBillingId={generatingBillingId}
+        emptyState={
+          <div style={{ padding: "48px 24px", textAlign: "center", color: "var(--neuron-ink-muted)" }}>
+            <FileText size={40} style={{ marginBottom: "12px", opacity: 0.3, margin: "0 auto 12px" }} />
+            <p style={{ fontSize: "14px", fontWeight: 500, margin: "0 0 4px" }}>No bookings linked yet</p>
+            <p style={{ fontSize: "13px", margin: 0 }}>
+              {["Active", "Expiring"].includes(contractStatus)
+                ? 'Click "Create Booking" above to create a booking directly from this contract.'
+                : "When Operations creates bookings for this client, they'll appear here automatically."
+              }
+            </p>
           </div>
-          {linkedBookings.map((booking: any, idx: number) => {
-            const bookingId = booking.bookingId || booking.id;
-            // Resolve serviceType: explicit field → infer from ID prefix → fallback
-            const serviceType = booking.serviceType || booking.bookingType
-              || (bookingId?.startsWith("FWD-") ? "Forwarding"
-                : bookingId?.startsWith("BRK-") ? "Brokerage"
-                : bookingId?.startsWith("TRK-") ? "Trucking"
-                : bookingId?.startsWith("INS-") ? "Marine Insurance"
-                : bookingId?.startsWith("OTH-") ? "Others"
-                : "Others");
-            const isGenerating = generatingBillingId === bookingId;
-            return (
-            <div
-              key={bookingId || idx}
-              style={{
-                display: "grid",
-                gridTemplateColumns: "160px 1fr 120px 120px 140px",
-                gap: "12px",
-                padding: "12px 16px",
-                fontSize: "13px",
-                color: "var(--neuron-ink-primary)",
-                borderBottom: idx < linkedBookings.length - 1 ? "1px solid var(--neuron-ui-divider)" : "none",
-                backgroundColor: idx % 2 === 0 ? "white" : "#FAFCFB",
-              }}
-            >
-              <div
-                style={{ fontWeight: 500, cursor: "pointer", color: "#0F766E" }}
-                onClick={() => setSelectedBooking({ bookingId, bookingType: serviceTypeToBookingType(serviceType) })}
-              >
-                {bookingId || "—"}
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: "6px", color: "var(--neuron-ink-muted)" }}>
-                {getServiceIcon(serviceType)}
-                {serviceType}
-              </div>
-              <div style={{ color: "var(--neuron-ink-muted)", fontSize: "12px" }}>{formatDate(booking.createdAt)}</div>
-              <div>
-                <span style={{
-                  fontSize: "11px",
-                  fontWeight: 500,
-                  padding: "3px 8px",
-                  borderRadius: "4px",
-                  backgroundColor: booking.status === "Completed" ? "#D1FAE5" : "#F3F4F6",
-                  color: booking.status === "Completed" ? "#059669" : "#6B7280",
-                }}>
-                  {booking.status || "Draft"}
-                </span>
-              </div>
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: "4px" }}>
-                <button
-                  onClick={() => setSelectedBooking({ bookingId, bookingType: serviceTypeToBookingType(serviceType) })}
-                  title="View booking details"
-                  style={{
-                    display: "flex", alignItems: "center", gap: "4px",
-                    padding: "4px 8px", fontSize: "12px", fontWeight: 500,
-                    color: "#0F766E", backgroundColor: "transparent",
-                    border: "1px solid #D1D5DB", borderRadius: "4px",
-                    cursor: "pointer",
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.borderColor = "#0F766E"; e.currentTarget.style.backgroundColor = "#F0FAFA"; }}
-                  onMouseLeave={e => { e.currentTarget.style.borderColor = "#D1D5DB"; e.currentTarget.style.backgroundColor = "transparent"; }}
-                >
-                  <Eye size={12} />
-                  View
-                </button>
-                <button
-                  onClick={() => handleGenerateBilling(bookingId, serviceType)}
-                  disabled={isGenerating}
-                  title="Generate billing from rate card"
-                  style={{
-                    display: "flex", alignItems: "center", gap: "4px",
-                    padding: "4px 8px", fontSize: "12px", fontWeight: 500,
-                    color: isGenerating ? "#9CA3AF" : "#7C3AED",
-                    backgroundColor: "transparent",
-                    border: `1px solid ${isGenerating ? "#E5E7EB" : "#DDD6FE"}`,
-                    borderRadius: "4px",
-                    cursor: isGenerating ? "not-allowed" : "pointer",
-                  }}
-                  onMouseEnter={e => { if (!isGenerating) { e.currentTarget.style.backgroundColor = "#F5F3FF"; e.currentTarget.style.borderColor = "#7C3AED"; }}}
-                  onMouseLeave={e => { if (!isGenerating) { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.borderColor = "#DDD6FE"; }}}
-                >
-                  <Receipt size={12} />
-                  {isGenerating ? "..." : "Bill"}
-                </button>
-              </div>
-            </div>
-          );
-          })}
-        </div>
-      )}
+        }
+      />
     </div>
   );
 
@@ -610,6 +483,7 @@ export function ContractDetailView({
           project={adaptedProject}
           currentUser={currentUserWithId}
           onRefresh={contractFinancials.refresh}
+          linkedBookings={linkedBookings}
           title="Contract Invoices"
           subtitle={`Generate, track, and manage official invoices — ${quotation.quote_number} · ${quotation.customer_name}`}
         />

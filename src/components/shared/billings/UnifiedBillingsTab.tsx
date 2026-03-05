@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from "react";
-import { Search, X, Plus, Filter, Download, Loader2, Pencil, Check, Layers, Briefcase } from "lucide-react";
+import { Search, X, Plus, Filter, Download, Loader2, Pencil, Check } from "lucide-react";
 import { CustomDropdown } from "../../bd/CustomDropdown";
 import { CustomDatePicker } from "../../common/CustomDatePicker";
 import { BillingsTable } from "./BillingsTable";
@@ -58,6 +58,8 @@ const formatCurrency = (amount: number, currency: string = "PHP") => {
   }).format(amount);
 };
 
+const EMPTY_LINKED_BOOKINGS: any[] = [];
+
 export function UnifiedBillingsTab({ 
   items, 
   quotation,
@@ -70,8 +72,10 @@ export function UnifiedBillingsTab({
   subtitle,
   extraActions,
   enableGroupByToggle = false,
-  linkedBookings = [],
+  linkedBookings,
 }: UnifiedBillingsTabProps) {
+  // Stable reference for empty array to prevent infinite re-render loops
+  const stableLinkedBookings = linkedBookings && linkedBookings.length > 0 ? linkedBookings : EMPTY_LINKED_BOOKINGS;
   
   // -- Local State --
   const [localItems, setLocalItems] = useState<BillingItem[]>([]);
@@ -84,8 +88,8 @@ export function UnifiedBillingsTab({
   // Removed isImporting state as import button is gone
   // Removed isEditing state - now derived from readOnly
   const [pendingChanges, setPendingChanges] = useState(false);
-  // ✨ Group-by toggle state
-  const [groupBy, setGroupBy] = useState<"category" | "booking">(enableGroupByToggle ? "booking" : "category");
+  // groupBy is always "booking" for contract billings, "category" otherwise
+  const groupBy = enableGroupByToggle ? "booking" : "category";
 
   // Category Dropdown State
   const [showAddCategoryDropdown, setShowAddCategoryDropdown] = useState(false);
@@ -97,6 +101,27 @@ export function UnifiedBillingsTab({
   // -- MERGE LOGIC --
   // Merges Real Billing Items with Virtual Quotation Items
   const mergedItems = useMemo(() => {
+    // Build service-to-booking map from linkedBookings for auto-routing
+    // Maps e.g. "Brokerage" → "BRK-20260301-1234"
+    const serviceToBookingMap = new Map<string, string>();
+    stableLinkedBookings.forEach((b: any) => {
+      const svc = b.serviceType || b.service_type || "";
+      const bid = b.bookingId || b.id;
+      if (svc && bid) serviceToBookingMap.set(svc, bid);
+    });
+
+    // Helper: resolve booking_id from a service type
+    const resolveBookingId = (serviceType: string | undefined) => {
+      // If we're already at booking-level (bookingId prop set), use that
+      if (bookingId) return bookingId;
+      // Try to match service → booking
+      if (serviceType && serviceToBookingMap.has(serviceType)) {
+        return serviceToBookingMap.get(serviceType)!;
+      }
+      // Fallback to project ID
+      return projectId;
+    };
+
     // 1. Deep copy existing real items to avoid mutating props
     // We filter out items that will be replaced by the reflective logic to avoid duplicates if we push them later, 
     // OR we just update them in place. Updating in place is better to preserve IDs.
@@ -135,6 +160,8 @@ export function UnifiedBillingsTab({
                             amount: item.amount, // Calculated final price
                             currency: item.currency,
                             quotation_category: cat.category_name,
+                            // Auto-route to correct booking based on service tag
+                            booking_id: resolveBookingId(item.service || existingItem.service_type),
                             // Extended fields
                             quantity: item.quantity,
                             forex_rate: item.forex_rate,
@@ -161,7 +188,7 @@ export function UnifiedBillingsTab({
                     currency: item.currency,
                     status: 'unbilled', // Virtual items are always unbilled by definition
                     quotation_category: cat.category_name,
-                    booking_id: bookingId || projectId,
+                    booking_id: resolveBookingId(item.service),
                     // Extended fields for editing
                     quantity: item.quantity,
                     forex_rate: item.forex_rate,
@@ -177,17 +204,21 @@ export function UnifiedBillingsTab({
     }
 
     return combined;
-  }, [items, quotation, projectId, bookingId]);
+  }, [items, quotation, projectId, bookingId, stableLinkedBookings]);
 
   // Sync merged items to local state when props change (and not pending changes)
   useEffect(() => {
      if (!pendingChanges) {
-         setLocalItems(mergedItems);
+         setLocalItems(prev => prev === mergedItems ? prev : mergedItems);
          
-         // Update categories based on merged items
-         const cats = new Set(mergedItems.map(i => i.quotation_category || "General"));
-         if (cats.size === 0) cats.add("General");
-         setActiveCategories(cats);
+         // Update categories based on merged items — only update if content changed
+         const newCatNames = mergedItems.map(i => i.quotation_category || "General");
+         const newCatsSet = new Set(newCatNames);
+         if (newCatsSet.size === 0) newCatsSet.add("General");
+         setActiveCategories(prev => {
+           if (prev.size === newCatsSet.size && [...prev].every(c => newCatsSet.has(c))) return prev;
+           return newCatsSet;
+         });
      }
   }, [mergedItems, pendingChanges]);
 
@@ -248,6 +279,21 @@ export function UnifiedBillingsTab({
       return true;
     });
   }, [localItems, searchQuery, selectedStatus, dateFrom, dateTo, selectedCategory]);
+
+  // Memoize the data transformation for BillingsTable to avoid new array refs on every render
+  const billingsTableData = useMemo(() => {
+    return filteredItems.map(item => ({
+      id: item.id,
+      date: item.created_at,
+      category: item.quotation_category || "Uncategorized",
+      serviceType: item.service_type || "General",
+      description: item.description,
+      status: item.status,
+      amount: item.amount,
+      currency: item.currency || "PHP",
+      originalData: item
+    }));
+  }, [filteredItems]);
 
   const hasActiveFilters = dateFrom || dateTo || selectedCategory || selectedStatus || searchQuery;
 
@@ -380,11 +426,23 @@ export function UnifiedBillingsTab({
 
   const handleSaveChanges = async () => {
       try {
-          // Prepare payload: we need to send ALL items that have changed or are virtual
-          // We send the whole 'localItems' list (or at least the virtual/modified ones)
-          // For simplicity and to ensure order/completeness, we send all.
-          // The backend batchUpsert handles ID generation for virtuals.
-          
+          // Build service-to-booking map for routing on save
+          const saveServiceToBookingMap = new Map<string, string>();
+          stableLinkedBookings.forEach((b: any) => {
+            const svc = b.serviceType || b.service_type || "";
+            const bid = b.bookingId || b.id;
+            if (svc && bid) saveServiceToBookingMap.set(svc, bid);
+          });
+
+          // Recalculate booking_id for each item based on its service_type
+          const itemsToSave = localItems.map(item => {
+            // Only reroute if we're at project level (no explicit bookingId prop)
+            if (!bookingId && item.service_type && saveServiceToBookingMap.has(item.service_type)) {
+              return { ...item, booking_id: saveServiceToBookingMap.get(item.service_type) };
+            }
+            return item;
+          });
+
           toast.info("Saving changes...");
           
           const response = await fetch(`${API_URL}/accounting/billings/batch`, {
@@ -394,7 +452,7 @@ export function UnifiedBillingsTab({
                   "Authorization": `Bearer ${publicAnonKey}`
               },
               body: JSON.stringify({ 
-                  items: localItems,
+                  items: itemsToSave,
                   project_id: projectId
               })
           });
@@ -558,57 +616,9 @@ export function UnifiedBillingsTab({
         )}
       </div>
 
-      {/* ✨ Group-by Toggle (only for contract billings) */}
-      {enableGroupByToggle && (
-        <div className="flex items-center gap-2 mb-4">
-          <span style={{ fontSize: "12px", fontWeight: 600, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-            Group by:
-          </span>
-          <div className="flex items-center rounded-lg overflow-hidden" style={{ border: "1px solid #D1D5DB" }}>
-            <button
-              onClick={() => setGroupBy("booking")}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium transition-colors"
-              style={{
-                backgroundColor: groupBy === "booking" ? "#0F766E" : "white",
-                color: groupBy === "booking" ? "white" : "#6B7280",
-                border: "none",
-                cursor: "pointer",
-                borderRight: "1px solid #D1D5DB",
-              }}
-            >
-              <Briefcase size={13} />
-              Booking
-            </button>
-            <button
-              onClick={() => setGroupBy("category")}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium transition-colors"
-              style={{
-                backgroundColor: groupBy === "category" ? "#0F766E" : "white",
-                color: groupBy === "category" ? "white" : "#6B7280",
-                border: "none",
-                cursor: "pointer",
-              }}
-            >
-              <Layers size={13} />
-              Category
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* Table Component */}
       <BillingsTable
-        data={filteredItems.map(item => ({
-          id: item.id,
-          date: item.created_at,
-          category: item.quotation_category || "Uncategorized",
-          serviceType: item.service_type || "General",
-          description: item.description,
-          status: item.status,
-          amount: item.amount,
-          currency: item.currency || "PHP",
-          originalData: item
-        }))}
+        data={billingsTableData}
         isLoading={isLoading}
         emptyMessage="No billings found. Items from your quotation will appear here automatically."
         footerSummary={filteredItems.length > 0 ? {
@@ -630,7 +640,7 @@ export function UnifiedBillingsTab({
         onDeleteCategory={!readOnly ? handleDeleteCategory : undefined}
         onAddItem={!readOnly ? handleAddItemToCategory : undefined}
         groupBy={groupBy}
-        linkedBookings={linkedBookings}
+        linkedBookings={stableLinkedBookings}
       />
     </div>
   );

@@ -1817,6 +1817,10 @@
     border-color: #e5e9f0;
   }
 
+  :where(.divide-\[\#F0F0F0\] > :not(:last-child)) {
+    border-color: #f0f0f0;
+  }
+
   :where(.divide-\[\#F3F4F6\] > :not(:last-child)) {
     border-color: #f3f4f6;
   }

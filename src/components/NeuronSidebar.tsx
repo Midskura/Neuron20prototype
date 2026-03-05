@@ -597,7 +597,7 @@ export function NeuronSidebar({ currentPage, onNavigate, currentUser }: NeuronSi
         
         {/* HR */}
         <div className="space-y-1">
-          {showHR && renderNavButton({ id: "hr" as Page, label: "HR", icon: User })}
+          {showHR && !isEssentials && renderNavButton({ id: "hr" as Page, label: "HR", icon: User })}
         </div>
 
         {/* Accounting with sub-items */}

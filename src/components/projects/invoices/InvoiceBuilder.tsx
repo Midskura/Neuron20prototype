@@ -22,6 +22,7 @@ interface InvoiceBuilderProps {
   
   // Create Mode
   billingItems?: Billing[];
+  linkedBookings?: any[];
   onSuccess?: () => void;
   onRefreshData?: () => Promise<void>;
   
@@ -39,6 +40,7 @@ export function InvoiceBuilder({
   mode, 
   project, 
   billingItems = [], 
+  linkedBookings = [],
   onSuccess,
   invoice: initialInvoice,
   onBack,

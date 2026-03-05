@@ -1,5 +1,5 @@
-import { Receipt, Plus, DollarSign, LoaderCircle, ChevronDown, ChevronRight, Briefcase, Ship, Truck, Shield, Package, ChevronsUpDown } from "lucide-react";
-import { useState, useMemo, useEffect } from "react";
+import { Receipt, Plus, DollarSign, LoaderCircle, ChevronDown, ChevronRight, Briefcase, Ship, Truck, Shield, Package } from "lucide-react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 // Shared Components
 import { PricingTableHeader } from "../pricing/PricingTableHeader";
 import { UniversalPricingRow, PricingItemData } from "../pricing/UniversalPricingRow";
@@ -7,6 +7,7 @@ import { UniversalPricingRow, PricingItemData } from "../pricing/UniversalPricin
 import { CategoryHeader } from "../../pricing/quotations/CategoryHeader";
 import type { SellingPriceCategory } from "../../../types/pricing";
 import { getServiceIcon } from "../../../utils/quotation-helpers";
+import { useBookingGrouping } from "../../../hooks/useBookingGrouping";
 
 export interface BillingTableItem {
   id: string;
@@ -56,6 +57,21 @@ const formatCurrency = (amount: number, currency: string = "PHP") => {
   }).format(amount);
 };
 
+// Helper: Compute aggregate billing status from a list of items
+const getBookingBillingStatus = (items: BillingTableItem[]): "Unbilled" | "Partially Billed" | "Fully Billed" => {
+  if (items.length === 0) return "Unbilled";
+  const billedCount = items.filter(i => i.status === "billed" || i.status === "paid" || i.status === "invoiced").length;
+  if (billedCount === 0) return "Unbilled";
+  if (billedCount === items.length) return "Fully Billed";
+  return "Partially Billed";
+};
+
+const billingStatusStyles: Record<string, { bg: string; text: string; border: string }> = {
+  "Unbilled": { bg: "#F3F4F6", text: "#6B7280", border: "#E5E7EB" },
+  "Partially Billed": { bg: "#FFFBEB", text: "#D97706", border: "#FDE68A" },
+  "Fully Billed": { bg: "#ECFDF5", text: "#059669", border: "#A7F3D0" },
+};
+
 export function BillingsTable({
   data,
   isLoading = false,
@@ -71,13 +87,28 @@ export function BillingsTable({
   onDeleteCategory,
   onAddItem,
   groupBy = "category",
-  linkedBookings = [],
+  linkedBookings,
 }: BillingsTableProps) {
   // State for collapsible sections
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
-  // State for booking-level collapse
-  const [expandedBookings, setExpandedBookings] = useState<Set<string>>(new Set());
-  const [allExpanded, setAllExpanded] = useState(true);
+
+  // ✨ Booking grouping via shared hook
+  const getBookingId = useCallback((item: BillingTableItem) => item.originalData?.booking_id || "unassigned", []);
+  const {
+    bookingGroupedData,
+    bookingIds,
+    bookingMeta,
+    inferServiceType: inferSvcType,
+    expandedBookings,
+    toggleBooking,
+    toggleAllBookings: handleToggleAll,
+    allExpanded,
+  } = useBookingGrouping({
+    items: data,
+    linkedBookings,
+    getBookingId,
+    enabled: groupBy === "booking",
+  });
 
   // Group data by category
   const groupedData = useMemo(() => {
@@ -89,61 +120,6 @@ export function BillingsTable({
     });
     return groups;
   }, [data]);
-
-  // ✨ Group data by booking_id for booking-grouped view
-  const bookingGroupedData = useMemo(() => {
-    if (groupBy !== "booking") return {};
-    const groups: Record<string, BillingTableItem[]> = {};
-    data.forEach(item => {
-      const bid = item.originalData?.booking_id || "unassigned";
-      if (!groups[bid]) groups[bid] = [];
-      groups[bid].push(item);
-    });
-    // Also ensure every linked booking has an entry (even if empty)
-    linkedBookings.forEach((b: any) => {
-      const id = b.bookingId || b.id;
-      if (id && !groups[id]) groups[id] = [];
-    });
-    return groups;
-  }, [data, groupBy, linkedBookings]);
-
-  // Ordered list of booking IDs
-  const bookingIds = useMemo(() => {
-    return Object.keys(bookingGroupedData).sort((a, b) => {
-      if (a === "unassigned") return 1;
-      if (b === "unassigned") return -1;
-      return a.localeCompare(b);
-    });
-  }, [bookingGroupedData]);
-
-  // Build a lookup for booking metadata from linkedBookings prop
-  const bookingMeta = useMemo(() => {
-    const map = new Map<string, any>();
-    linkedBookings.forEach((b: any) => {
-      const id = b.bookingId || b.id;
-      if (id) map.set(id, b);
-    });
-    return map;
-  }, [linkedBookings]);
-
-  // Infer service type from booking ID prefix (same fallback as ContractDetailView)
-  const inferServiceType = (bookingId: string, meta?: any): string => {
-    if (meta?.serviceType || meta?.bookingType) return meta.serviceType || meta.bookingType;
-    if (bookingId.startsWith("FWD-")) return "Forwarding";
-    if (bookingId.startsWith("BRK-")) return "Brokerage";
-    if (bookingId.startsWith("TRK-")) return "Trucking";
-    if (bookingId.startsWith("INS-")) return "Marine Insurance";
-    if (bookingId.startsWith("OTH-")) return "Others";
-    return "Others";
-  };
-
-  // Initialize expanded bookings when booking IDs change
-  useEffect(() => {
-    if (groupBy === "booking" && bookingIds.length > 0) {
-      setExpandedBookings(new Set(bookingIds));
-      setAllExpanded(true);
-    }
-  }, [bookingIds.length, groupBy]);
 
   // Determine list of categories to display
   // Prioritize activeCategories (state-based) to support empty categories
@@ -158,7 +134,7 @@ export function BillingsTable({
   }, [activeCategories, groupedData, viewMode]);
 
   // Initialize expanded state when categories load
-  useMemo(() => {
+  useEffect(() => {
     if (displayedCategories.length > 0 && expandedCategories.size === 0) {
       setExpandedCategories(new Set(displayedCategories));
     }
@@ -172,28 +148,6 @@ export function BillingsTable({
       newSet.add(category);
     }
     setExpandedCategories(newSet);
-  };
-
-  const toggleBooking = (bookingId: string) => {
-    const newSet = new Set(expandedBookings);
-    if (newSet.has(bookingId)) {
-      newSet.delete(bookingId);
-    } else {
-      newSet.add(bookingId);
-    }
-    setExpandedBookings(newSet);
-    // Sync allExpanded state
-    setAllExpanded(newSet.size === bookingIds.length);
-  };
-
-  const handleToggleAll = () => {
-    if (allExpanded) {
-      setExpandedBookings(new Set());
-      setAllExpanded(false);
-    } else {
-      setExpandedBookings(new Set(bookingIds));
-      setAllExpanded(true);
-    }
   };
 
   if (isLoading) {
@@ -260,35 +214,53 @@ export function BillingsTable({
     }
 
     return (
-      <div className="flex flex-col gap-6">
-        {/* Expand/Collapse All toggle */}
-        <div className="flex items-center justify-end">
-          <button
-            onClick={handleToggleAll}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium rounded-md transition-colors"
-            style={{
-              color: "#0F766E",
-              backgroundColor: "transparent",
-              border: "1px solid #D1D5DB",
-              cursor: "pointer",
-            }}
-            onMouseEnter={e => { e.currentTarget.style.backgroundColor = "#F0FAFA"; e.currentTarget.style.borderColor = "#0F766E"; }}
-            onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.borderColor = "#D1D5DB"; }}
-          >
-            <ChevronsUpDown size={14} />
-            {allExpanded ? "Collapse All" : "Expand All"}
-          </button>
-        </div>
+      <div className="flex flex-col gap-0">
+        {/* Unified Table Container */}
+        <div
+          className="bg-white border border-[#E5E9E8] rounded-xl overflow-hidden"
+        >
+          {/* Single shared column header with Collapse/Expand toggle */}
+          <PricingTableHeader
+            showCost={false}
+            showMarkup={false}
+            showForex={true}
+            showTax={true}
+            firstCellContent={
+              <button
+                onClick={handleToggleAll}
+                className="flex items-center gap-3"
+                style={{
+                  backgroundColor: "transparent",
+                  border: "none",
+                  cursor: "pointer",
+                  padding: 0,
+                  color: "#9CA3AF",
+                  fontSize: "11px",
+                  fontWeight: 600,
+                  letterSpacing: "0.02em",
+                }}
+              >
+                <div style={{ transition: "transform 0.15s ease", transform: allExpanded ? "rotate(0deg)" : "rotate(-90deg)" }}>
+                  <ChevronDown size={14} />
+                </div>
+                <span style={{ color: "#6B7A76" }}>Item</span>
+              </button>
+            }
+          />
 
-        {/* Booking Cards */}
-        <div className="flex flex-col gap-4">
-          {bookingIds.map(bid => {
+          {/* Booking groups as row sections */}
+          {bookingIds.map((bid, bidIdx) => {
             const items = bookingGroupedData[bid] || [];
             const meta = bookingMeta.get(bid);
-            const serviceType = bid === "unassigned" ? "Unassigned" : inferServiceType(bid, meta);
+            const serviceType = bid === "unassigned" ? "Unassigned" : inferSvcType(bid, meta);
             const subtotal = items.reduce((sum, item) => sum + item.amount, 0);
             const isExpanded = expandedBookings.has(bid);
             const itemCount = items.length;
+            const isEmpty = itemCount === 0;
+
+            // Compute aggregate billing status for this booking
+            const bookingStatus = getBookingBillingStatus(items);
+            const statusStyle = billingStatusStyles[bookingStatus];
 
             // Sub-group items by category within this booking
             const catGroups: Record<string, BillingTableItem[]> = {};
@@ -300,33 +272,34 @@ export function BillingsTable({
             const catNames = Object.keys(catGroups).sort();
 
             return (
-              <div
-                key={bid}
-                className="bg-white border border-[#E5E9E8] rounded-xl overflow-hidden"
-                style={{ transition: "box-shadow 0.2s ease" }}
-              >
-                {/* Booking Card Header */}
+              <div key={bid}>
+                {/* Booking Header Row — acts as a collapsible divider */}
                 <button
                   onClick={() => toggleBooking(bid)}
-                  className="w-full flex items-center justify-between px-5 py-3.5"
                   style={{
+                    width: "100%",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    padding: "10px 16px",
                     background: isExpanded ? "#F8FFFE" : "#FAFCFB",
                     border: "none",
-                    cursor: "pointer",
+                    borderTop: bidIdx > 0 ? "1px solid #E5E9E8" : "none",
                     borderBottom: isExpanded ? "1px solid #E5E9E8" : "none",
+                    cursor: "pointer",
                     transition: "background 0.15s ease",
                   }}
                 >
                   <div className="flex items-center gap-3">
                     {/* Expand chevron */}
                     <div style={{ color: "#9CA3AF", transition: "transform 0.15s ease", transform: isExpanded ? "rotate(0deg)" : "rotate(-90deg)" }}>
-                      <ChevronDown size={16} />
+                      <ChevronDown size={14} />
                     </div>
                     {/* Service icon */}
-                    {bid !== "unassigned" && getServiceIcon(serviceType, { size: 16, color: "#0F766E" })}
+                    {bid !== "unassigned" && getServiceIcon(serviceType, { size: 14, color: "#0F766E" })}
                     {/* Booking ID */}
                     <span style={{
-                      fontSize: "13px",
+                      fontSize: "12px",
                       fontWeight: 600,
                       color: bid === "unassigned" ? "#6B7280" : "#0F766E",
                       fontFamily: "monospace",
@@ -336,74 +309,103 @@ export function BillingsTable({
                     {/* Service type label */}
                     {bid !== "unassigned" && (
                       <span style={{
-                        fontSize: "12px",
-                        fontWeight: 500,
+                        fontSize: "10px",
+                        fontWeight: 600,
                         color: "#6B7280",
-                        padding: "2px 8px",
+                        padding: "1px 6px",
                         backgroundColor: "#F3F4F6",
-                        borderRadius: "4px",
+                        borderRadius: "3px",
+                        border: "1px solid #E5E7EB",
                       }}>
                         {serviceType}
                       </span>
                     )}
                     {/* Item count badge */}
                     <span style={{
-                      fontSize: "11px",
-                      fontWeight: 500,
-                      color: "#9CA3AF",
+                      fontSize: "10px",
+                      fontWeight: 600,
+                      color: "#6B7280",
+                      padding: "1px 6px",
+                      backgroundColor: "#F3F4F6",
+                      borderRadius: "3px",
+                      border: "1px solid #E5E7EB",
                     }}>
                       {itemCount} item{itemCount !== 1 ? "s" : ""}
                     </span>
+                    {/* Aggregate billing status badge */}
+                    {itemCount > 0 && (
+                      <span style={{
+                        fontSize: "10px",
+                        fontWeight: 600,
+                        color: statusStyle.text,
+                        backgroundColor: statusStyle.bg,
+                        border: `1px solid ${statusStyle.border}`,
+                        padding: "1px 6px",
+                        borderRadius: "3px",
+                      }}>
+                        {bookingStatus}
+                      </span>
+                    )}
                   </div>
                   {/* Subtotal */}
                   <span style={{
-                    fontSize: "14px",
+                    fontSize: "13px",
                     fontWeight: 600,
-                    color: "#12332B",
+                    color: isEmpty ? "#9CA3AF" : "#12332B",
                     fontFamily: "monospace",
                   }}>
                     {formatCurrency(subtotal)}
                   </span>
                 </button>
 
-                {/* Expanded Content: category sub-groups */}
+                {/* Expanded Content: inline rows under this booking header */}
                 {isExpanded && (
-                  <div className="p-4">
+                  <>
                     {catNames.length > 0 ? (
-                    <div className="flex flex-col gap-3">
-                      {catNames.map(catName => {
+                      catNames.map((catName, catIdx) => {
                         const catItems = catGroups[catName];
                         const catSubtotal = catItems.reduce((sum, i) => sum + i.amount, 0);
+
                         return (
-                          <div key={catName} className="border border-[#E5E9E8] rounded-lg overflow-hidden">
-                            {/* Category sub-header (lightweight) */}
-                            <div className="flex items-center justify-between px-4 py-2.5" style={{ backgroundColor: "#F9FAFB", borderBottom: "1px solid #E5E9E8" }}>
-                              <span style={{ fontSize: "12px", fontWeight: 600, color: "#374151", textTransform: "uppercase", letterSpacing: "0.3px" }}>
-                                {catName}
-                              </span>
-                              <div className="flex items-center gap-3">
-                                <span style={{ fontSize: "11px", color: "#9CA3AF" }}>
-                                  {catItems.length} item{catItems.length !== 1 ? "s" : ""}
+                          <div key={catName}>
+                            {/* Category sub-header — lightweight inline row */}
+                            {catNames.length > 1 && (
+                              <div
+                                className="flex items-center justify-between"
+                                style={{
+                                  padding: "6px 16px 6px 44px",
+                                  backgroundColor: "#F9FAFB",
+                                  borderBottom: "1px solid #F0F0F0",
+                                }}
+                              >
+                                <span style={{
+                                  fontSize: "10px",
+                                  fontWeight: 700,
+                                  color: "#9CA3AF",
+                                  textTransform: "uppercase",
+                                  letterSpacing: "0.05em",
+                                }}>
+                                  {catName}
                                 </span>
-                                <span style={{ fontSize: "12px", fontWeight: 600, color: "#374151", fontFamily: "monospace" }}>
-                                  {formatCurrency(catSubtotal)}
-                                </span>
+                                <div className="flex items-center gap-3">
+                                  <span style={{ fontSize: "10px", color: "#9CA3AF" }}>
+                                    {catItems.length} item{catItems.length !== 1 ? "s" : ""}
+                                  </span>
+                                  <span style={{ fontSize: "11px", fontWeight: 600, color: "#9CA3AF", fontFamily: "monospace" }}>
+                                    {formatCurrency(catSubtotal)}
+                                  </span>
+                                </div>
                               </div>
-                            </div>
-                            {/* Pricing rows */}
-                            <div className="overflow-x-auto">
-                              <PricingTableHeader
-                                showCost={false}
-                                showMarkup={false}
-                                showForex={true}
-                                showTax={true}
-                              />
-                              <div className="divide-y divide-[#E5E9E8]">
-                                {catItems.map(item => (
+                            )}
+                            {/* Billing item rows — directly rendered, sharing the unified column grid */}
+                            <div className="divide-y divide-[#F0F0F0]">
+                              {catItems.map(item => {
+                                const isBilled = item.status === "billed" || item.status === "paid" || item.status === "invoiced";
+                                return (
                                   <UniversalPricingRow
                                     key={item.id}
                                     data={mapToPricingData(item)}
-                                    mode={viewMode ? "view" : "edit"}
+                                    mode={viewMode || isBilled ? "view" : "edit"}
                                     serviceType={item.service_type}
                                     itemType="charge"
                                     config={{
@@ -420,22 +422,29 @@ export function BillingsTable({
                                       onRemove: () => onItemChange?.(item.id, "delete", true),
                                     }}
                                   />
-                                ))}
-                              </div>
+                                );
+                              })}
                             </div>
                           </div>
                         );
-                      })}
-                    </div>
+                      })
                     ) : (
-                      <div className="py-6 text-center" style={{ color: "#9CA3AF" }}>
-                        <Receipt size={24} className="mx-auto mb-2 opacity-50" />
-                        <p style={{ fontSize: "13px", fontStyle: "italic" }}>
-                          No billing items for this booking yet.
+                      /* Empty booking — dashed subtle indicator */
+                      <div
+                        style={{
+                          padding: "12px 16px 12px 44px",
+                          borderLeft: "2px dashed #D1D5DB",
+                          marginLeft: "16px",
+                          marginTop: "4px",
+                          marginBottom: "8px",
+                        }}
+                      >
+                        <p style={{ fontSize: "12px", color: "#9CA3AF", fontStyle: "italic" }}>
+                          No billing items yet
                         </p>
                       </div>
                     )}
-                  </div>
+                  </>
                 )}
               </div>
             );
@@ -530,11 +539,14 @@ export function BillingsTable({
 
                                 {/* Items */}
                                 <div className="divide-y divide-[#E5E9E8]">
-                                {items.map(item => (
+                                {items.map(item => {
+                                    // Protect billed/paid items from editing
+                                    const isBilled = item.status === "billed" || item.status === "paid" || item.status === "invoiced";
+                                    return (
                                     <UniversalPricingRow
                                     key={item.id}
                                     data={mapToPricingData(item)}
-                                    mode={viewMode ? "view" : "edit"}
+                                    mode={viewMode || isBilled ? "view" : "edit"}
                                     serviceType={item.service_type}
                                     itemType="charge"
                                     config={{
@@ -548,13 +560,11 @@ export function BillingsTable({
                                     handlers={{
                                         onFieldChange: (field, value) => onItemChange?.(item.id, field, value),
                                         onPriceChange: (value) => onItemChange?.(item.id, 'amount', value),
-                                        onRemove: () => onDeleteCategory ? onItemChange?.(item.id, 'delete', true) : undefined // Hack to support remove item if needed, but UnifiedBillingsTab needs to handle 'delete' field or we add onRemoveItem prop?
-                                        // For now, let's assume item removal is done via status or we need a dedicated handler.
-                                        // UnifiedBillingsTab doesn't implement delete item yet inside handleItemChange.
-                                        // We should add onRemoveItem to props later if needed.
+                                        onRemove: () => onDeleteCategory ? onItemChange?.(item.id, 'delete', true) : undefined
                                     }}
                                     />
-                                ))}
+                                    );
+                                })}
                                 </div>
                             </>
                         ) : (
