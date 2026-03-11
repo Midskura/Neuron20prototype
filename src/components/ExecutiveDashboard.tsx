@@ -17,24 +17,6 @@ import {
   FileCheck,
   AlertTriangle
 } from "lucide-react";
-import { 
-  LineChart, 
-  Line, 
-  AreaChart,
-  Area,
-  BarChart, 
-  Bar, 
-  PieChart,
-  Pie,
-  Cell,
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  Legend, 
-  ResponsiveContainer,
-  ComposedChart
-} from "recharts";
 import { NeuronCard } from "./NeuronCard";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { useState, useMemo, memo, useRef, useEffect } from "react";
@@ -122,7 +104,7 @@ export function ExecutiveDashboard({ currentUser }: ExecutiveDashboardProps) {
   // ⚡ PERFORMANCE: Memoize all chart data to prevent recreation on every render
   const cashFlowData = useMemo(() => [
     { month: "Jun", receivables: 485000, payables: 362000, netPosition: 123000 },
-    { month: "Jul", receivables: 512000, payables: 389000, netPosition: 123000 },
+    { month: "Jul", receivables: 512000, payables: 389000, netPosition: 123500 },
     { month: "Aug", receivables: 548000, payables: 401000, netPosition: 147000 },
     { month: "Sep", receivables: 592000, payables: 438000, netPosition: 154000 },
     { month: "Oct", receivables: 634000, payables: 467000, netPosition: 167000 },
@@ -328,45 +310,54 @@ export function ExecutiveDashboard({ currentUser }: ExecutiveDashboardProps) {
               </div>
               
               <div style={{ width: '100%', height: 350, contain: 'strict' }}>
-                <ResponsiveContainer width="100%" height={350} debounce={300}>
-                  <ComposedChart data={cashFlowData}>
-                    {/* CartesianGrid removed for better performance */}
-                    <XAxis 
-                      dataKey="month" 
-                      tick={{ fill: '#6B7A76', fontSize: 12 }}
-                      axisLine={{ stroke: '#E5E9F0' }}
-                    />
-                    <YAxis 
-                      tick={{ fill: '#6B7A76', fontSize: 12 }}
-                      axisLine={{ stroke: '#E5E9F0' }}
-                      tickFormatter={(value) => `₱${value / 1000}K`}
-                    />
-                    <Tooltip 
-                      contentStyle={{ 
-                        background: '#FFFFFF', 
-                        border: '1px solid #E5E9F0',
-                        borderRadius: '8px',
-                        boxShadow: '0 4px 6px rgba(0,0,0,0.05)'
-                      }}
-                      formatter={(value: any) => `₱${(value / 1000).toFixed(0)}K`}
-                    />
-                    <Legend 
-                      wrapperStyle={{ paddingTop: '20px' }}
-                      iconType="circle"
-                    />
-                    <Bar dataKey="receivables" fill="#0F766E" name="Receivables" radius={[4, 4, 0, 0]} isAnimationActive={false} />
-                    <Bar dataKey="payables" fill="#9CA3AF" name="Payables" radius={[4, 4, 0, 0]} isAnimationActive={false} />
-                    <Line 
-                      type="monotone" 
-                      dataKey="netPosition" 
-                      stroke="#14B8A6" 
-                      strokeWidth={3}
-                      name="Net Position"
-                      dot={{ fill: '#14B8A6', r: 4 }}
-                      isAnimationActive={false}
-                    />
-                  </ComposedChart>
-                </ResponsiveContainer>
+                {/* CSS-based bar chart to avoid recharts duplicate key bug */}
+                <div className="flex flex-col h-full">
+                  {/* Legend */}
+                  <div className="flex items-center gap-6 mb-4">
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded-full" style={{ backgroundColor: '#0F766E' }} />
+                      <span className="text-[12px] text-[#6B7A76]">Receivables</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded-full" style={{ backgroundColor: '#9CA3AF' }} />
+                      <span className="text-[12px] text-[#6B7A76]">Payables</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded-full" style={{ backgroundColor: '#14B8A6' }} />
+                      <span className="text-[12px] text-[#6B7A76]">Net Position</span>
+                    </div>
+                  </div>
+                  {/* Bars */}
+                  <div className="flex-1 flex items-end gap-3">
+                    {cashFlowData.map((item) => {
+                      const maxVal = 700000;
+                      return (
+                        <div key={item.month} className="flex-1 flex flex-col items-center gap-1">
+                          <div className="w-full flex items-end gap-1" style={{ height: 260 }}>
+                            <div 
+                              className="flex-1 rounded-t-[4px] transition-all hover:opacity-80" 
+                              style={{ height: `${(item.receivables / maxVal) * 100}%`, backgroundColor: '#0F766E' }}
+                              title={`Receivables: ₱${(item.receivables / 1000).toFixed(0)}K`}
+                            />
+                            <div 
+                              className="flex-1 rounded-t-[4px] transition-all hover:opacity-80" 
+                              style={{ height: `${(item.payables / maxVal) * 100}%`, backgroundColor: '#9CA3AF' }}
+                              title={`Payables: ₱${(item.payables / 1000).toFixed(0)}K`}
+                            />
+                            <div 
+                              className="flex-1 rounded-t-[4px] transition-all hover:opacity-80" 
+                              style={{ height: `${(item.netPosition / maxVal) * 100}%`, backgroundColor: '#14B8A6' }}
+                              title={`Net Position: ₱${(item.netPosition / 1000).toFixed(0)}K`}
+                            />
+                          </div>
+                          <div className="border-t border-[#E5E9F0] w-full pt-2">
+                            <span className="text-[12px] text-[#6B7A76] block text-center">{item.month}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
             </NeuronCard>
 
@@ -454,31 +445,45 @@ export function ExecutiveDashboard({ currentUser }: ExecutiveDashboardProps) {
               </div>
               
               <div style={{ width: '100%', height: 300, contain: 'strict' }}>
-                <ResponsiveContainer width="100%" height={300} debounce={300}>
-                  <BarChart data={bookingTrendsData}>
-                    {/* CartesianGrid removed for better performance */}
-                    <XAxis 
-                      dataKey="week" 
-                      tick={{ fill: '#6B7A76', fontSize: 12 }}
-                      axisLine={{ stroke: '#E5E9F0' }}
-                    />
-                    <YAxis 
-                      tick={{ fill: '#6B7A76', fontSize: 12 }}
-                      axisLine={{ stroke: '#E5E9F0' }}
-                    />
-                    <Tooltip 
-                      contentStyle={{ 
-                        background: '#FFFFFF', 
-                        border: '1px solid #E5E9F0',
-                        borderRadius: '8px',
-                        boxShadow: '0 4px 6px rgba(0,0,0,0.05)'
-                      }}
-                    />
-                    <Legend iconType="circle" />
-                    <Bar dataKey="bookings" fill="#9CA3AF" name="Total Bookings" radius={[4, 4, 0, 0]} isAnimationActive={false} />
-                    <Bar dataKey="onTime" fill="#0F766E" name="On-Time Deliveries" radius={[4, 4, 0, 0]} isAnimationActive={false} />
-                  </BarChart>
-                </ResponsiveContainer>
+                {/* CSS-based bar chart to avoid recharts duplicate key bug */}
+                <div className="flex flex-col h-full">
+                  {/* Legend */}
+                  <div className="flex items-center gap-6 mb-4">
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded-full" style={{ backgroundColor: '#9CA3AF' }} />
+                      <span className="text-[12px] text-[#6B7A76]">Total Bookings</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded-full" style={{ backgroundColor: '#0F766E' }} />
+                      <span className="text-[12px] text-[#6B7A76]">On-Time Deliveries</span>
+                    </div>
+                  </div>
+                  {/* Bars */}
+                  <div className="flex-1 flex items-end gap-4">
+                    {bookingTrendsData.map((item) => {
+                      const maxVal = 60;
+                      return (
+                        <div key={item.week} className="flex-1 flex flex-col items-center gap-1">
+                          <div className="w-full flex items-end gap-1" style={{ height: 200 }}>
+                            <div 
+                              className="flex-1 rounded-t-[4px] transition-all hover:opacity-80" 
+                              style={{ height: `${(item.bookings / maxVal) * 100}%`, backgroundColor: '#9CA3AF' }}
+                              title={`Total Bookings: ${item.bookings}`}
+                            />
+                            <div 
+                              className="flex-1 rounded-t-[4px] transition-all hover:opacity-80" 
+                              style={{ height: `${(item.onTime / maxVal) * 100}%`, backgroundColor: '#0F766E' }}
+                              title={`On-Time: ${item.onTime}`}
+                            />
+                          </div>
+                          <div className="border-t border-[#E5E9F0] w-full pt-2">
+                            <span className="text-[12px] text-[#6B7A76] block text-center">{item.week}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
             </NeuronCard>
           </div>

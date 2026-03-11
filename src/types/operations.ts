@@ -140,6 +140,7 @@ export interface ForwardingBooking {
 
   // Shipment Information
   consignee: string;
+  consignee_id?: string; // Links to Consignee entity (optional)
   shipper: string;
   mblMawb: string;
   hblHawb: string;
@@ -219,6 +220,7 @@ export interface BrokerageBooking {
 
   // Shipment Information
   consignee?: string;
+  consignee_id?: string; // Links to Consignee entity (optional)
   shipper?: string;
   mblMawb?: string;
   bookingConfirmationNumber?: string; // Export specific
@@ -286,6 +288,7 @@ export interface TruckingBooking {
 
   // Shipment Information
   consignee?: string;
+  consignee_id?: string; // Links to Consignee entity (optional)
   driver?: string;
   helper?: string;
   vehicleReferenceNumber?: string;

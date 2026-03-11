@@ -1,7 +1,7 @@
 # Invoice Creator — Booking-Grouped Billing Items Blueprint
 
 **Created:** 2026-03-05
-**Status:** IN PROGRESS
+**Status:** COMPLETE
 **Goal:** Make the Invoice Creator's "Billing Items" section display items grouped by booking (matching the Billings tab pattern), using a shared hook for maximum DRY compliance.
 
 ---
@@ -55,21 +55,21 @@ Extract from `BillingsTable.tsx` (lines ~112–178):
 ---
 
 ### Phase 3: Thread `linkedBookings` to Invoice Creator
-**Status:** NOT STARTED
+**Status:** COMPLETE
 
 **Modify** (prop threading only, no UI changes):
 
-1. `UnifiedInvoicesTab.tsx` — Add `linkedBookings?: any[]` prop, pass it to `InvoiceBuilder`
-2. `InvoiceBuilder.tsx` — Add `linkedBookings?: any[]` prop (no usage yet)
-3. `ProjectInvoices.tsx` — Pass `project.linkedBookings || []` to `UnifiedInvoicesTab`
-4. `ContractDetailView.tsx` — Pass `linkedBookings={linkedBookings}` to `UnifiedInvoicesTab` in `renderInvoicesTab()`
+1. `UnifiedInvoicesTab.tsx` — Added `linkedBookings?: any[]` prop, passes `linkedBookings || project.linkedBookings || []` to `InvoiceBuilder`
+2. `InvoiceBuilder.tsx` — Added `linkedBookings?: any[]` prop (no usage yet)
+3. `ProjectInvoices.tsx` — No change needed; `UnifiedInvoicesTab` falls back to `project.linkedBookings`
+4. `ContractDetailView.tsx` — Passes `linkedBookings={linkedBookings}` to `UnifiedInvoicesTab` in `renderInvoicesTab()`
 
 **Files touched:** 4 modified
 
 ---
 
 ### Phase 4: Implement Booking-Grouped UI in InvoiceBuilder
-**Status:** NOT STARTED
+**Status:** COMPLETE
 
 **Modify** `InvoiceBuilder.tsx` — Replace the flat billing items list (lines ~722–858) with booking-grouped rendering:
 
@@ -108,3 +108,19 @@ Extract from `BillingsTable.tsx` (lines ~112–178):
 ## Dependencies
 
 - `getServiceIcon` from `/utils/quotation-helpers` — already used in `BillingsTable`, will reuse in `InvoiceBuilder`
+
+---
+
+## Post-Implementation Fix: booking_id Resolution in useBillingMerge
+
+**Date:** 2026-03-05
+**Root Cause:** The Invoice Creator's billing items all showed under "Unassigned" despite the Billings tab correctly grouping them by booking. Root cause was a data-layer divergence:
+
+- `UnifiedBillingsTab` has its own inline merge logic that **actively re-resolves `booking_id`** for every unbilled item using a `resolveBookingId(serviceType)` helper. This maps each item's `service_type` to the correct linked booking ID via a `serviceToBookingMap` built from `linkedBookings`.
+- `useBillingMerge` (used by the invoices flow via `UnifiedInvoicesTab`) did NOT have this resolution logic — it just preserved the raw `booking_id` from the API, which is often set to the project/contract number instead of the actual booking ID (e.g., "BRK-2026-021").
+
+**Fix applied:**
+1. `useBillingMerge.ts` — Added `linkedBookings?: any[]` prop, built `serviceToBookingMap`, added `resolveBookingId` helper (same logic as `UnifiedBillingsTab` line 106-123). Applied it to both matched-item updates (line 77 `booking_id: resolveBookingId(...)`) and virtual item creation (line 98 `booking_id: resolveBookingId(...)`).
+2. `UnifiedInvoicesTab.tsx` — Passes `linkedBookings: resolvedLinkedBookings` to `useBillingMerge`, ensuring the resolution logic has the booking metadata it needs.
+
+**Files touched:** `/hooks/useBillingMerge.ts`, `/components/shared/invoices/UnifiedInvoicesTab.tsx`

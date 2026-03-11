@@ -12,6 +12,7 @@ import { toast } from "../ui/toast-utils";
 import { EditableMultiInputField } from "../shared/EditableMultiInputField";
 import { EditableSectionCard, useSectionEdit } from "../shared/EditableSectionCard";
 import { EditableField } from "../shared/EditableField";
+import { ConsigneeInfoBadge } from "../shared/ConsigneeInfoBadge";
 import { normalizeTruckingLineItems } from "../../utils/contractQuantityExtractor";
 import { Truck as TruckIcon } from "lucide-react";
 
@@ -290,7 +291,10 @@ function BookingInformationTab({ booking, onBookingUpdated, addActivity, setEdit
       >
         <div style={{ display: "grid", gap: "20px" }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}>
-            <EditableField label="Consignee" value={shipmentSection.draft.consignee || ""} mode={sMode} placeholder="Enter consignee..." onChange={(v) => shipmentSection.updateField("consignee", v)} />
+            <div>
+              <EditableField label="Consignee" value={shipmentSection.draft.consignee || ""} mode={sMode} placeholder="Enter consignee..." onChange={(v) => shipmentSection.updateField("consignee", v)} />
+              {!shipmentSection.isEditing && <ConsigneeInfoBadge consigneeId={(booking as any).consignee_id} />}
+            </div>
             <EditableField label="Driver" value={shipmentSection.draft.driver || ""} mode={sMode} placeholder="Assign driver..." onChange={(v) => shipmentSection.updateField("driver", v)} />
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "20px" }}>

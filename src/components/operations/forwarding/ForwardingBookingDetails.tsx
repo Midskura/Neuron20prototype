@@ -12,6 +12,7 @@ import { toast } from "../../ui/toast-utils";
 import { EditableMultiInputField } from "../../shared/EditableMultiInputField";
 import { EditableSectionCard, useSectionEdit } from "../../shared/EditableSectionCard";
 import { EditableField } from "../../shared/EditableField";
+import { ConsigneeInfoBadge } from "../../shared/ConsigneeInfoBadge";
 
 interface ForwardingBookingDetailsProps {
   booking: ForwardingBooking;
@@ -876,14 +877,17 @@ function BookingInformationTab({
         <div style={{ display: "grid", gap: "20px" }}>
           {/* Row 1: Consignee, Shipper */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}>
-            <EditableField
-              label="Consignee"
-              value={shipmentSection.draft.consignee || ""}
-              mode={sMode}
-              placeholder="Enter consignee..."
-              required
-              onChange={(v) => shipmentSection.updateField("consignee", v)}
-            />
+            <div>
+              <EditableField
+                label="Consignee"
+                value={shipmentSection.draft.consignee || ""}
+                mode={sMode}
+                placeholder="Enter consignee..."
+                required
+                onChange={(v) => shipmentSection.updateField("consignee", v)}
+              />
+              {!shipmentSection.isEditing && <ConsigneeInfoBadge consigneeId={(booking as any).consignee_id} />}
+            </div>
             <EditableField
               label="Shipper"
               value={shipmentSection.draft.shipper || ""}

@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useSearchParams } from "react-router";
 import { projectId, publicAnonKey } from "../../utils/supabase/info";
 import { toast } from "../ui/toast-utils";
 import { useCachedFetch, useInvalidateCache } from "../../hooks/useNeuronCache";
@@ -26,6 +27,7 @@ export function ProjectsModule({ currentUser, onCreateTicket, initialProject, de
   const [view, setView] = useState<ProjectsView>(initialProject ? "detail" : "list");
   const [selectedProject, setSelectedProject] = useState<Project | null>(initialProject || null);
   const invalidateCache = useInvalidateCache();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   // Update view if initialProject changes
   useEffect(() => {
@@ -55,6 +57,22 @@ export function ProjectsModule({ currentUser, onCreateTicket, initialProject, de
     projectsFetcher,
     [],
   );
+
+  // Deep-link: auto-select project from ?project=PROJECT_NUMBER query param
+  useEffect(() => {
+    const projectNumber = searchParams.get("project");
+    if (!projectNumber || projects.length === 0 || isLoading) return;
+
+    const match = projects.find(
+      (p) => p.project_number === projectNumber || p.id === projectNumber
+    );
+    if (match) {
+      setSelectedProject(match);
+      setView("detail");
+      // Clean the query param so back-navigation doesn't re-trigger
+      setSearchParams({}, { replace: true });
+    }
+  }, [searchParams, projects, isLoading, setSearchParams]);
 
   const handleSelectProject = (project: Project) => {
     setSelectedProject(project);

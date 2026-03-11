@@ -214,6 +214,7 @@ function RouteWrapper({ children, page }: { children: React.ReactNode; page: str
     if (path.startsWith("/accounting/transactions")) return "acct-transactions";
     if (path.startsWith("/accounting/coa")) return "acct-coa";
     if (path.startsWith("/accounting/evouchers")) return "acct-evouchers";
+    if (path.startsWith("/accounting/financials")) return "acct-financials";
     if (path.startsWith("/accounting/invoices")) return "acct-invoices";
     if (path.startsWith("/accounting/billings")) return "acct-billings";
     if (path.startsWith("/accounting/collections")) return "acct-collections";
@@ -222,6 +223,7 @@ function RouteWrapper({ children, page }: { children: React.ReactNode; page: str
     if (path.startsWith("/accounting/projects")) return "acct-projects";
     if (path.startsWith("/accounting/contracts")) return "acct-contracts";
     if (path.startsWith("/accounting/customers")) return "acct-customers";
+    if (path.startsWith("/accounting/bookings")) return "acct-bookings";
     if (path.startsWith("/accounting/reports")) return "acct-reports";
     if (path.startsWith("/accounting/catalog")) return "acct-catalog";
     if (path.startsWith("/hr")) return "hr";
@@ -268,6 +270,7 @@ function RouteWrapper({ children, page }: { children: React.ReactNode; page: str
       "acct-transactions": "/accounting/transactions",
       "acct-coa": "/accounting/coa",
       "acct-evouchers": "/accounting/evouchers",
+      "acct-financials": "/accounting/financials",
       "acct-invoices": "/accounting/invoices",
       "acct-billings": "/accounting/billings",
       "acct-collections": "/accounting/collections",
@@ -276,6 +279,7 @@ function RouteWrapper({ children, page }: { children: React.ReactNode; page: str
       "acct-projects": "/accounting/projects",
       "acct-contracts": "/accounting/contracts",
       "acct-customers": "/accounting/customers",
+      "acct-bookings": "/accounting/bookings",
       "acct-reports": "/accounting/reports",
       "acct-catalog": "/accounting/catalog",
       "hr": "/hr",
@@ -856,10 +860,26 @@ function AccountingCustomersPage() {
   );
 }
 
+function AccountingBookingsPage() {
+  return (
+    <RouteWrapper page="acct-bookings">
+      <Accounting view="bookings" />
+    </RouteWrapper>
+  );
+}
+
 function AccountingCatalogPage() {
   return (
     <RouteWrapper page="acct-catalog">
       <Accounting view="catalog" />
+    </RouteWrapper>
+  );
+}
+
+function AccountingFinancialsPage() {
+  return (
+    <RouteWrapper page="acct-financials">
+      <Accounting view="financials" />
     </RouteWrapper>
   );
 }
@@ -1067,8 +1087,10 @@ function AppContent() {
         <Route path="/accounting/projects" element={<AccountingProjectsPage />} />
         <Route path="/accounting/contracts" element={<AccountingContractsPage />} />
         <Route path="/accounting/customers" element={<AccountingCustomersPage />} />
+        <Route path="/accounting/bookings" element={<AccountingBookingsPage />} />
         <Route path="/accounting/reports" element={<AccountingReportsPage />} />
         <Route path="/accounting/catalog" element={<AccountingCatalogPage />} />
+        <Route path="/accounting/financials" element={<AccountingFinancialsPage />} />
         
         {/* Other */}
         <Route path="/hr" element={<HRPage />} />

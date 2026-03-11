@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
-import { Search, Plus, Phone, Mail, Building2, UserCircle, MoreHorizontal, Users, TrendingUp, UserCheck, Activity, ArrowUp, ArrowDown } from "lucide-react";
+import { Search, Plus, Phone, Mail, Building2, UserCircle, MoreHorizontal, Users, TrendingUp, UserCheck, Activity } from "lucide-react";
 import type { Contact, LifecycleStage, LeadStatus } from "../../types/bd";
 import type { Contact as BackendContact } from "../../types/contact";
 import { CustomDropdown } from "../bd/CustomDropdown";
 import { AddContactPanel } from "../bd/AddContactPanel";
+import { NeuronKPICard } from "../ui/NeuronKPICard";
 import { projectId, publicAnonKey } from "../../utils/supabase/info";
 
 const API_URL = `https://${projectId}.supabase.co/functions/v1/make-server-c142e950`;
@@ -306,20 +307,6 @@ export function ContactsListWithFilters({ userDepartment, onViewContact }: Conta
   const meetingsProgress = (meetingsBooked / meetingsQuota) * 100;
   const meetingsTrend = 10; // +10% vs last month (mock data)
   
-  // Helper function to get progress color
-  const getProgressColor = (progress: number) => {
-    if (progress >= 80) return "#0F766E"; // Green - on track
-    if (progress >= 60) return "#C88A2B"; // Yellow - behind
-    return "#C94F3D"; // Red - urgent
-  };
-  
-  // Helper function to get background color
-  const getProgressBgColor = (progress: number) => {
-    if (progress >= 80) return "#E8F5F3"; // Light green
-    if (progress >= 60) return "#FEF3E7"; // Light yellow
-    return "#FFE5E5"; // Light red
-  };
-  
   return (
     <div 
       className="h-full overflow-auto"
@@ -379,169 +366,38 @@ export function ContactsListWithFilters({ userDepartment, onViewContact }: Conta
         {/* KPI Section */}
         {permissions.showKPIs && (
           <div className="grid grid-cols-4 gap-4 mb-6">
-            {/* New Contacts Added */}
-            <div 
-              className="p-5 rounded-xl" 
-              style={{ 
-                border: "1.5px solid var(--neuron-ui-border)",
-                backgroundColor: "#FFFFFF" 
-              }}
-            >
-              <div className="flex items-start justify-between mb-3">
-                <div className="p-2 rounded-lg" style={{ backgroundColor: "#E8F5F3" }}>
-                  <Users size={18} style={{ color: "#0F766E" }} />
-                </div>
-                <div className="flex items-center gap-1">
-                  {newContactsTrend > 0 ? (
-                    <ArrowUp size={14} style={{ color: "#0F766E" }} />
-                  ) : (
-                    <ArrowDown size={14} style={{ color: "#C94F3D" }} />
-                  )}
-                  <span className="text-xs" style={{ color: newContactsTrend > 0 ? "#0F766E" : "#C94F3D" }}>
-                    {Math.abs(newContactsTrend)}%
-                  </span>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <p className="text-xs" style={{ color: "var(--neuron-ink-muted)" }}>New Contacts Added</p>
-                <div className="flex items-end gap-1">
-                  <span className="text-2xl" style={{ color: "var(--neuron-ink-primary)" }}>{newContactsAdded}</span>
-                  <span className="text-xs mb-1" style={{ color: "var(--neuron-ink-muted)" }}>/ {newContactsQuota}</span>
-                </div>
-                <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: getProgressBgColor(newContactsProgress) }}>
-                  <div 
-                    className="h-full rounded-full transition-all"
-                    style={{ 
-                      width: `${Math.min(newContactsProgress, 100)}%`,
-                      backgroundColor: getProgressColor(newContactsProgress)
-                    }}
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Calls Made */}
-            <div 
-              className="p-5 rounded-xl" 
-              style={{ 
-                border: "1.5px solid var(--neuron-ui-border)",
-                backgroundColor: "#FFFFFF" 
-              }}
-            >
-              <div className="flex items-start justify-between mb-3">
-                <div className="p-2 rounded-lg" style={{ backgroundColor: "#E8F5F3" }}>
-                  <Phone size={18} style={{ color: "#0F766E" }} />
-                </div>
-                <div className="flex items-center gap-1">
-                  {callsTrend > 0 ? (
-                    <ArrowUp size={14} style={{ color: "#0F766E" }} />
-                  ) : (
-                    <ArrowDown size={14} style={{ color: "#C94F3D" }} />
-                  )}
-                  <span className="text-xs" style={{ color: callsTrend > 0 ? "#0F766E" : "#C94F3D" }}>
-                    {Math.abs(callsTrend)}%
-                  </span>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <p className="text-xs" style={{ color: "var(--neuron-ink-muted)" }}>Calls Made</p>
-                <div className="flex items-end gap-1">
-                  <span className="text-2xl" style={{ color: "var(--neuron-ink-primary)" }}>{callsMade}</span>
-                  <span className="text-xs mb-1" style={{ color: "var(--neuron-ink-muted)" }}>/ {callsQuota}</span>
-                </div>
-                <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: getProgressBgColor(callsProgress) }}>
-                  <div 
-                    className="h-full rounded-full transition-all"
-                    style={{ 
-                      width: `${Math.min(callsProgress, 100)}%`,
-                      backgroundColor: getProgressColor(callsProgress)
-                    }}
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Emails Sent */}
-            <div 
-              className="p-5 rounded-xl" 
-              style={{ 
-                border: "1.5px solid var(--neuron-ui-border)",
-                backgroundColor: "#FFFFFF" 
-              }}
-            >
-              <div className="flex items-start justify-between mb-3">
-                <div className="p-2 rounded-lg" style={{ backgroundColor: "#E8F5F3" }}>
-                  <Mail size={18} style={{ color: "#0F766E" }} />
-                </div>
-                <div className="flex items-center gap-1">
-                  {emailsTrend > 0 ? (
-                    <ArrowUp size={14} style={{ color: "#0F766E" }} />
-                  ) : (
-                    <ArrowDown size={14} style={{ color: "#C94F3D" }} />
-                  )}
-                  <span className="text-xs" style={{ color: emailsTrend > 0 ? "#0F766E" : "#C94F3D" }}>
-                    {Math.abs(emailsTrend)}%
-                  </span>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <p className="text-xs" style={{ color: "var(--neuron-ink-muted)" }}>Emails Sent</p>
-                <div className="flex items-end gap-1">
-                  <span className="text-2xl" style={{ color: "var(--neuron-ink-primary)" }}>{emailsSent}</span>
-                  <span className="text-xs mb-1" style={{ color: "var(--neuron-ink-muted)" }}>/ {emailsQuota}</span>
-                </div>
-                <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: getProgressBgColor(emailsProgress) }}>
-                  <div 
-                    className="h-full rounded-full transition-all"
-                    style={{ 
-                      width: `${Math.min(emailsProgress, 100)}%`,
-                      backgroundColor: getProgressColor(emailsProgress)
-                    }}
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Meetings Booked */}
-            <div 
-              className="p-5 rounded-xl" 
-              style={{ 
-                border: "1.5px solid var(--neuron-ui-border)",
-                backgroundColor: "#FFFFFF" 
-              }}
-            >
-              <div className="flex items-start justify-between mb-3">
-                <div className="p-2 rounded-lg" style={{ backgroundColor: "#E8F5F3" }}>
-                  <UserCheck size={18} style={{ color: "#0F766E" }} />
-                </div>
-                <div className="flex items-center gap-1">
-                  {meetingsTrend > 0 ? (
-                    <ArrowUp size={14} style={{ color: "#0F766E" }} />
-                  ) : (
-                    <ArrowDown size={14} style={{ color: "#C94F3D" }} />
-                  )}
-                  <span className="text-xs" style={{ color: meetingsTrend > 0 ? "#0F766E" : "#C94F3D" }}>
-                    {Math.abs(meetingsTrend)}%
-                  </span>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <p className="text-xs" style={{ color: "var(--neuron-ink-muted)" }}>Meetings Booked</p>
-                <div className="flex items-end gap-1">
-                  <span className="text-2xl" style={{ color: "var(--neuron-ink-primary)" }}>{meetingsBooked}</span>
-                  <span className="text-xs mb-1" style={{ color: "var(--neuron-ink-muted)" }}>/ {meetingsQuota}</span>
-                </div>
-                <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: getProgressBgColor(meetingsProgress) }}>
-                  <div 
-                    className="h-full rounded-full transition-all"
-                    style={{ 
-                      width: `${Math.min(meetingsProgress, 100)}%`,
-                      backgroundColor: getProgressColor(meetingsProgress)
-                    }}
-                  />
-                </div>
-              </div>
-            </div>
+            <NeuronKPICard
+              icon={Users}
+              label="New Contacts Added"
+              value={newContactsAdded}
+              suffix={`/ ${newContactsQuota}`}
+              trend={newContactsTrend}
+              progress={newContactsProgress}
+            />
+            <NeuronKPICard
+              icon={Phone}
+              label="Calls Made"
+              value={callsMade}
+              suffix={`/ ${callsQuota}`}
+              trend={callsTrend}
+              progress={callsProgress}
+            />
+            <NeuronKPICard
+              icon={Mail}
+              label="Emails Sent"
+              value={emailsSent}
+              suffix={`/ ${emailsQuota}`}
+              trend={emailsTrend}
+              progress={emailsProgress}
+            />
+            <NeuronKPICard
+              icon={UserCheck}
+              label="Meetings Booked"
+              value={meetingsBooked}
+              suffix={`/ ${meetingsQuota}`}
+              trend={meetingsTrend}
+              progress={meetingsProgress}
+            />
           </div>
         )}
 

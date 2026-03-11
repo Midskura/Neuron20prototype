@@ -306,6 +306,16 @@ export function BillingsTable({
                     }}>
                       {bid === "unassigned" ? "Unassigned Items" : bid}
                     </span>
+                    {/* Customer / Project context (for system-wide views) */}
+                    {bid !== "unassigned" && meta?.customerName && (
+                      <span style={{
+                        fontSize: "11px",
+                        fontWeight: 500,
+                        color: "#374151",
+                      }}>
+                        · {meta.customerName}
+                      </span>
+                    )}
                     {/* Service type label */}
                     {bid !== "unassigned" && (
                       <span style={{

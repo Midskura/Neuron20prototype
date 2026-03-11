@@ -15,7 +15,7 @@ export function ProjectBillings({ financials, project }: ProjectBillingsProps) {
       <UnifiedBillingsTab
           items={billingItems}
           quotation={project.quotation} // Pass the quotation for reflective billing
-          projectId={project.id}
+          projectId={project.project_number || project.id}
           bookingId={undefined} // Project level view
           onRefresh={refresh}
           isLoading={isLoading}

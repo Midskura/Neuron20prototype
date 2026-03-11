@@ -101,11 +101,14 @@ interface FinancialData {
 ```
 
 ### Aggregate Pages (Essentials Mode)
-Thin wrappers that fetch ALL system data and pass it to the same Unified components:
-- `AggregateBillingsPage.tsx` — with Catalog tab
-- `AggregateExpensesPage.tsx` — with Catalog tab
-- `AggregateInvoicesPage.tsx`
-- `AggregateCollectionsPage.tsx`
+**Superseded by `FinancialsModule.tsx`** — The 4 separate aggregate pages have been consolidated into a single tabbed "Financials" super-module with purpose-built aggregate views (ScopeBar, KPIStrip, AgingStrip, GroupingToolbar, GroupedDataTable). Old pages deleted:
+- `AggregateBillingsPage.tsx` — DELETED (Phase 6)
+- `AggregateExpensesPage.tsx` — DELETED (Phase 6)
+- `AggregateCollectionsPage.tsx` — DELETED (Phase 6)
+- `AggregateInvoicesPage.tsx` — KEPT (still used by Full Suite mode for standalone invoices view)
+
+New aggregate components live in `/components/accounting/aggregate/`:
+- `AggregateFinancialShell.tsx`, `ScopeBar.tsx`, `KPIStrip.tsx`, `AgingStrip.tsx`, `GroupingToolbar.tsx`, `GroupedDataTable.tsx`, `types.ts`
 
 ### Quotation/Contract System
 Quotations and Contracts share the same data model (`quotation:{id}` in KV). Distinguished by `quotation_type`:

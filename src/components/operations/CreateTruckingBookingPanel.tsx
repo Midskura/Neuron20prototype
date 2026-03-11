@@ -14,6 +14,7 @@ import type { TruckingLineItem } from "../../types/pricing";
 import { normalizeTruckingLineItems, extractContractDestinations } from "../../utils/contractQuantityExtractor";
 import { fetchFullContract } from "../../utils/contractLookup";
 import { FormComboBox } from "../pricing/quotations/FormComboBox";
+import { ConsigneePicker } from "../shared/ConsigneePicker";
 
 interface CreateTruckingBookingPanelProps {
   isOpen: boolean;
@@ -69,6 +70,7 @@ export function CreateTruckingBookingPanel({
     quotationReferenceNumber: "",
     status: "Draft",
     consignee: "",
+    consignee_id: undefined as string | undefined,
     driver: "",
     helper: "",
     vehicleReferenceNumber: "",
@@ -357,12 +359,11 @@ export function CreateTruckingBookingPanel({
                     <label className="block mb-1.5" style={{ fontSize: "13px", fontWeight: 500, color: "#12332B" }}>
                       Consignee
                     </label>
-                    <input
-                      type="text"
-                      name="consignee"
+                    <ConsigneePicker
                       value={formData.consignee}
-                      onChange={handleChange}
-                      placeholder="Consignee name"
+                      onChange={(val) => setFormData(prev => ({ ...prev, consignee: val }))}
+                      onConsigneeIdChange={(id) => setFormData(prev => ({ ...prev, consignee_id: id }))}
+                      customerName={formData.customerName}
                       className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",

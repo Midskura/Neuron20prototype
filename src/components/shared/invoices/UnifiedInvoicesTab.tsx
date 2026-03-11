@@ -40,10 +40,12 @@ export function UnifiedInvoicesTab({
   const { invoices, collections, billingItems: rawBillingItems, refresh } = financials;
 
   // -- Merge Virtual Items from Quotation --
+  const resolvedLinkedBookings = linkedBookings || project.linkedBookings || [];
   const billingItems = useBillingMerge({
     items: rawBillingItems,
     quotation: project.quotation,
-    projectId: project.id
+    projectId: project.id,
+    linkedBookings: resolvedLinkedBookings,
   });
   
   // -- State --
@@ -356,7 +358,7 @@ export function UnifiedInvoicesTab({
                     mode={interfaceMode === 'create' ? 'create' : 'view'}
                     project={project}
                     billingItems={billingItems} 
-                    linkedBookings={linkedBookings || project.linkedBookings || []}
+                    linkedBookings={resolvedLinkedBookings}
                     invoice={selectedInvoice || undefined}
                     onSuccess={handleCreateSuccess}
                     onRefreshData={refresh}

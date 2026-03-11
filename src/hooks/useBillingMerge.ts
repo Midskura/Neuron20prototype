@@ -7,11 +7,36 @@ interface UseBillingMergeProps {
   quotation?: QuotationNew;
   projectId: string;
   bookingId?: string;
+  linkedBookings?: any[];
 }
 
-export function useBillingMerge({ items, quotation, projectId, bookingId }: UseBillingMergeProps) {
+export function useBillingMerge({ items, quotation, projectId, bookingId, linkedBookings }: UseBillingMergeProps) {
   // Merges Real Billing Items with Virtual Quotation Items
   const mergedItems = useMemo(() => {
+    // Build service-to-booking map from linkedBookings for auto-routing
+    // Maps e.g. "Brokerage" → "BRK-20260301-1234"
+    // (Same logic as UnifiedBillingsTab inline merge)
+    const serviceToBookingMap = new Map<string, string>();
+    if (linkedBookings) {
+      linkedBookings.forEach((b: any) => {
+        const svc = b.serviceType || b.service_type || "";
+        const bid = b.bookingId || b.id;
+        if (svc && bid) serviceToBookingMap.set(svc, bid);
+      });
+    }
+
+    // Helper: resolve booking_id from a service type
+    const resolveBookingId = (serviceType: string | undefined) => {
+      // If we're already at booking-level (bookingId prop set), use that
+      if (bookingId) return bookingId;
+      // Try to match service → booking
+      if (serviceType && serviceToBookingMap.has(serviceType)) {
+        return serviceToBookingMap.get(serviceType)!;
+      }
+      // Fallback to project ID
+      return projectId;
+    };
+
     // 1. Deep copy existing real items to avoid mutating props
     const combined = items.map(item => ({ ...item }));
     
@@ -46,6 +71,8 @@ export function useBillingMerge({ items, quotation, projectId, bookingId }: UseB
                             amount: item.amount, // Calculated final price
                             currency: item.currency,
                             quotation_category: cat.category_name,
+                            // Auto-route to correct booking based on service tag
+                            booking_id: resolveBookingId(item.service || existingItem.service_type),
                             // Extended fields
                             quantity: item.quantity,
                             forex_rate: item.forex_rate,
@@ -72,7 +99,7 @@ export function useBillingMerge({ items, quotation, projectId, bookingId }: UseB
                     currency: item.currency,
                     status: 'unbilled', // Virtual items are always unbilled by definition
                     quotation_category: cat.category_name,
-                    booking_id: bookingId || projectId,
+                    booking_id: resolveBookingId(item.service),
                     // Extended fields for editing
                     quantity: item.quantity,
                     forex_rate: item.forex_rate,
@@ -88,7 +115,7 @@ export function useBillingMerge({ items, quotation, projectId, bookingId }: UseB
     }
 
     return combined;
-  }, [items, quotation, projectId, bookingId]);
+  }, [items, quotation, projectId, bookingId, linkedBookings]);
 
   return mergedItems;
 }

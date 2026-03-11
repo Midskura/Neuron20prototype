@@ -7,6 +7,128 @@ import * as kv from "./kv_store_robust.tsx";
 // ==================== UTILITIES ====================
 
 /**
+ * Build lookup maps from projects and bookings for enriching financial records.
+ * Returns:
+ *   projectMap: project_number → { customer_name, customer_id, quotation_number }
+ *   bookingToProjectMap: bookingId → project_number
+ *   projectIdToNumber: project_id → project_number (for resolving billing items that store project_id in booking_id)
+ *   bookingCustomerMap: bookingId → { customer_name, customer_id, quotation_number } (for bookings NOT linked to any project)
+ */
+async function buildProjectLookupMaps() {
+  const projects = await kv.getByPrefix("project:");
+
+  // project_number → metadata
+  const projectMap = new Map<string, { customer_name: string; customer_id: string; quotation_number: string }>();
+  // project_id → project_number (for resolving billing items that use project_id as booking_id)
+  const projectIdToNumber = new Map<string, string>();
+
+  for (const p of projects) {
+    const pn = p.project_number || p.id;
+    const meta = {
+      customer_name: p.customer_name || "",
+      customer_id: p.customer_id || "",
+      quotation_number: p.quotation_number || "",
+    };
+    projectMap.set(pn, meta);
+    // Also key by project id (the KV record id) so billing items that use project_id as booking_id can resolve
+    if (p.id && p.id !== pn) {
+      projectIdToNumber.set(p.id, pn);
+      projectMap.set(p.id, meta);
+    }
+  }
+
+  // bookingId → project_number  (bookings store their parent project ref)
+  const bookingToProjectMap = new Map<string, string>();
+  const BOOKING_PREFIXES = [
+    "forwarding_booking:",
+    "brokerage_booking:",
+    "trucking_booking:",
+    "marine_insurance_booking:",
+    "others_booking:",
+  ];
+
+  const allBookings = (await Promise.all(
+    BOOKING_PREFIXES.map(prefix => kv.getByPrefix(prefix).catch(() => []))
+  )).flat();
+
+  for (const b of allBookings) {
+    const bid = b.bookingId || b.id;
+    const pn = b.projectNumber || b.project_number;
+    if (bid && pn) bookingToProjectMap.set(bid, pn);
+  }
+
+  // bookingId → customer metadata (for bookings NOT linked to any project)
+  // Bookings carry customerName/customer_name directly from the creation form
+  const bookingCustomerMap = new Map<string, { customer_name: string; customer_id: string; quotation_number: string }>();
+  for (const b of allBookings) {
+    const bid = b.bookingId || b.id;
+    const custName = b.customerName || b.customer_name || "";
+    const custId = b.customerId || b.customer_id || "";
+    if (bid && custName) {
+      bookingCustomerMap.set(bid, {
+        customer_name: custName,
+        customer_id: custId,
+        quotation_number: b.quotationNumber || b.quotation_number || "",
+      });
+    }
+  }
+
+  return { projectMap, bookingToProjectMap, projectIdToNumber, bookingCustomerMap };
+}
+
+/**
+ * Enrich an array of financial records with project metadata.
+ * Adds/normalizes: customer_name, customer_id, quotation_number, booking_id, project_number
+ */
+function enrichRecords(
+  records: any[],
+  projectMap: Map<string, { customer_name: string; customer_id: string; quotation_number: string }>,
+  bookingToProjectMap: Map<string, string>,
+  bookingCustomerMap: Map<string, { customer_name: string; customer_id: string; quotation_number: string }>,
+  projectIdToNumber: Map<string, string>
+): any[] {
+  return records.map(record => {
+    // Normalize booking_id from camelCase or snake_case
+    const bookingId = record.booking_id || record.bookingId || "";
+    const projectNumber = record.project_number || record.projectNumber || "";
+    // Some billing items store `project_id` (the KV record ID) instead of project_number
+    const projectId = record.project_id || "";
+
+    // Resolve project: try project_number first, then project_id, then look up via booking
+    let resolvedProjectNumber = projectNumber;
+    if (!resolvedProjectNumber && projectId && projectMap.has(projectId)) {
+      // Translate raw KV ID → human-readable project number
+      resolvedProjectNumber = projectIdToNumber.get(projectId) || projectId;
+    }
+    if (!resolvedProjectNumber && bookingId) {
+      resolvedProjectNumber = bookingToProjectMap.get(bookingId) || "";
+    }
+    // Fallback: bookingId might actually BE a project_number or project_id
+    // (legacy records use project_id as booking_id fallback). Try direct projectMap lookup.
+    if (!resolvedProjectNumber && bookingId && projectMap.has(bookingId)) {
+      // Translate raw KV ID → human-readable project number if possible
+      resolvedProjectNumber = projectIdToNumber.get(bookingId) || bookingId;
+    }
+
+    const projectMeta = projectMap.get(resolvedProjectNumber);
+
+    // If no project metadata found, try booking metadata
+    const bookingMeta = bookingCustomerMap.get(bookingId);
+
+    return {
+      ...record,
+      // Normalize both field name formats
+      booking_id: bookingId || resolvedProjectNumber,
+      project_number: resolvedProjectNumber || bookingId,
+      // Enrich from project data (only fill if record doesn't already have the field)
+      customer_name: record.customer_name || (projectMeta?.customer_name) || (bookingMeta?.customer_name) || "",
+      customer_id: record.customer_id || (projectMeta?.customer_id) || (bookingMeta?.customer_id) || "",
+      quotation_number: record.quotation_number || record.quotationNumber || (projectMeta?.quotation_number) || (bookingMeta?.quotation_number) || "",
+    };
+  });
+}
+
+/**
  * Generate consistent IDs with timestamps and random suffix
  */
 function generateId(prefix: string): string {
@@ -451,7 +573,11 @@ export async function getExpenses(c: Context) {
     
     console.log(`✅ Fetched ${expenses.length} expenses`);
     
-    return successResponse(c, expenses);
+    // Enrich with project metadata (customer_name, quotation_number, booking_id)
+    const { projectMap, bookingToProjectMap, bookingCustomerMap, projectIdToNumber } = await buildProjectLookupMaps();
+    const enrichedExpenses = enrichRecords(expenses, projectMap, bookingToProjectMap, bookingCustomerMap, projectIdToNumber);
+    
+    return successResponse(c, enrichedExpenses);
   } catch (error) {
     return errorResponse(c, `Failed to fetch expenses: ${error}`);
   }
@@ -466,13 +592,15 @@ function mapEVoucherToExpense(evoucher: any) {
     evoucher_id: evoucher.id,
     evoucher_number: evoucher.voucher_number,
     date: evoucher.request_date || evoucher.created_at,
-    vendor: evoucher.vendor_name || "—",
+    vendor: evoucher.vendor_name || "\u2014",
     category: evoucher.expense_category || "Uncategorized",
     sub_category: evoucher.sub_category || "",
     amount: evoucher.total_amount || evoucher.amount || 0,
     currency: evoucher.currency || "PHP",
     description: evoucher.purpose || evoucher.description || "Untitled Expense",
     project_number: evoucher.project_number,
+    booking_id: evoucher.booking_id || evoucher.bookingId || "",
+    customer_name: evoucher.customer_name || "",
     status: evoucher.status === "Approved" ? "approved" : 
             evoucher.status === "Posted" ? "posted" : 
             evoucher.status === "Rejected" ? "rejected" : "pending",
@@ -654,8 +782,12 @@ export async function getCollections(c: Context) {
     collections.sort((a: any, b: any) => 
       new Date(b.collection_date).getTime() - new Date(a.collection_date).getTime()
     );
+
+    // Enrich with project metadata (quotation_number, booking_id normalization)
+    const { projectMap, bookingToProjectMap, bookingCustomerMap, projectIdToNumber } = await buildProjectLookupMaps();
+    collections = enrichRecords(collections, projectMap, bookingToProjectMap, bookingCustomerMap, projectIdToNumber);
     
-    console.log(`✅ Fetched ${collections.length} collections`);
+    console.log(`Fetched ${collections.length} collections (enriched)`);
     
     return successResponse(c, collections);
   } catch (error) {
@@ -900,6 +1032,10 @@ export async function getInvoices(c: Context) {
         b.project_number === projectNumber || b.projectNumber === projectNumber
       );
     }
+
+    // Enrich with project metadata (customer_name, quotation_number, booking_id)
+    const { projectMap, bookingToProjectMap, bookingCustomerMap, projectIdToNumber } = await buildProjectLookupMaps();
+    billings = enrichRecords(billings, projectMap, bookingToProjectMap, bookingCustomerMap, projectIdToNumber);
     
     // Sort by date descending
     billings.sort((a: any, b: any) => {
@@ -908,7 +1044,7 @@ export async function getInvoices(c: Context) {
       return dateB.localeCompare(dateA);
     });
     
-    console.log(`Fetched ${billings.length} invoices${projectNumber ? ` for project ${projectNumber}` : ""}`);
+    console.log(`Fetched ${billings.length} invoices${projectNumber ? ` for project ${projectNumber}` : ""} (enriched)`);
     return c.json({ success: true, data: billings });
   } catch (error) {
     console.error("Error fetching invoices:", error);
@@ -1108,11 +1244,31 @@ export async function createInvoice(c: Context) {
  */
 export async function getBillings(c: Context) {
   try {
-    let billings = await kv.getByPrefix("billing:");
+    // Fetch from BOTH prefixes to include billable-expense atoms (billing_item:)
+    const [billingPrefixed, billingItemPrefixed] = await Promise.all([
+      kv.getByPrefix("billing:"),
+      kv.getByPrefix("billing_item:"),
+    ]);
     
     // Exclude invoices (which share the billing: KV prefix) —
     // only return actual billing line items (those without invoice_number)
-    billings = billings.filter((b: any) => !b.invoice_number);
+    let billings = [
+      ...billingPrefixed.filter((b: any) => !b.invoice_number),
+      ...billingItemPrefixed,
+    ];
+
+    // Deduplicate by id (in case a billing_item was also saved under billing:)
+    const seen = new Set<string>();
+    billings = billings.filter((b: any) => {
+      const id = b.id || b.billingId;
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+
+    // Enrich with project metadata (customer_name, quotation_number, etc.)
+    const { projectMap, bookingToProjectMap, bookingCustomerMap, projectIdToNumber } = await buildProjectLookupMaps();
+    billings = enrichRecords(billings, projectMap, bookingToProjectMap, bookingCustomerMap, projectIdToNumber);
     
     // Sort by date descending
     billings.sort((a: any, b: any) => {
@@ -1121,7 +1277,7 @@ export async function getBillings(c: Context) {
       return dateB.localeCompare(dateA);
     });
     
-    console.log(`Fetched ${billings.length} billing items`);
+    console.log(`Fetched ${billings.length} billing items (billing: + billing_item: prefixes, enriched)`);
     return c.json({ success: true, data: billings });
   } catch (error) {
     console.error("Error fetching billing items:", error);

@@ -10,6 +10,7 @@ import { ActivityTimelineTable } from "./ActivityTimelineTable";
 import { AddContactPanel } from "./AddContactPanel";
 import { CustomerProjectsTab } from "./CustomerProjectsTab";
 import { CustomerInquiriesTab } from "./CustomerInquiriesTab";
+import { ConsigneeInlineSection } from "./ConsigneeInlineSection";
 import { projectId, publicAnonKey } from "../../utils/supabase/info";
 import { toast } from "../ui/toast-utils";
 
@@ -111,7 +112,9 @@ export function CustomerDetail({ customer, onBack, onCreateInquiry, onViewInquir
   const [isLoadingContracts, setIsLoadingContracts] = useState(false);
   const [newComment, setNewComment] = useState("");
   const [isEditing, setIsEditing] = useState(false);
+  const [localCustomer, setLocalCustomer] = useState(customer);
   const [editedCustomer, setEditedCustomer] = useState(customer);
+  const [isSavingCustomer, setIsSavingCustomer] = useState(false);
   const [isLoggingActivity, setIsLoggingActivity] = useState(false);
   const [newActivity, setNewActivity] = useState<Partial<Activity>>({
     type: "Call",
@@ -476,13 +479,47 @@ export function CustomerDetail({ customer, onBack, onCreateInquiry, onViewInquir
     }
   };
 
-  const handleSave = () => {
-    // In real app, this would save to backend
-    setIsEditing(false);
+  const handleSave = async () => {
+    setIsSavingCustomer(true);
+    try {
+      const response = await fetch(`${API_URL}/customers/${customer.id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${publicAnonKey}`,
+        },
+        body: JSON.stringify({
+          name: editedCustomer.name || editedCustomer.company_name,
+          company_name: editedCustomer.name || editedCustomer.company_name,
+          client_type: editedCustomer.client_type,
+          industry: editedCustomer.industry,
+          registered_address: editedCustomer.registered_address,
+          status: editedCustomer.status,
+          lead_source: editedCustomer.lead_source,
+          notes: editedCustomer.notes,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        setLocalCustomer({ ...localCustomer, ...editedCustomer });
+        toast.success("Customer saved successfully");
+        setIsEditing(false);
+      } else {
+        console.error("Failed to save customer:", result.error);
+        toast.error(`Failed to save: ${result.error}`);
+      }
+    } catch (err: any) {
+      console.error("Error saving customer:", err);
+      toast.error(`Failed to save customer: ${err.message}`);
+    } finally {
+      setIsSavingCustomer(false);
+    }
   };
 
   const handleCancel = () => {
-    setEditedCustomer(customer);
+    setEditedCustomer(localCustomer);
     setIsEditing(false);
   };
 
@@ -509,7 +546,7 @@ export function CustomerDetail({ customer, onBack, onCreateInquiry, onViewInquir
 
   const customerContacts = getCustomerContacts();
   const inquiries = getCustomerInquiries();
-  const logoColor = getCompanyLogoColor(customer.name || customer.company_name || '');
+  const logoColor = getCompanyLogoColor(localCustomer.name || localCustomer.company_name || '');
 
   return (
     <div 
@@ -563,7 +600,7 @@ export function CustomerDetail({ customer, onBack, onCreateInquiry, onViewInquir
                         border: `2px solid ${logoColor}30`
                       }}
                     >
-                      {getCompanyInitials(customer.name || customer.company_name || '')}
+                      {getCompanyInitials(localCustomer.name || localCustomer.company_name || '')}
                     </div>
 
                     {/* Company Name & Status */}
@@ -572,13 +609,13 @@ export function CustomerDetail({ customer, onBack, onCreateInquiry, onViewInquir
                         className="text-[20px] font-semibold mb-2 break-words"
                         style={{ color: "var(--neuron-ink-primary)" }}
                       >
-                        {customer.name || customer.company_name}
+                        {localCustomer.name || localCustomer.company_name}
                       </h2>
                       <span 
                         className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium text-white"
-                        style={{ backgroundColor: getStatusColor(customer.status) }}
+                        style={{ backgroundColor: getStatusColor(localCustomer.status) }}
                       >
-                        {customer.status}
+                        {localCustomer.status}
                       </span>
                     </div>
                   </div>
@@ -617,7 +654,7 @@ export function CustomerDetail({ customer, onBack, onCreateInquiry, onViewInquir
                         </label>
                       </div>
                       <p className="text-[13px] pl-6" style={{ color: "var(--neuron-ink-primary)" }}>
-                        {customer.client_type || "Local"}
+                        {localCustomer.client_type || "Local"}
                       </p>
                     </div>
                   )}
@@ -632,7 +669,7 @@ export function CustomerDetail({ customer, onBack, onCreateInquiry, onViewInquir
                         </label>
                       </div>
                       <p className="text-[13px] pl-6" style={{ color: "var(--neuron-ink-primary)" }}>
-                        {customer.industry}
+                        {localCustomer.industry}
                       </p>
                     </div>
                   )}
@@ -647,7 +684,7 @@ export function CustomerDetail({ customer, onBack, onCreateInquiry, onViewInquir
                         </label>
                       </div>
                       <p className="text-[13px] pl-6" style={{ color: "var(--neuron-ink-primary)" }}>
-                        {customer.registered_address}
+                        {localCustomer.registered_address}
                       </p>
                     </div>
                   )}
@@ -662,7 +699,7 @@ export function CustomerDetail({ customer, onBack, onCreateInquiry, onViewInquir
                         </label>
                       </div>
                       <p className="text-[13px] pl-6" style={{ color: "var(--neuron-ink-primary)" }}>
-                        {customer.lead_source}
+                        {localCustomer.lead_source}
                       </p>
                     </div>
                   )}
@@ -709,7 +746,7 @@ export function CustomerDetail({ customer, onBack, onCreateInquiry, onViewInquir
                   </div>
 
                   {/* Notes */}
-                  {customer.notes && (
+                  {localCustomer.notes && (
                     <div>
                       <div className="flex items-center gap-2 mb-2">
                         <MessageSquare size={14} style={{ color: "var(--neuron-ink-muted)" }} />
@@ -718,9 +755,14 @@ export function CustomerDetail({ customer, onBack, onCreateInquiry, onViewInquir
                         </label>
                       </div>
                       <p className="text-[13px] pl-6 whitespace-pre-wrap" style={{ color: "var(--neuron-ink-primary)" }}>
-                        {customer.notes}
+                        {localCustomer.notes}
                       </p>
                     </div>
+                  )}
+
+                  {/* Consignees — inline section */}
+                  {variant === "bd" && (
+                    <ConsigneeInlineSection customerId={customer.id} isEditing={false} />
                   )}
                 </div>
               ) : (
@@ -856,11 +898,17 @@ export function CustomerDetail({ customer, onBack, onCreateInquiry, onViewInquir
                     />
                   </div>
 
+                  {/* Consignees — inline section (edit mode) */}
+                  {variant === "bd" && (
+                    <ConsigneeInlineSection customerId={customer.id} isEditing={true} />
+                  )}
+
                   {/* Save/Cancel Buttons */}
                   <div className="flex gap-2 pt-4">
                     <button
                       onClick={handleSave}
-                      className="flex-1 px-4 py-2 rounded-lg text-[13px] font-medium text-white transition-colors"
+                      disabled={isSavingCustomer}
+                      className="flex-1 px-4 py-2 rounded-lg text-[13px] font-medium text-white transition-colors disabled:opacity-60"
                       style={{ backgroundColor: "#0F766E" }}
                       onMouseEnter={(e) => {
                         e.currentTarget.style.backgroundColor = "#0D6560";
@@ -869,10 +917,11 @@ export function CustomerDetail({ customer, onBack, onCreateInquiry, onViewInquir
                         e.currentTarget.style.backgroundColor = "#0F766E";
                       }}
                     >
-                      Save Changes
+                      {isSavingCustomer ? "Saving..." : "Save Changes"}
                     </button>
                     <button
                       onClick={handleCancel}
+                      disabled={isSavingCustomer}
                       className="flex-1 px-4 py-2 rounded-lg text-[13px] font-medium transition-colors"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
@@ -995,6 +1044,7 @@ export function CustomerDetail({ customer, onBack, onCreateInquiry, onViewInquir
                   />
                 )}
               </button>
+
               <button
                 onClick={() => setActiveTab("comments")}
                 className="px-1 pb-3 text-[13px] font-medium transition-colors relative"

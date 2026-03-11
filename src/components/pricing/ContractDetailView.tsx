@@ -460,7 +460,7 @@ export function ContractDetailView({
       {/* ✨ PHASE 5C: Read-only aggregate view — billing items live on bookings, this is a rollup */}
       <UnifiedBillingsTab
         items={contractFinancials.billingItems}
-        projectId={quotation.id}
+        projectId={quotation.quote_number || quotation.id}
         bookingId=""
         onRefresh={contractFinancials.refresh}
         isLoading={contractFinancials.isLoading}

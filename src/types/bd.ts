@@ -152,3 +152,18 @@ export interface Inquiry {
   created_at: string;
   updated_at: string;
 }
+
+// ==================== CONSIGNEE ====================
+
+export interface Consignee {
+  id: string;
+  customer_id: string;
+  name: string;
+  address?: string;
+  tin?: string;
+  contact_person?: string;
+  email?: string;
+  phone?: string;
+  created_at: string;
+  updated_at: string;
+}

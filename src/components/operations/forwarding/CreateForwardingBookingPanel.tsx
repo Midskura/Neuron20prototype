@@ -16,6 +16,7 @@ import { ContractDetectionBanner } from "../shared/ContractDetectionBanner";
 import { MultiInputField } from "../../shared/MultiInputField";
 import { BookingCreationPanel } from "../shared/BookingCreationPanel";
 import { useCustomerOptions } from "../shared/useCustomerOptions";
+import { ConsigneePicker } from "../../shared/ConsigneePicker";
 
 interface CreateForwardingBookingPanelProps {
   isOpen: boolean;
@@ -81,6 +82,7 @@ export function CreateForwardingBookingPanel({
 
   // Shipment Information
   const [consignee, setConsignee] = useState("");
+  const [consigneeId, setConsigneeId] = useState<string | undefined>(undefined);
   const [shipper, setShipper] = useState("");
   const [mblMawb, setMblMawb] = useState("");
   const [hblHawb, setHblHawb] = useState("");
@@ -236,6 +238,7 @@ export function CreateForwardingBookingPanel({
         cancellationReason: status === "Cancelled" ? cancellationReason : undefined,
         cancelledDate: status === "Cancelled" ? cancelledDate : undefined,
         consignee,
+        consignee_id: consigneeId,
         shipper,
         mblMawb,
         hblHawb,
@@ -957,11 +960,12 @@ export function CreateForwardingBookingPanel({
                     >
                       Consignee
                     </label>
-                    <input
-                      type="text"
+                    <ConsigneePicker
                       value={consignee}
-                      onChange={(e) => setConsignee(e.target.value)}
-                      placeholder="Consignee name"
+                      onChange={setConsignee}
+                      onConsigneeIdChange={setConsigneeId}
+                      customerName={customerName}
+                      customerId={customerId}
                       className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                       style={{
                         border: "1px solid var(--neuron-ui-border)",

@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from "react";
-import { Search, Plus, Building2, TrendingUp, Briefcase, Target, ArrowUp, ArrowDown, MoreHorizontal, Trash2, Users as UsersIcon } from "lucide-react";
+import { Search, Plus, Building2, TrendingUp, Briefcase, Target, MoreHorizontal, Trash2, Users as UsersIcon } from "lucide-react";
 import type { Customer, Industry, CustomerStatus } from "../../types/bd";
 import { CustomDropdown } from "../bd/CustomDropdown";
 import { AddCustomerPanel } from "../bd/AddCustomerPanel";
 import { CustomerLedgerDetail } from "./CustomerLedgerDetail";
+import { NeuronKPICard } from "../ui/NeuronKPICard";
 import { projectId, publicAnonKey } from "../../utils/supabase/info";
 import { toast } from "../ui/toast-utils";
 
@@ -365,97 +366,38 @@ export function AccountingCustomers() {
 
         {/* KPI Section */}
         <div className="grid grid-cols-4 gap-4 mb-6">
-          {/* New Customers Added */}
-          <div className="p-5 rounded-xl border border-[1.5px] border-[var(--neuron-ui-border)] bg-white">
-            <div className="flex items-start justify-between mb-3">
-              <div className="p-2 rounded-lg bg-[#E8F5F3]">
-                <Building2 size={18} style={{ color: "#0F766E" }} />
-              </div>
-              <div className="flex items-center gap-1">
-                {newCustomersTrend > 0 ? <ArrowUp size={14} className="text-[#0F766E]" /> : <ArrowDown size={14} className="text-[#C94F3D]" />}
-                <span className="text-xs" style={{ color: newCustomersTrend > 0 ? "#0F766E" : "#C94F3D" }}>{Math.abs(newCustomersTrend)}%</span>
-              </div>
-            </div>
-            <div className="space-y-2">
-              <p className="text-xs text-[var(--neuron-ink-muted)]">New Customers Added</p>
-              <div className="flex items-end gap-1">
-                <span className="text-2xl text-[var(--neuron-ink-primary)]">{newCustomersAdded}</span>
-                <span className="text-xs mb-1 text-[var(--neuron-ink-muted)]">/ {newCustomersQuota}</span>
-              </div>
-              <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: getProgressBgColor(newCustomersProgress) }}>
-                <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(newCustomersProgress, 100)}%`, backgroundColor: getProgressColor(newCustomersProgress) }} />
-              </div>
-            </div>
-          </div>
-
-          {/* Prospects Converted */}
-          <div className="p-5 rounded-xl border border-[1.5px] border-[var(--neuron-ui-border)] bg-white">
-            <div className="flex items-start justify-between mb-3">
-              <div className="p-2 rounded-lg bg-[#E8F5F3]">
-                <Target size={18} style={{ color: "#0F766E" }} />
-              </div>
-              <div className="flex items-center gap-1">
-                {prospectsTrend > 0 ? <ArrowUp size={14} className="text-[#0F766E]" /> : <ArrowDown size={14} className="text-[#C94F3D]" />}
-                <span className="text-xs" style={{ color: prospectsTrend > 0 ? "#0F766E" : "#C94F3D" }}>{Math.abs(prospectsTrend)}%</span>
-              </div>
-            </div>
-            <div className="space-y-2">
-              <p className="text-xs text-[var(--neuron-ink-muted)]">Prospects Converted</p>
-              <div className="flex items-end gap-1">
-                <span className="text-2xl text-[var(--neuron-ink-primary)]">{prospectsConverted}</span>
-                <span className="text-xs mb-1 text-[var(--neuron-ink-muted)]">/ {prospectsQuota}</span>
-              </div>
-              <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: getProgressBgColor(prospectsProgress) }}>
-                <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(prospectsProgress, 100)}%`, backgroundColor: getProgressColor(prospectsProgress) }} />
-              </div>
-            </div>
-          </div>
-
-          {/* Active Customers */}
-          <div className="p-5 rounded-xl border border-[1.5px] border-[var(--neuron-ui-border)] bg-white">
-            <div className="flex items-start justify-between mb-3">
-              <div className="p-2 rounded-lg bg-[#E8F5F3]">
-                <Briefcase size={18} style={{ color: "#0F766E" }} />
-              </div>
-              <div className="flex items-center gap-1">
-                {activeCustomersTrend > 0 ? <ArrowUp size={14} className="text-[#0F766E]" /> : <ArrowDown size={14} className="text-[#C94F3D]" />}
-                <span className="text-xs" style={{ color: activeCustomersTrend > 0 ? "#0F766E" : "#C94F3D" }}>{Math.abs(activeCustomersTrend)}%</span>
-              </div>
-            </div>
-            <div className="space-y-2">
-              <p className="text-xs text-[var(--neuron-ink-muted)]">Active Customers</p>
-              <div className="flex items-end gap-1">
-                <span className="text-2xl text-[var(--neuron-ink-primary)]">{activeCustomersCount}</span>
-                <span className="text-xs mb-1 text-[var(--neuron-ink-muted)]">/ {activeCustomersQuota}</span>
-              </div>
-              <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: getProgressBgColor(activeCustomersProgress) }}>
-                <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(activeCustomersProgress, 100)}%`, backgroundColor: getProgressColor(activeCustomersProgress) }} />
-              </div>
-            </div>
-          </div>
-
-          {/* Total Revenue */}
-          <div className="p-5 rounded-xl border border-[1.5px] border-[var(--neuron-ui-border)] bg-white">
-            <div className="flex items-start justify-between mb-3">
-              <div className="p-2 rounded-lg bg-[#E8F5F3]">
-                <TrendingUp size={18} style={{ color: "#0F766E" }} />
-              </div>
-              <div className="flex items-center gap-1">
-                {revenueTrend > 0 ? <ArrowUp size={14} className="text-[#0F766E]" /> : <ArrowDown size={14} className="text-[#C94F3D]" />}
-                <span className="text-xs" style={{ color: revenueTrend > 0 ? "#0F766E" : "#C94F3D" }}>{Math.abs(revenueTrend)}%</span>
-              </div>
-            </div>
-            <div className="space-y-2">
-              <p className="text-xs text-[var(--neuron-ink-muted)]">Total Revenue (MTD)</p>
-              <div className="flex items-end gap-1">
-                <span className="text-2xl text-[var(--neuron-ink-primary)]">{formatCurrency(totalRevenue)}</span>
-                <span className="text-xs mb-1 text-[var(--neuron-ink-muted)]">/ {formatCurrency(revenueQuota)}</span>
-              </div>
-              <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: getProgressBgColor(revenueProgress) }}>
-                <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(revenueProgress, 100)}%`, backgroundColor: getProgressColor(revenueProgress) }} />
-              </div>
-            </div>
-          </div>
+          <NeuronKPICard
+            icon={Building2}
+            label="New Customers Added"
+            value={newCustomersAdded}
+            suffix={`/ ${newCustomersQuota}`}
+            progress={newCustomersProgress}
+            trend={newCustomersTrend}
+          />
+          <NeuronKPICard
+            icon={Target}
+            label="Prospects Converted"
+            value={prospectsConverted}
+            suffix={`/ ${prospectsQuota}`}
+            progress={prospectsProgress}
+            trend={prospectsTrend}
+          />
+          <NeuronKPICard
+            icon={Briefcase}
+            label="Active Customers"
+            value={activeCustomersCount}
+            suffix={`/ ${activeCustomersQuota}`}
+            progress={activeCustomersProgress}
+            trend={activeCustomersTrend}
+          />
+          <NeuronKPICard
+            icon={TrendingUp}
+            label="Total Revenue (MTD)"
+            value={formatCurrency(totalRevenue)}
+            suffix={`/ ${formatCurrency(revenueQuota)}`}
+            progress={revenueProgress}
+            trend={revenueTrend}
+          />
         </div>
 
         {/* Filters & Search */}

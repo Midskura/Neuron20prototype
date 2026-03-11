@@ -11,6 +11,7 @@ import { TeamAssignmentForm, type TeamAssignment } from "../pricing/TeamAssignme
 import type { User } from "../../hooks/useUser";
 import { BookingCreationPanel } from "./shared/BookingCreationPanel";
 import { useCustomerOptions } from "./shared/useCustomerOptions";
+import { ConsigneePicker } from "../shared/ConsigneePicker";
 
 // Brokerage Booking Form Data Interface
 interface BrokerageBookingFormData {
@@ -32,6 +33,7 @@ interface BrokerageBookingFormData {
   
   // Entry Details
   consignee: string;
+  consignee_id?: string;
   accountNumber: string;
   registryNumber: string;
   mblMawb: string;
@@ -659,12 +661,12 @@ export function CreateBrokerageBookingPanel({
                     <label className="block mb-1.5" style={{ fontSize: "13px", fontWeight: 500, color: "#12332B" }}>
                       Consignee
                     </label>
-                    <input
-                      type="text"
-                      name="consignee"
+                    <ConsigneePicker
                       value={formData.consignee}
-                      onChange={handleChange}
-                      placeholder="Consignee name"
+                      onChange={(val) => setFormData(prev => ({ ...prev, consignee: val }))}
+                      onConsigneeIdChange={(id) => setFormData(prev => ({ ...prev, consignee_id: id }))}
+                      customerName={formData.customerName}
+                      customerId={customerId}
                       className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
                       style={getInputStyle("consignee")}
                     />

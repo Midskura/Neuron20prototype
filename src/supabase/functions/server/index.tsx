@@ -8,6 +8,7 @@ import * as newAccounting from "./accounting-new-api.ts";
 import * as coaSeeder from "./seed_coa_balance_sheet.tsx";
 import * as coaSeederIS from "./seed_coa_income_statement.tsx";
 import * as catalogHandlers from "./catalog-handlers.tsx";
+import { seedComprehensiveData } from "./seed_data.tsx";
 
 const app = new Hono();
 
@@ -4957,22 +4958,30 @@ app.delete("/make-server-c142e950/forwarding-bookings/:id", async (c) => {
     await kv.del(`forwarding_booking:${id}`);
     
     // Also delete associated billings and expenses
+    // Check BOTH bookingId (camelCase, legacy) AND booking_id (snake_case, rate-card/batch)
     const billings = await kv.getByPrefix(`billing:`);
+    const billingItems = await kv.getByPrefix(`billing_item:`);
     const expenses = await kv.getByPrefix(`expense:`);
     
-    for (const billing of billings) {
-      if (billing.bookingId === id) {
-        await kv.del(`billing:${billing.billingId}`);
+    let deletedBillings = 0;
+    for (const billing of [...billings, ...billingItems]) {
+      if (billing.bookingId === id || billing.booking_id === id) {
+        const key = billing.billingId || billing.id;
+        await kv.del(`billing:${key}`).catch(() => {});
+        await kv.del(`billing_item:${key}`).catch(() => {});
+        deletedBillings++;
       }
     }
     
+    let deletedExpenses = 0;
     for (const expense of expenses) {
-      if (expense.bookingId === id) {
-        await kv.del(`expense:${expense.expenseId}`);
+      if (expense.bookingId === id || expense.booking_id === id) {
+        await kv.del(`expense:${expense.expenseId || expense.id}`);
+        deletedExpenses++;
       }
     }
     
-    console.log(`Deleted forwarding booking ${id} and associated records`);
+    console.log(`Deleted forwarding booking ${id} and associated records (${deletedBillings} billings, ${deletedExpenses} expenses)`);
     
     return c.json({ success: true });
   } catch (error) {
@@ -5143,22 +5152,30 @@ app.delete("/make-server-c142e950/trucking-bookings/:id", async (c) => {
     await kv.del(`trucking_booking:${id}`);
     
     // Also delete associated billings and expenses
+    // Check BOTH bookingId (camelCase, legacy) AND booking_id (snake_case, rate-card/batch)
     const billings = await kv.getByPrefix(`billing:`);
+    const billingItems = await kv.getByPrefix(`billing_item:`);
     const expenses = await kv.getByPrefix(`expense:`);
     
-    for (const billing of billings) {
-      if (billing.bookingId === id) {
-        await kv.del(`billing:${billing.billingId}`);
+    let deletedBillings = 0;
+    for (const billing of [...billings, ...billingItems]) {
+      if (billing.bookingId === id || billing.booking_id === id) {
+        const key = billing.billingId || billing.id;
+        await kv.del(`billing:${key}`).catch(() => {});
+        await kv.del(`billing_item:${key}`).catch(() => {});
+        deletedBillings++;
       }
     }
     
+    let deletedExpenses = 0;
     for (const expense of expenses) {
-      if (expense.bookingId === id) {
-        await kv.del(`expense:${expense.expenseId}`);
+      if (expense.bookingId === id || expense.booking_id === id) {
+        await kv.del(`expense:${expense.expenseId || expense.id}`);
+        deletedExpenses++;
       }
     }
     
-    console.log(`Deleted trucking booking ${id} and associated records`);
+    console.log(`Deleted trucking booking ${id} and associated records (${deletedBillings} billings, ${deletedExpenses} expenses)`);
     
     return c.json({ success: true });
   } catch (error) {
@@ -5329,22 +5346,30 @@ app.delete("/make-server-c142e950/marine-insurance-bookings/:id", async (c) => {
     await kv.del(`marine_insurance_booking:${id}`);
     
     // Also delete associated billings and expenses
+    // Check BOTH bookingId (camelCase, legacy) AND booking_id (snake_case, rate-card/batch)
     const billings = await kv.getByPrefix(`billing:`);
+    const billingItems = await kv.getByPrefix(`billing_item:`);
     const expenses = await kv.getByPrefix(`expense:`);
     
-    for (const billing of billings) {
-      if (billing.bookingId === id) {
-        await kv.del(`billing:${billing.billingId}`);
+    let deletedBillings = 0;
+    for (const billing of [...billings, ...billingItems]) {
+      if (billing.bookingId === id || billing.booking_id === id) {
+        const key = billing.billingId || billing.id;
+        await kv.del(`billing:${key}`).catch(() => {});
+        await kv.del(`billing_item:${key}`).catch(() => {});
+        deletedBillings++;
       }
     }
     
+    let deletedExpenses = 0;
     for (const expense of expenses) {
-      if (expense.bookingId === id) {
-        await kv.del(`expense:${expense.expenseId}`);
+      if (expense.bookingId === id || expense.booking_id === id) {
+        await kv.del(`expense:${expense.expenseId || expense.id}`);
+        deletedExpenses++;
       }
     }
     
-    console.log(`Deleted marine insurance booking ${id} and associated records`);
+    console.log(`Deleted marine insurance booking ${id} and associated records (${deletedBillings} billings, ${deletedExpenses} expenses)`);
     
     return c.json({ success: true });
   } catch (error) {
@@ -5515,22 +5540,30 @@ app.delete("/make-server-c142e950/brokerage-bookings/:id", async (c) => {
     await kv.del(`brokerage_booking:${id}`);
     
     // Also delete associated billings and expenses
+    // Check BOTH bookingId (camelCase, legacy) AND booking_id (snake_case, rate-card/batch)
     const billings = await kv.getByPrefix(`billing:`);
+    const billingItems = await kv.getByPrefix(`billing_item:`);
     const expenses = await kv.getByPrefix(`expense:`);
     
-    for (const billing of billings) {
-      if (billing.bookingId === id) {
-        await kv.del(`billing:${billing.billingId}`);
+    let deletedBillings = 0;
+    for (const billing of [...billings, ...billingItems]) {
+      if (billing.bookingId === id || billing.booking_id === id) {
+        const key = billing.billingId || billing.id;
+        await kv.del(`billing:${key}`).catch(() => {});
+        await kv.del(`billing_item:${key}`).catch(() => {});
+        deletedBillings++;
       }
     }
     
+    let deletedExpenses = 0;
     for (const expense of expenses) {
-      if (expense.bookingId === id) {
-        await kv.del(`expense:${expense.expenseId}`);
+      if (expense.bookingId === id || expense.booking_id === id) {
+        await kv.del(`expense:${expense.expenseId || expense.id}`);
+        deletedExpenses++;
       }
     }
     
-    console.log(`Deleted brokerage booking ${id} and associated records`);
+    console.log(`Deleted brokerage booking ${id} and associated records (${deletedBillings} billings, ${deletedExpenses} expenses)`);
     
     return c.json({ success: true });
   } catch (error) {
@@ -5671,22 +5704,30 @@ app.delete("/make-server-c142e950/others-bookings/:id", async (c) => {
     await kv.del(`others_booking:${id}`);
     
     // Also delete associated billings and expenses
+    // Check BOTH bookingId (camelCase, legacy) AND booking_id (snake_case, rate-card/batch)
     const billings = await kv.getByPrefix(`billing:`);
+    const billingItems = await kv.getByPrefix(`billing_item:`);
     const expenses = await kv.getByPrefix(`expense:`);
     
-    for (const billing of billings) {
-      if (billing.bookingId === id) {
-        await kv.del(`billing:${billing.billingId}`);
+    let deletedBillings = 0;
+    for (const billing of [...billings, ...billingItems]) {
+      if (billing.bookingId === id || billing.booking_id === id) {
+        const key = billing.billingId || billing.id;
+        await kv.del(`billing:${key}`).catch(() => {});
+        await kv.del(`billing_item:${key}`).catch(() => {});
+        deletedBillings++;
       }
     }
     
+    let deletedExpenses = 0;
     for (const expense of expenses) {
-      if (expense.bookingId === id) {
-        await kv.del(`expense:${expense.expenseId}`);
+      if (expense.bookingId === id || expense.booking_id === id) {
+        await kv.del(`expense:${expense.expenseId || expense.id}`);
+        deletedExpenses++;
       }
     }
     
-    console.log(`Deleted others booking ${id} and associated records`);
+    console.log(`Deleted others booking ${id} and associated records (${deletedBillings} billings, ${deletedExpenses} expenses)`);
     
     return c.json({ success: true });
   } catch (error) {
@@ -6742,8 +6783,6 @@ app.post("/make-server-c142e950/accounting/import-quotation-charges", accounting
 // ==================== COMPREHENSIVE SEED DATA ====================
 // This creates realistic data showing the BD → PD → BD → OPS relay race in action
 
-import { seedComprehensiveData } from "./seed_data.tsx";
-
 app.post("/make-server-c142e950/seed/comprehensive", async (c) => {
   try {
     console.log("Starting comprehensive seed...");
@@ -6820,7 +6859,32 @@ app.delete("/make-server-c142e950/seed/clear", async (c) => {
                           truckingBookings.length + insuranceBookings.length + 
                           othersBookings.length + legacyBookings.length;
     
-    console.log(`Cleared ${customers.length} customers, ${quotations.length} quotations, ${projects.length} projects, and ${totalBookings} bookings`);
+    // Clear billing items (all prefixes)
+    const billingRecords = await kv.getByPrefix("billing:");
+    for (const b of billingRecords) {
+      await kv.del(`billing:${b.billingId || b.id}`);
+    }
+    
+    const billingItemRecords = await kv.getByPrefix("billing_item:");
+    for (const b of billingItemRecords) {
+      await kv.del(`billing_item:${b.id || b.billingId}`);
+    }
+    
+    // Clear evouchers
+    const evouchers = await kv.getByPrefix("evoucher:");
+    for (const e of evouchers) {
+      await kv.del(`evoucher:${e.id}`);
+    }
+    
+    // Clear expenses
+    const expenses = await kv.getByPrefix("expense:");
+    for (const e of expenses) {
+      await kv.del(`expense:${e.expenseId || e.id}`);
+    }
+    
+    const totalFinancials = billingRecords.length + billingItemRecords.length + evouchers.length + expenses.length;
+    
+    console.log(`Cleared ${customers.length} customers, ${quotations.length} quotations, ${projects.length} projects, ${totalBookings} bookings, ${totalFinancials} financial records`);
     
     return c.json({ 
       success: true, 
@@ -6829,11 +6893,153 @@ app.delete("/make-server-c142e950/seed/clear", async (c) => {
         customers_cleared: customers.length,
         quotations_cleared: quotations.length,
         projects_cleared: projects.length,
-        bookings_cleared: totalBookings
+        bookings_cleared: totalBookings,
+        financials_cleared: totalFinancials
       }
     });
   } catch (error) {
     console.error("Error clearing seed data:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// ==================== ORPHAN CLEANUP ====================
+// Purge billing items that reference non-existent bookings/projects
+
+app.post("/make-server-c142e950/maintenance/cleanup-orphaned-billings", async (c) => {
+  try {
+    console.log("🧹 Starting orphaned billing cleanup...");
+    
+    // Build a set of ALL valid entity IDs (bookings + projects)
+    const BOOKING_PREFIXES = [
+      "forwarding_booking:",
+      "brokerage_booking:",
+      "trucking_booking:",
+      "marine_insurance_booking:",
+      "others_booking:",
+    ];
+    
+    const [allBookings, allProjects] = await Promise.all([
+      Promise.all(BOOKING_PREFIXES.map(p => kv.getByPrefix(p).catch(() => []))).then(r => r.flat()),
+      kv.getByPrefix("project:").catch(() => []),
+    ]);
+    
+    const validIds = new Set<string>();
+    // Build project KV ID → project_number translation map for remediation
+    const projectIdToNumber = new Map<string, string>();
+    
+    // Add all booking IDs
+    for (const b of allBookings) {
+      if (b.bookingId) validIds.add(b.bookingId);
+      if (b.id) validIds.add(b.id);
+    }
+    
+    // Add all project IDs and project numbers
+    for (const p of allProjects) {
+      if (p.id) validIds.add(p.id);
+      if (p.project_number) {
+        validIds.add(p.project_number);
+        // Map raw KV ID → human-readable project_number for remediation
+        if (p.id && p.id !== p.project_number) {
+          projectIdToNumber.set(p.id, p.project_number);
+        }
+      }
+      // Also add PROJECT-{number} format used by auto-generated billings
+      if (p.project_number) validIds.add(`PROJECT-${p.project_number}`);
+    }
+    
+    console.log(`Found ${validIds.size} valid entity IDs (${allBookings.length} bookings, ${allProjects.length} projects, ${projectIdToNumber.size} KV IDs to remediate)`);
+    
+    // Scan all billing items
+    const [billings, billingItems] = await Promise.all([
+      kv.getByPrefix("billing:"),
+      kv.getByPrefix("billing_item:"),
+    ]);
+    
+    let orphanedCount = 0;
+    let remediatedCount = 0;
+    const orphanDetails: string[] = [];
+    const remediationDetails: string[] = [];
+    
+    // Helper: remediate a billing item whose booking_id is a raw KV project ID
+    const remediateIfNeeded = async (b: any, prefix: string): Promise<boolean> => {
+      const refId = b.booking_id || b.bookingId || "";
+      const translatedPN = projectIdToNumber.get(refId);
+      if (translatedPN) {
+        const key = b.id || b.billingId;
+        const updated = { ...b, booking_id: translatedPN, project_number: translatedPN };
+        await kv.set(`${prefix}${key}`, updated);
+        remediationDetails.push(`${prefix}${key}: ${refId} → ${translatedPN}`);
+        remediatedCount++;
+        return true;
+      }
+      return false;
+    };
+    
+    // Check billing: prefix (excluding invoices which have invoice_number)
+    for (const b of billings) {
+      if (b.invoice_number) continue; // Skip invoices
+      
+      const refId = b.booking_id || b.bookingId || b.project_number || b.projectNumber || "";
+      if (!refId) {
+        const key = b.billingId || b.id;
+        await kv.del(`billing:${key}`);
+        orphanDetails.push(`billing:${key} (no reference)`);
+        orphanedCount++;
+        continue;
+      }
+      
+      if (!validIds.has(refId)) {
+        // Try remediation first (raw KV ID → project_number)
+        const wasRemediated = await remediateIfNeeded(b, "billing:");
+        if (!wasRemediated) {
+          const key = b.billingId || b.id;
+          await kv.del(`billing:${key}`);
+          orphanDetails.push(`billing:${key} → ${refId}`);
+          orphanedCount++;
+        }
+      } else {
+        // Valid ref but might be a raw KV ID — remediate to use human-readable project_number
+        await remediateIfNeeded(b, "billing:");
+      }
+    }
+    
+    // Check billing_item: prefix
+    for (const b of billingItems) {
+      const refId = b.booking_id || b.bookingId || b.project_number || b.projectNumber || "";
+      if (!refId || !validIds.has(refId)) {
+        const wasRemediated = await remediateIfNeeded(b, "billing_item:");
+        if (!wasRemediated) {
+          const key = b.id || b.billingId;
+          await kv.del(`billing_item:${key}`);
+          orphanDetails.push(`billing_item:${key} → ${refId || "(none)"}`);
+          orphanedCount++;
+        }
+      } else {
+        // Valid ref but might be a raw KV ID — remediate
+        await remediateIfNeeded(b, "billing_item:");
+      }
+    }
+    
+    console.log(`🧹 Cleaned up ${orphanedCount} orphaned billing items, remediated ${remediatedCount} with KV ID → project_number`);
+    if (orphanDetails.length > 0) {
+      console.log(`Orphan details: ${orphanDetails.join(", ")}`);
+    }
+    if (remediationDetails.length > 0) {
+      console.log(`Remediation details: ${remediationDetails.join(", ")}`);
+    }
+    
+    return c.json({ 
+      success: true, 
+      message: `Cleaned up ${orphanedCount} orphaned billing items, remediated ${remediatedCount} records`,
+      orphanedCount,
+      remediatedCount,
+      details: orphanDetails,
+      remediationDetails,
+      totalScanned: billings.length + billingItems.length,
+    });
+  } catch (error) {
+    console.error("Error during orphan cleanup:", error);
     return c.json({ success: false, error: String(error) }, 500);
   }
 });
@@ -7121,6 +7327,139 @@ app.delete("/make-server-c142e950/customers/clear", async (c) => {
     });
   } catch (error) {
     console.error("Error clearing customers:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// ==================== CONSIGNEES API ====================
+// Routes: GET/POST /consignees, GET/PATCH/DELETE /consignees/:id
+
+// Get all consignees (optionally filter by customer_id)
+app.get("/make-server-c142e950/consignees", async (c) => {
+  try {
+    const customer_id = c.req.query("customer_id");
+    let consignees = await kv.getByPrefix("consignee:");
+
+    if (customer_id) {
+      consignees = consignees.filter((csg: any) => csg.customer_id === customer_id);
+    }
+
+    consignees.sort((a: any, b: any) =>
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
+
+    console.log(`Fetched ${consignees.length} consignees${customer_id ? ` for customer ${customer_id}` : ""}`);
+
+    return c.json({ success: true, data: consignees });
+  } catch (error) {
+    console.error("Error fetching consignees:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Get single consignee by ID
+app.get("/make-server-c142e950/consignees/:id", async (c) => {
+  try {
+    const id = c.req.param("id");
+    const consignee = await kv.get(`consignee:${id}`);
+
+    if (!consignee) {
+      return c.json({ success: false, error: "Consignee not found" }, 404);
+    }
+
+    return c.json({ success: true, data: consignee });
+  } catch (error) {
+    console.error("Error fetching consignee:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Create consignee
+app.post("/make-server-c142e950/consignees", async (c) => {
+  try {
+    const data = await c.req.json();
+
+    if (!data.customer_id || !data.name) {
+      return c.json({ success: false, error: "customer_id and name are required" }, 400);
+    }
+
+    const timestamp = Date.now();
+    const id = `CSG-${timestamp}`;
+
+    const consignee = {
+      id,
+      customer_id: data.customer_id,
+      name: data.name,
+      address: data.address || null,
+      tin: data.tin || null,
+      contact_person: data.contact_person || null,
+      email: data.email || null,
+      phone: data.phone || null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    await kv.set(`consignee:${id}`, consignee);
+
+    console.log(`Created consignee: ${id} - ${consignee.name} (customer: ${consignee.customer_id})`);
+
+    return c.json({ success: true, data: consignee });
+  } catch (error) {
+    console.error("Error creating consignee:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Update consignee
+app.patch("/make-server-c142e950/consignees/:id", async (c) => {
+  try {
+    const id = c.req.param("id");
+    const data = await c.req.json();
+
+    const existing = await kv.get(`consignee:${id}`);
+
+    if (!existing) {
+      return c.json({ success: false, error: "Consignee not found" }, 404);
+    }
+
+    const consignee = {
+      ...existing,
+      ...data,
+      id, // Ensure ID doesn't change
+      customer_id: existing.customer_id, // Ensure parent doesn't change
+      created_at: existing.created_at, // Preserve creation date
+      updated_at: new Date().toISOString(),
+    };
+
+    await kv.set(`consignee:${id}`, consignee);
+
+    console.log(`Updated consignee: ${id}`);
+
+    return c.json({ success: true, data: consignee });
+  } catch (error) {
+    console.error("Error updating consignee:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Delete consignee
+app.delete("/make-server-c142e950/consignees/:id", async (c) => {
+  try {
+    const id = c.req.param("id");
+
+    const existing = await kv.get(`consignee:${id}`);
+
+    if (!existing) {
+      return c.json({ success: false, error: "Consignee not found" }, 404);
+    }
+
+    await kv.del(`consignee:${id}`);
+
+    console.log(`Deleted consignee: ${id}`);
+
+    return c.json({ success: true, message: "Consignee deleted successfully" });
+  } catch (error) {
+    console.error("Error deleting consignee:", error);
     return c.json({ success: false, error: String(error) }, 500);
   }
 });
@@ -11030,4 +11369,5 @@ app.get("/make-server-c142e950/catalog/audit/matrix", (c) => catalogHandlers.aud
 // Audit summary: per-catalog-item aggregation
 app.get("/make-server-c142e950/catalog/audit/summary", (c) => catalogHandlers.auditSummary(c));
 
+console.log("Neuron OS server starting... (v2)");
 Deno.serve(app.fetch);

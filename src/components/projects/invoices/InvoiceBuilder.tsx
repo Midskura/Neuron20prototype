@@ -9,6 +9,10 @@ import { InvoiceDocument, InvoicePrintOptions } from "./InvoiceDocument";
 import { SignatoryControl } from "../quotation/screen/controls/SignatoryControl";
 import { DisplayOptionsControl } from "../quotation/screen/controls/DisplayOptionsControl";
 import { CustomDropdown } from "../../bd/CustomDropdown";
+import { useBookingGrouping } from "../../../hooks/useBookingGrouping";
+import { getServiceIcon } from "../../../utils/quotation-helpers";
+import { useConsignees } from "../../../hooks/useConsignees";
+import type { Consignee } from "../../../types/bd";
 
 const API_URL = `https://${projectId}.supabase.co/functions/v1/make-server-c142e950`;
 
@@ -91,6 +95,30 @@ export function InvoiceBuilder({
   const [creditTerms, setCreditTerms] = useState("NET 15");
   const [customerAddress, setCustomerAddress] = useState(project.customer_address || "");
   const [isFetchingAddress, setIsFetchingAddress] = useState(false);
+
+  // Bill To Override (Consignee billing — Phase 4)
+  const [billedToType, setBilledToType] = useState<"customer" | "consignee">("customer");
+  const [billedToConsigneeId, setBilledToConsigneeId] = useState<string | undefined>(undefined);
+  const { consignees: customerConsignees } = useConsignees(project.customer_id);
+  const selectedConsignee = customerConsignees.find(c => c.id === billedToConsigneeId);
+
+  const handleBillToChange = (type: "customer" | "consignee") => {
+    setBilledToType(type);
+    if (type === "customer") {
+      setBilledToConsigneeId(undefined);
+      setCustomerAddress(project.customer_address || "");
+      setCustomerTin("");
+    }
+  };
+
+  const handleBillToConsigneeSelect = (csgId: string) => {
+    setBilledToConsigneeId(csgId);
+    const csg = customerConsignees.find(c => c.id === csgId);
+    if (csg) {
+      setCustomerAddress(csg.address || "");
+      setCustomerTin(csg.tin || "");
+    }
+  };
 
   // Accounting State (For GL Posting — Revenue Account for DR AR / CR Revenue)
   const [revenueAccountId, setRevenueAccountId] = useState("");
@@ -225,6 +253,25 @@ export function InvoiceBuilder({
     return billingItems.filter(item => item.status === 'unbilled');
   }, [billingItems, mode]);
 
+  // Booking grouping for unbilled items (Create Mode)
+  const getBookingId = useCallback((item: any) => item.booking_id || "unassigned", []);
+  const {
+    bookingGroupedData,
+    bookingIds: bookingGroupIds,
+    bookingMeta,
+    inferServiceType: inferSvcType,
+    expandedBookings,
+    toggleBooking,
+    toggleAllBookings: handleToggleAllBookings,
+    allExpanded: allBookingsExpanded,
+    hasBookings,
+  } = useBookingGrouping({
+    items: unbilledItems,
+    linkedBookings,
+    getBookingId,
+    enabled: mode === 'create' && linkedBookings.length > 0,
+  });
+
   // Selected Items (Create Mode)
   const selectedItems = useMemo(() => {
     if (mode === 'view') return [];
@@ -299,8 +346,10 @@ export function InvoiceBuilder({
       invoice_date: invoiceDate,
       due_date: effectiveDueDate,
       customer_id: project.customer_id,
-      customer_name: project.customer_name || "Unknown Customer",
+      customer_name: billedToType === "consignee" && selectedConsignee ? selectedConsignee.name : (project.customer_name || "Unknown Customer"),
       customer_address: customerAddress || project.customer_address,
+      billed_to_type: billedToType,
+      billed_to_consignee_id: billedToConsigneeId,
       project_number: project.project_number,
       line_items: finalLineItems,
       subtotal: subtotal,
@@ -322,7 +371,7 @@ export function InvoiceBuilder({
       commodity_description: commodityDescription,
       credit_terms: creditTerms
     } as Invoice;
-  }, [mode, viewInvoice, selectedItems, invoiceDate, dueDate, notes, project, currency, signatories, customerTin, blNumber, consignee, commodityDescription, creditTerms, itemOverrides, customerAddress, targetCurrency, exchangeRate]);
+  }, [mode, viewInvoice, selectedItems, invoiceDate, dueDate, notes, project, currency, signatories, customerTin, blNumber, consignee, commodityDescription, creditTerms, itemOverrides, customerAddress, targetCurrency, exchangeRate, billedToType, selectedConsignee]);
 
   // Print Options Object
   const printOptions: InvoicePrintOptions = useMemo(() => ({
@@ -464,8 +513,10 @@ export function InvoiceBuilder({
       const payload = {
         project_number: project.project_number,
         customer_id: project.customer_id,
-        customer_name: project.customer_name,
+        customer_name: billedToType === "consignee" && selectedConsignee ? selectedConsignee.name : project.customer_name,
         customer_address: customerAddress,
+        billed_to_type: billedToType,
+        billed_to_consignee_id: billedToConsigneeId,
         billing_item_ids: finalBillingItemIds,
         invoice_date: invoiceDate,
         due_date: dueDate || undefined,
@@ -552,13 +603,84 @@ export function InvoiceBuilder({
   };
 
   // Helper
-  const formatCurrency = (amount: number, curr: string) => {
+  const formatCurrency = (amount: number, curr: string = "PHP") => {
     return new Intl.NumberFormat("en-PH", { style: "currency", currency: curr }).format(amount);
   };
   
   const formatDate = (dateString: string) => {
     if (!dateString) return "-";
     return new Date(dateString).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  };
+
+  // Shared row renderer for billing items (used in both booking-grouped and category-grouped views)
+  const renderBillingItemRow = (item: any) => {
+    const isSelected = selectedIds.has(item.id);
+    const override = itemOverrides[item.id] || { remarks: "", tax_type: "NON-VAT" };
+    return (
+      <div key={item.id} className={`group border-b border-[#F3F4F6] last:border-0 transition-all ${isSelected ? 'bg-[#F0FDF9]' : 'hover:bg-[#F9FAFB]'}`}>
+        <div className="flex items-start px-4 py-3 cursor-pointer" onClick={() => toggleSelection(item.id)}>
+            <div className="w-8 shrink-0 pt-1 flex items-center justify-center">
+                <div className="relative flex items-center justify-center">
+                    <input 
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleSelection(item.id)}
+                        className="peer appearance-none w-4 h-4 rounded border border-gray-300 bg-white checked:bg-[#0F766E] checked:border-[#0F766E] focus:ring-0 focus:ring-offset-0 cursor-pointer transition-colors"
+                        onClick={(e) => e.stopPropagation()}
+                    />
+                    <Check className="w-3 h-3 text-white absolute pointer-events-none opacity-0 peer-checked:opacity-100 transition-opacity" strokeWidth={3} />
+                </div>
+            </div>
+            <div className="flex-1 px-3 min-w-0">
+                <div className={`text-sm font-medium mb-1 ${isSelected ? 'text-[#12332B]' : 'text-[#374151]'}`}>
+                    {item.description}
+                </div>
+                <div className="flex items-center gap-2 text-[11px] text-[#6B7280]">
+                    <span>{formatDate(item.created_at)}</span>
+                </div>
+            </div>
+            <div className="shrink-0 text-right pl-2 pt-1">
+                <div className={`text-sm font-bold whitespace-nowrap ${isSelected ? 'text-[#12332B]' : 'text-[#374151]'}`}>
+                    {formatCurrency(item.amount, item.currency)}
+                </div>
+            </div>
+        </div>
+        {isSelected && (
+            <div className="px-4 pb-4 pt-0 pl-14 cursor-default">
+                <div className="p-3 bg-white border border-gray-200 rounded-lg grid grid-cols-3 gap-3">
+                    <div className="col-span-2">
+                        <label className="block text-[10px] font-bold text-[#6B7280] mb-2 uppercase tracking-wide">Remarks</label>
+                        <input 
+                            type="text" 
+                            value={override.remarks}
+                            onChange={(e) => updateItemOverride(item.id, 'remarks', e.target.value)}
+                            className="w-full px-2.5 py-1.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-[#0F766E] focus:border-[#0F766E] outline-none transition-all placeholder:text-gray-400"
+                            placeholder="e.g. SERVICE CHARGE"
+                            onClick={(e) => e.stopPropagation()}
+                        />
+                    </div>
+                    <div className="col-span-1" onClick={(e) => e.stopPropagation()}>
+                        <label className="block text-[10px] font-bold text-[#6B7280] mb-2 uppercase tracking-wide">Tax</label>
+                        <div className="flex items-center h-[34px]">
+                            <label className="flex items-center gap-2 cursor-pointer group/tax select-none">
+                                <div className="relative flex items-center justify-center">
+                                    <input 
+                                        type="checkbox"
+                                        checked={override.tax_type === "VAT"}
+                                        onChange={(e) => updateItemOverride(item.id, 'tax_type', e.target.checked ? "VAT" : "NON-VAT")}
+                                        className="peer appearance-none w-4 h-4 rounded border border-gray-300 bg-white checked:bg-[#0F766E] checked:border-[#0F766E] focus:ring-0 focus:ring-offset-0 cursor-pointer transition-colors"
+                                    />
+                                    <Check className="w-3 h-3 text-white absolute pointer-events-none opacity-0 peer-checked:opacity-100 transition-opacity" strokeWidth={3} />
+                                </div>
+                                <span className="text-xs font-medium text-[#374151] group-hover/tax:text-[#12332B] transition-colors">VAT (12%)</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        )}
+      </div>
+    );
   };
 
   return (
@@ -739,7 +861,20 @@ export function InvoiceBuilder({
                                   </div>
                               </div>
                               <div className="flex-1 px-3">
-                                  <span className="text-[11px] font-semibold text-[#667085] uppercase tracking-[0.05em]">Particulars</span>
+                                  {hasBookings ? (
+                                      <button
+                                        onClick={handleToggleAllBookings}
+                                        className="flex items-center gap-2"
+                                        style={{ background: "none", border: "none", cursor: "pointer", padding: 0, color: "#9CA3AF", fontSize: "11px", fontWeight: 600, letterSpacing: "0.02em" }}
+                                      >
+                                        <div style={{ transition: "transform 0.15s ease", transform: allBookingsExpanded ? "rotate(0deg)" : "rotate(-90deg)" }}>
+                                          <ChevronDown size={12} />
+                                        </div>
+                                        <span style={{ color: "#667085" }}>Particulars</span>
+                                      </button>
+                                  ) : (
+                                      <span className="text-[11px] font-semibold text-[#667085] uppercase tracking-[0.05em]">Particulars</span>
+                                  )}
                               </div>
                               <div className="text-right">
                                   <span className="text-[11px] font-semibold text-[#667085] uppercase tracking-[0.05em]">Amount</span>
@@ -752,9 +887,61 @@ export function InvoiceBuilder({
                                    <div className="p-8 text-center">
                                        <span className="text-sm text-gray-400">No unbilled charges found.</span>
                                    </div>
+                               ) : hasBookings ? (
+                                   /* ── BOOKING-GROUPED VIEW ── */
+                                   bookingGroupIds.map((bid, bidIdx) => {
+                                     const items = bookingGroupedData[bid] || [];
+                                     const meta = bookingMeta.get(bid);
+                                     const serviceType = bid === "unassigned" ? "Unassigned" : inferSvcType(bid, meta);
+                                     const subtotal = items.reduce((sum: number, item: any) => sum + (Number(item.amount) || 0), 0);
+                                     const isExpanded = expandedBookings.has(bid);
+                                     const itemCount = items.length;
+
+                                     return (
+                                       <div key={bid}>
+                                         {/* Booking Header Row — collapsible divider */}
+                                         <button
+                                           onClick={() => toggleBooking(bid)}
+                                           className="w-full flex items-center justify-between transition-colors"
+                                           style={{
+                                             padding: "8px 16px",
+                                             background: isExpanded ? "#F8FFFE" : "#FAFCFB",
+                                             border: "none",
+                                             borderTop: bidIdx > 0 ? "1px solid #E5E9E8" : "none",
+                                             borderBottom: isExpanded ? "1px solid #E5E9E8" : "none",
+                                             cursor: "pointer",
+                                           }}
+                                         >
+                                           <div className="flex items-center gap-2.5">
+                                             <div style={{ color: "#9CA3AF", transition: "transform 0.15s ease", transform: isExpanded ? "rotate(0deg)" : "rotate(-90deg)" }}>
+                                               <ChevronDown size={13} />
+                                             </div>
+                                             {bid !== "unassigned" && getServiceIcon(serviceType, { size: 13, color: "#0F766E" })}
+                                             <span style={{ fontSize: "11px", fontWeight: 600, color: bid === "unassigned" ? "#6B7280" : "#0F766E", fontFamily: "monospace" }}>
+                                               {bid === "unassigned" ? "Unassigned Items" : bid}
+                                             </span>
+                                             {bid !== "unassigned" && (
+                                               <span style={{ fontSize: "9px", fontWeight: 600, color: "#6B7280", padding: "1px 5px", backgroundColor: "#F3F4F6", borderRadius: "3px", border: "1px solid #E5E7EB" }}>
+                                                 {serviceType}
+                                               </span>
+                                             )}
+                                             <span style={{ fontSize: "9px", fontWeight: 600, color: "#6B7280", padding: "1px 5px", backgroundColor: "#F3F4F6", borderRadius: "3px", border: "1px solid #E5E7EB" }}>
+                                               {itemCount} item{itemCount !== 1 ? "s" : ""}
+                                             </span>
+                                           </div>
+                                           <span style={{ fontSize: "12px", fontWeight: 600, color: itemCount === 0 ? "#9CA3AF" : "#12332B", fontFamily: "monospace" }}>
+                                             {formatCurrency(subtotal)}
+                                           </span>
+                                         </button>
+
+                                         {/* Expanded: item rows nested under this booking */}
+                                         {isExpanded && items.map(item => renderBillingItemRow(item))}
+                                       </div>
+                                     );
+                                   })
                                ) : (
-                                   Object.entries(unbilledItems.reduce((acc, item) => {
-                                       // Map categories
+                                   /* ── FLAT CATEGORY-GROUPED VIEW (fallback when no linkedBookings) ── */
+                                   Object.entries(unbilledItems.reduce((acc: Record<string, any[]>, item: any) => {
                                        let key = item.service_type || "Freight Charges";
                                        const desc = (item.description || "").toLowerCase();
                                        if (key === "Reimbursable Expense") {
@@ -771,7 +958,7 @@ export function InvoiceBuilder({
                                        if (!acc[key]) acc[key] = [];
                                        acc[key].push(item);
                                        return acc;
-                                   }, {} as Record<string, typeof unbilledItems>))
+                                   }, {} as Record<string, any[]>))
                                    .sort(([a], [b]) => {
                                        const order: Record<string, number> = { "Freight Charges": 1, "Origin Charges": 2, "Destination Charges": 3, "Billable Expense": 4 };
                                        return (order[a] || 99) - (order[b] || 99);
@@ -783,75 +970,7 @@ export function InvoiceBuilder({
                                                {category}
                                                <span className="text-[9px] ml-auto bg-white border border-gray-200 px-1.5 rounded-full text-gray-500">{items.length}</span>
                                            </div>
-                                           {items.map(item => {
-                                             const isSelected = selectedIds.has(item.id);
-                                             const override = itemOverrides[item.id] || { remarks: "", tax_type: "NON-VAT" };
-                                             return (
-                                               <div key={item.id} className={`group border-b border-[#F3F4F6] last:border-0 transition-all ${isSelected ? 'bg-[#F0FDF9]' : 'hover:bg-[#F9FAFB]'}`}>
-                                                 <div className="flex items-start px-4 py-3 cursor-pointer" onClick={() => toggleSelection(item.id)}>
-                                                     <div className="w-8 shrink-0 pt-1 flex items-center justify-center">
-                                                         <div className="relative flex items-center justify-center">
-                                                             <input 
-                                                                 type="checkbox"
-                                                                 checked={isSelected}
-                                                                 onChange={() => toggleSelection(item.id)}
-                                                                 className="peer appearance-none w-4 h-4 rounded border border-gray-300 bg-white checked:bg-[#0F766E] checked:border-[#0F766E] focus:ring-0 focus:ring-offset-0 cursor-pointer transition-colors"
-                                                                 onClick={(e) => e.stopPropagation()}
-                                                             />
-                                                             <Check className="w-3 h-3 text-white absolute pointer-events-none opacity-0 peer-checked:opacity-100 transition-opacity" strokeWidth={3} />
-                                                         </div>
-                                                     </div>
-                                                     <div className="flex-1 px-3 min-w-0">
-                                                         <div className={`text-sm font-medium mb-1 ${isSelected ? 'text-[#12332B]' : 'text-[#374151]'}`}>
-                                                             {item.description}
-                                                         </div>
-                                                         <div className="flex items-center gap-2 text-[11px] text-[#6B7280]">
-                                                             <span>{formatDate(item.created_at)}</span>
-                                                         </div>
-                                                     </div>
-                                                     <div className="shrink-0 text-right pl-2 pt-1">
-                                                         <div className={`text-sm font-bold whitespace-nowrap ${isSelected ? 'text-[#12332B]' : 'text-[#374151]'}`}>
-                                                             {formatCurrency(item.amount, item.currency)}
-                                                         </div>
-                                                     </div>
-                                                 </div>
-                                                 {isSelected && (
-                                                     <div className="px-4 pb-4 pt-0 pl-14 cursor-default">
-                                                         <div className="p-3 bg-white border border-gray-200 rounded-lg grid grid-cols-3 gap-3">
-                                                             <div className="col-span-2">
-                                                                 <label className="block text-[10px] font-bold text-[#6B7280] mb-2 uppercase tracking-wide">Remarks</label>
-                                                                 <input 
-                                                                     type="text" 
-                                                                     value={override.remarks}
-                                                                     onChange={(e) => updateItemOverride(item.id, 'remarks', e.target.value)}
-                                                                     className="w-full px-2.5 py-1.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-[#0F766E] focus:border-[#0F766E] outline-none transition-all placeholder:text-gray-400"
-                                                                     placeholder="e.g. SERVICE CHARGE"
-                                                                     onClick={(e) => e.stopPropagation()}
-                                                                 />
-                                                             </div>
-                                                             <div className="col-span-1" onClick={(e) => e.stopPropagation()}>
-                                                                 <label className="block text-[10px] font-bold text-[#6B7280] mb-2 uppercase tracking-wide">Tax</label>
-                                                                 <div className="flex items-center h-[34px]">
-                                                                     <label className="flex items-center gap-2 cursor-pointer group/tax select-none">
-                                                                         <div className="relative flex items-center justify-center">
-                                                                             <input 
-                                                                                 type="checkbox"
-                                                                                 checked={override.tax_type === "VAT"}
-                                                                                 onChange={(e) => updateItemOverride(item.id, 'tax_type', e.target.checked ? "VAT" : "NON-VAT")}
-                                                                                 className="peer appearance-none w-4 h-4 rounded border border-gray-300 bg-white checked:bg-[#0F766E] checked:border-[#0F766E] focus:ring-0 focus:ring-offset-0 cursor-pointer transition-colors"
-                                                                             />
-                                                                             <Check className="w-3 h-3 text-white absolute pointer-events-none opacity-0 peer-checked:opacity-100 transition-opacity" strokeWidth={3} />
-                                                                         </div>
-                                                                         <span className="text-xs font-medium text-[#374151] group-hover/tax:text-[#12332B] transition-colors">VAT (12%)</span>
-                                                                     </label>
-                                                                 </div>
-                                                             </div>
-                                                         </div>
-                                                     </div>
-                                                 )}
-                                               </div>
-                                             );
-                                           })}
+                                           {items.map((item: any) => renderBillingItemRow(item))}
                                        </div>
                                    ))
                                )}
@@ -918,6 +1037,69 @@ export function InvoiceBuilder({
               {mode === 'create' && (
                   <CollapsibleSection title="Shipment & Legal" icon={<Truck size={18} />} defaultOpen={true}>
                       <div className="space-y-4">
+                          {/* Bill To Toggle */}
+                          <div>
+                              <label className="block text-[11px] font-bold text-gray-500 mb-1.5 uppercase tracking-wider">Bill To</label>
+                              <div className="flex items-center gap-2 mb-3">
+                                  <button
+                                      type="button"
+                                      onClick={() => handleBillToChange("customer")}
+                                      className="px-3 py-1.5 rounded-lg text-[12px] font-medium transition-all"
+                                      style={{
+                                          backgroundColor: billedToType === "customer" ? "#0F766E" : "#F9FAFB",
+                                          color: billedToType === "customer" ? "#FFFFFF" : "#667085",
+                                          border: billedToType === "customer" ? "1px solid #0F766E" : "1px solid #E5E9F0",
+                                      }}
+                                  >
+                                      Customer
+                                  </button>
+                                  <button
+                                      type="button"
+                                      onClick={() => handleBillToChange("consignee")}
+                                      disabled={customerConsignees.length === 0}
+                                      className="px-3 py-1.5 rounded-lg text-[12px] font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                                      style={{
+                                          backgroundColor: billedToType === "consignee" ? "#0F766E" : "#F9FAFB",
+                                          color: billedToType === "consignee" ? "#FFFFFF" : "#667085",
+                                          border: billedToType === "consignee" ? "1px solid #0F766E" : "1px solid #E5E9F0",
+                                      }}
+                                  >
+                                      Consignee
+                                  </button>
+                                  {customerConsignees.length === 0 && (
+                                      <span className="text-[11px] italic" style={{ color: "#98A2B3" }}>
+                                          No consignees saved for this customer
+                                      </span>
+                                  )}
+                              </div>
+
+                              {/* Consignee Selector (when "Consignee" is selected) */}
+                              {billedToType === "consignee" && customerConsignees.length > 0 && (
+                                  <div className="mb-3">
+                                      <label className="block text-[11px] font-bold text-gray-500 mb-1.5 uppercase tracking-wider">Select Consignee</label>
+                                      <select
+                                          value={billedToConsigneeId || ""}
+                                          onChange={(e) => handleBillToConsigneeSelect(e.target.value)}
+                                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#0F766E]/20 focus:border-[#0F766E] outline-none transition-all"
+                                          style={{ color: billedToConsigneeId ? "#12332B" : "#9CA3AF" }}
+                                      >
+                                          <option value="" disabled>Choose a consignee...</option>
+                                          {customerConsignees.map(csg => (
+                                              <option key={csg.id} value={csg.id}>
+                                                  {csg.name}{csg.tin ? ` (TIN: ${csg.tin})` : ""}
+                                              </option>
+                                          ))}
+                                      </select>
+                                      {selectedConsignee && (
+                                          <div className="mt-2 px-3 py-2 rounded-md text-[12px]" style={{ backgroundColor: "#E8F5F3", color: "#12332B" }}>
+                                              <span className="font-medium">Billing as:</span> {selectedConsignee.name}
+                                              {selectedConsignee.address && <span className="text-[11px] ml-2" style={{ color: "#667085" }}>• {selectedConsignee.address}</span>}
+                                          </div>
+                                      )}
+                                  </div>
+                              )}
+                          </div>
+
                           {/* Customer Address */}
                           <div>
                               <label className="block text-[11px] font-bold text-gray-500 mb-1.5 uppercase tracking-wider">Bill To Address</label>

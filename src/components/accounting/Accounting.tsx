@@ -9,17 +9,21 @@ import { ContractsModule } from "../contracts/ContractsModule";
 import { AccountingCustomers } from "./AccountingCustomers";
 import { TransactionsModule } from "../transactions/TransactionsModule";
 import { AuditingModule } from "./AuditingModule";
-import { AggregateBillingsPage } from "./AggregateBillingsPage";
-import { AggregateExpensesPage } from "./AggregateExpensesPage";
 import { AggregateInvoicesPage } from "./AggregateInvoicesPage";
-import { AggregateCollectionsPage } from "./AggregateCollectionsPage";
 import { FinancialHealthPage } from "./reports/FinancialHealthPage";
+import { FinancialsModule } from "./FinancialsModule";
+import { AccountingBookingsShell } from "./AccountingBookingsShell";
 import { useAppMode } from "../../config/appMode";
 
-type AccountingView = "evouchers" | "billings" | "invoices" | "collections" | "expenses" | "ledger" | "reports" | "coa" | "projects" | "contracts" | "customers" | "transactions" | "catalog";
+type AccountingView = "evouchers" | "billings" | "invoices" | "collections" | "expenses" | "ledger" | "reports" | "coa" | "projects" | "contracts" | "customers" | "bookings" | "transactions" | "catalog" | "financials";
 
 export function Accounting({ view }: { view: AccountingView }) {
   const { isEssentials } = useAppMode();
+
+  // Financials super-module (Essentials mode: replaces individual Billings/Invoices/Collections/Expenses pages)
+  if (view === "financials") {
+    return <FinancialsModule />;
+  }
 
   // Route to appropriate sub-module
   if (view === "transactions") {
@@ -35,21 +39,21 @@ export function Accounting({ view }: { view: AccountingView }) {
   }
   
   if (view === "expenses") {
-    // Essentials mode: use aggregate page with Unified component + Catalog tab
+    // Essentials mode: redirect to FinancialsModule (Expenses tab handled there)
     // Full Suite: use original standalone page
-    return isEssentials ? <AggregateExpensesPage /> : <ExpensesPageNew />;
+    return isEssentials ? <FinancialsModule /> : <ExpensesPageNew />;
   }
 
   if (view === "collections") {
-    return isEssentials ? <AggregateCollectionsPage /> : <CollectionsContentNew />;
+    return isEssentials ? <FinancialsModule /> : <CollectionsContentNew />;
   }
 
   if (view === "billings") {
-    return isEssentials ? <AggregateBillingsPage /> : <BillingsContentNew />;
+    return isEssentials ? <FinancialsModule /> : <BillingsContentNew />;
   }
 
   if (view === "invoices") {
-    return <AggregateInvoicesPage />;
+    return isEssentials ? <FinancialsModule /> : <AggregateInvoicesPage />;
   }
 
   if (view === "coa") {
@@ -66,6 +70,10 @@ export function Accounting({ view }: { view: AccountingView }) {
 
   if (view === "contracts") {
     return <ContractsModule departmentOverride="Accounting" />;
+  }
+
+  if (view === "bookings") {
+    return <AccountingBookingsShell />;
   }
 
   // "ledger" is being deprecated in favor of "customers", but keeping for now or mapping it
