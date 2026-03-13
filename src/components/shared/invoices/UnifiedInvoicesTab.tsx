@@ -25,6 +25,7 @@ interface UnifiedInvoicesTabProps {
   subtitle?: string;
   readOnly?: boolean;
   linkedBookings?: any[];
+  highlightId?: string | null;
 }
 
 export function UnifiedInvoicesTab({ 
@@ -36,6 +37,7 @@ export function UnifiedInvoicesTab({
   subtitle,
   readOnly = false,
   linkedBookings,
+  highlightId,
 }: UnifiedInvoicesTabProps) {
   const { invoices, collections, billingItems: rawBillingItems, refresh } = financials;
 
@@ -51,12 +53,24 @@ export function UnifiedInvoicesTab({
   // -- State --
   const [interfaceMode, setInterfaceMode] = useState<'none' | 'create' | 'view'>('none');
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
+  const [highlightConsumed, setHighlightConsumed] = useState(false);
   
   // Filters
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+
+  // Deep-link: auto-open invoice if highlightId matches
+  useEffect(() => {
+    if (!highlightId || highlightConsumed || invoices.length === 0) return;
+    const match = invoices.find((inv: Invoice) => inv.id === highlightId || inv.invoice_number === highlightId);
+    if (match) {
+      setSelectedInvoice(match);
+      setInterfaceMode('view');
+      setHighlightConsumed(true);
+    }
+  }, [highlightId, invoices, highlightConsumed]);
 
   // -- Helpers --
   const formatCurrency = (amount: number, currency: string = "PHP") => {

@@ -27,7 +27,7 @@ import { AttentionPanel } from "./AttentionPanel";
 import type { AttentionItem } from "./AttentionPanel";
 import { ReceivablesAgingBar } from "./ReceivablesAgingBar";
 import { PLTrendCard } from "./PLTrendCard";
-import { BreakdownTabs } from "./BreakdownTabs";
+import { toast } from "sonner@2.0.3";
 
 interface FinancialDashboardProps {
   billingItems: any[];
@@ -199,9 +199,11 @@ export function FinancialDashboard({
         icon: DollarSign,
         polarity: "positive" as const,
         hero: true,
+        onCardClick: () => onNavigateTab("billings"),
+        clickHint: "View billings →",
       },
       {
-        label: "Net Profit",
+        label: netProfit >= 0 ? "Net Profit" : "Net Loss",
         value: formatCurrencyCompact(netProfit),
         rawValue: netProfit,
         previousValue: prevNetProfit,
@@ -210,6 +212,8 @@ export function FinancialDashboard({
         polarity: "positive" as const,
         hero: true,
         darkHero: true,
+        onCardClick: () => onNavigateTab("billings"),
+        clickHint: "View revenue & costs →",
       },
       {
         label: "Cash Collected",
@@ -219,6 +223,8 @@ export function FinancialDashboard({
         subtext: `${collectionRate.toFixed(0)}% of invoiced`,
         icon: Banknote,
         polarity: "positive" as const,
+        onCardClick: () => onNavigateTab("collections"),
+        clickHint: "View collections →",
       },
       {
         label: "Outstanding AR",
@@ -228,6 +234,8 @@ export function FinancialDashboard({
         subtext: `DSO: ${dso}d`,
         icon: FileStack,
         polarity: "negative" as const,
+        onCardClick: () => onNavigateTab("invoices"),
+        clickHint: "View unpaid invoices →",
       },
       {
         label: "Total Expenses",
@@ -237,12 +245,15 @@ export function FinancialDashboard({
         subtext: `${scopedExpenses.length} expense${scopedExpenses.length !== 1 ? "s" : ""} this period`,
         icon: Clock,
         polarity: "negative" as const,
+        onCardClick: () => onNavigateTab("expenses"),
+        clickHint: "View expenses →",
       },
     ],
     [
       netRevenue, prevNetRevenue, netProfit, prevNetProfit, profitMargin,
       totalCollected, prevTotalCollected, collectionRate,
       outstandingAR, dso, totalExpenses, prevTotalExpenses, scopedExpenses.length,
+      onNavigateTab,
     ]
   );
 
@@ -262,13 +273,25 @@ export function FinancialDashboard({
       0
     );
     if (overdueInvoices.length > 0) {
+      // Find oldest overdue invoice for detail line
+      const oldest = overdueInvoices.reduce((best: any, inv: any) => {
+        const days = getAgingDays(inv);
+        const bestDays = best ? getAgingDays(best) : 0;
+        return days > bestDays ? inv : best;
+      }, null);
+      const oldestDays = oldest ? getAgingDays(oldest) : 0;
+      const oldestNumber = oldest?.invoice_number || oldest?.id || "Unknown";
+      const oldestCustomer = (oldest?.customer_name || oldest?.customerName || "").trim() || "Unknown";
+
       items.push({
         severity: overdueAmount > 100000 ? "danger" : "warning",
         icon: AlertTriangle,
         label: `${overdueInvoices.length} invoice${overdueInvoices.length > 1 ? "s" : ""} overdue 30+ days`,
         detail: fmt(overdueAmount),
-        actionLabel: "View",
+        detailLine: `Oldest: ${oldestNumber} — ${oldestCustomer} — ${oldestDays}d overdue`,
+        actionLabel: "Follow Up",
         onAction: () => onNavigateTab("invoices"),
+        dismissKey: "overdue-invoices",
       });
     }
 
@@ -281,13 +304,30 @@ export function FinancialDashboard({
       0
     );
     if (unbilledItems.length > 0) {
+      // Find largest unbilled booking for detail line
+      const bookingMap = new Map<string, { id: string; customer: string; amount: number }>();
+      for (const b of unbilledItems) {
+        const bid = b.booking_id || b.bookingId || "unknown";
+        const existing = bookingMap.get(bid);
+        const amt = Number(b.amount) || 0;
+        const customer = (b.customer_name || b.customerName || "").trim() || "Unknown";
+        if (existing) {
+          existing.amount += amt;
+        } else {
+          bookingMap.set(bid, { id: bid, customer, amount: amt });
+        }
+      }
+      const largest = Array.from(bookingMap.values()).sort((a, b) => b.amount - a.amount)[0];
+
       items.push({
         severity: unbilledTotal > 50000 ? "warning" : "info",
         icon: FileWarning,
         label: `${unbilledItems.length} unbilled charge${unbilledItems.length > 1 ? "s" : ""} — potential revenue leakage`,
         detail: fmt(unbilledTotal),
-        actionLabel: "View",
+        detailLine: largest ? `Largest: ${largest.id} — ${fmt(largest.amount)} — ${largest.customer}` : undefined,
+        actionLabel: "Create Invoice",
         onAction: () => onNavigateTab("billings"),
+        dismissKey: "unbilled-charges",
       });
     }
 
@@ -301,13 +341,22 @@ export function FinancialDashboard({
         detail: "Above 80% target",
       });
     } else {
+      const uncollected = invoicedRevenue - totalCollected;
+      const unpaidCount = invoices.filter((inv: any) => {
+        const s = (inv.status || "").toLowerCase();
+        const ps = (inv.payment_status || "").toLowerCase();
+        return s !== "paid" && ps !== "paid";
+      }).length;
+
       items.push({
         severity: collRate < 50 ? "danger" : "warning",
         icon: Banknote,
-        label: `Collection rate: ${collRate.toFixed(0)}%`,
-        detail: `Below 80% target — ${fmt(invoicedRevenue - totalCollected)} uncollected`,
-        actionLabel: "View",
+        label: `Collection rate: ${collRate.toFixed(0)}% — below 80% target`,
+        detail: fmt(uncollected) + " uncollected",
+        detailLine: `${fmt(uncollected)} uncollected from ${unpaidCount} invoice${unpaidCount !== 1 ? "s" : ""}`,
+        actionLabel: "View Uncollected",
         onAction: () => onNavigateTab("collections"),
+        dismissKey: "low-collection-rate",
       });
     }
 
@@ -345,16 +394,16 @@ export function FinancialDashboard({
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Scope selector */}
-      <ScopeBar scope={scope} onScopeChange={onScopeChange} standalone />
-
-      {/* Contextual summary line */}
-      <p
-        className="text-[13px] -mt-3 -mb-2"
-        style={{ color: "#667085" }}
-      >
-        {summaryLine}
-      </p>
+      {/* Scope selector + summary inline */}
+      <div className="flex items-center justify-between gap-4">
+        <ScopeBar scope={scope} onScopeChange={onScopeChange} standalone />
+        <p
+          className="text-[13px] shrink-0"
+          style={{ color: "#667085" }}
+        >
+          {summaryLine}
+        </p>
+      </div>
 
       {/* Zone 1: Vital Signs */}
       <VitalSignsStrip signs={vitalSigns} isLoading={isLoading} />
@@ -380,14 +429,23 @@ export function FinancialDashboard({
         onBucketClick={() => onNavigateTab("invoices")}
         onNavigate={() => onNavigateTab("invoices")}
         previousInvoices={prevInvoices}
-      />
-
-      {/* Zone 5: Consolidated Breakdown (Service P&L, Top Customers, Income vs Cost) */}
-      <BreakdownTabs
-        billingItems={scopedBillings}
-        invoices={scopedInvoices}
-        expenses={scopedExpenses}
-        onNavigateTab={onNavigateTab}
+        unbilledItems={billingItems.filter(
+          (b: any) => (b.status || "").toLowerCase() === "unbilled"
+        )}
+        onUnbilledClick={() => onNavigateTab("billings")}
+        onRecordPayment={() => onNavigateTab("collections")}
+        onSendReminder={(inv: any) => {
+          const invNumber = inv.invoice_number || inv.id || "Invoice";
+          const customer = (inv.customer_name || inv.customerName || "").trim() || "Customer";
+          const balance = Number(inv.remaining_balance ?? inv.total_amount ?? inv.amount ?? 0);
+          const dueDate = inv.due_date ? new Date(inv.due_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "N/A";
+          const message = `Hi, this is a friendly reminder regarding ${invNumber} for ${fmt(balance)} due ${dueDate}. Please arrange payment at your earliest convenience. Thank you! — ${customer}`;
+          navigator.clipboard.writeText(message).then(
+            () => toast.success("Reminder copied to clipboard"),
+            () => toast.error("Failed to copy reminder")
+          );
+        }}
+        onCreateInvoice={() => onNavigateTab("billings")}
       />
     </div>
   );

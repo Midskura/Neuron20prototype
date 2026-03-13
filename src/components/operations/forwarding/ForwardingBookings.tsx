@@ -12,11 +12,13 @@ import { NeuronRefreshButton } from "../../shared/NeuronRefreshButton";
 interface ForwardingBookingsProps {
   onSelectBooking: (booking: ForwardingBooking) => void;
   currentUser?: { id?: string; name: string; email: string; department: string } | null;
+  /** Deep-link: auto-select this booking when loaded */
+  pendingBookingId?: string | null;
 }
 
 const API_URL = `https://${projectId}.supabase.co/functions/v1/make-server-c142e950`;
 
-export function ForwardingBookings({ onSelectBooking, currentUser }: ForwardingBookingsProps) {
+export function ForwardingBookings({ onSelectBooking, currentUser, pendingBookingId }: ForwardingBookingsProps) {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<ExecutionStatus | "all">("all");
@@ -46,6 +48,15 @@ export function ForwardingBookings({ onSelectBooking, currentUser }: ForwardingB
     bookingsFetcher,
     [],
   );
+
+  // Deep-link: auto-select booking from pendingBookingId
+  useEffect(() => {
+    if (!pendingBookingId || bookings.length === 0 || isLoading) return;
+    const match = bookings.find(b => b.bookingId === pendingBookingId || b.id === pendingBookingId);
+    if (match) {
+      onSelectBooking(match);
+    }
+  }, [pendingBookingId, bookings, isLoading]);
 
   const handleBookingCreated = () => {
     setShowCreateModal(false);

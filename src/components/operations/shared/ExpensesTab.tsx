@@ -11,6 +11,7 @@ interface ExpensesTabProps {
   currentUserDepartment?: string;
   currentUser?: { name: string; email: string; department: string } | null;
   readOnly?: boolean;
+  highlightId?: string | null;
 }
 
 const API_URL = `https://${projectId}.supabase.co/functions/v1/make-server-c142e950`;
@@ -19,7 +20,8 @@ export function ExpensesTab({
   bookingId, 
   bookingType, 
   currentUser, 
-  readOnly = false 
+  readOnly = false,
+  highlightId
 }: ExpensesTabProps) {
   // Data State
   const [expenses, setExpenses] = useState<OperationsExpense[]>([]);
@@ -116,11 +118,12 @@ export function ExpensesTab({
         expenses={expenses}
         isLoading={isLoading}
         showHeader={true}
-        linkedBookings={[]} // No linked bookings in single view
-        context="booking"   // "booking" context hides the Booking Column
+        linkedBookings={[]}
+        context="booking"
         onRefresh={fetchExpenses}
-        projectNumber={bookingId} // Pass bookingId as projectNumber for creating new expenses
+        projectNumber={bookingId}
         bookingType={bookingType}
+        highlightId={highlightId}
       />
     </div>
   );

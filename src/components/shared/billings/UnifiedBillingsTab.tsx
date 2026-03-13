@@ -48,6 +48,8 @@ interface UnifiedBillingsTabProps {
   enableGroupByToggle?: boolean;
   /** Linked bookings metadata for booking-grouped view headers */
   linkedBookings?: any[];
+  /** Deep-link: highlight a specific billing item */
+  highlightId?: string | null;
 }
 
 const formatCurrency = (amount: number, currency: string = "PHP") => {
@@ -73,6 +75,7 @@ export function UnifiedBillingsTab({
   extraActions,
   enableGroupByToggle = false,
   linkedBookings,
+  highlightId
 }: UnifiedBillingsTabProps) {
   // Stable reference for empty array to prevent infinite re-render loops
   const stableLinkedBookings = linkedBookings && linkedBookings.length > 0 ? linkedBookings : EMPTY_LINKED_BOOKINGS;
@@ -641,6 +644,7 @@ export function UnifiedBillingsTab({
         onAddItem={!readOnly ? handleAddItemToCategory : undefined}
         groupBy={groupBy}
         linkedBookings={stableLinkedBookings}
+        highlightId={highlightId}
       />
     </div>
   );

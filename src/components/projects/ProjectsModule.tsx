@@ -26,6 +26,8 @@ interface ProjectsModuleProps {
 export function ProjectsModule({ currentUser, onCreateTicket, initialProject, departmentOverride }: ProjectsModuleProps) {
   const [view, setView] = useState<ProjectsView>(initialProject ? "detail" : "list");
   const [selectedProject, setSelectedProject] = useState<Project | null>(initialProject || null);
+  const [initialTab, setInitialTab] = useState<string | null>(null);
+  const [highlightId, setHighlightId] = useState<string | null>(null);
   const invalidateCache = useInvalidateCache();
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -61,6 +63,8 @@ export function ProjectsModule({ currentUser, onCreateTicket, initialProject, de
   // Deep-link: auto-select project from ?project=PROJECT_NUMBER query param
   useEffect(() => {
     const projectNumber = searchParams.get("project");
+    const targetTab = searchParams.get("tab");
+    const targetHighlight = searchParams.get("highlight");
     if (!projectNumber || projects.length === 0 || isLoading) return;
 
     const match = projects.find(
@@ -68,6 +72,8 @@ export function ProjectsModule({ currentUser, onCreateTicket, initialProject, de
     );
     if (match) {
       setSelectedProject(match);
+      setInitialTab(targetTab || null);
+      setHighlightId(targetHighlight || null);
       setView("detail");
       // Clean the query param so back-navigation doesn't re-trigger
       setSearchParams({}, { replace: true });
@@ -82,6 +88,8 @@ export function ProjectsModule({ currentUser, onCreateTicket, initialProject, de
   const handleBackToList = () => {
     setView("list");
     setSelectedProject(null);
+    setInitialTab(null);
+    setHighlightId(null);
   };
 
   const handleProjectUpdated = async () => {
@@ -163,6 +171,8 @@ export function ProjectsModule({ currentUser, onCreateTicket, initialProject, de
           // as ProjectDetail might not expect "Accounting".
           department={department === "Accounting" ? "Operations" : department}
           onCreateTicket={onCreateTicket}
+          initialTab={initialTab}
+          highlightId={highlightId}
         />
       )}
     </div>

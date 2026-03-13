@@ -8,6 +8,7 @@
  */
 
 import { useState, useEffect } from "react";
+import { useSearchParams } from "react-router";
 import { projectId, publicAnonKey } from "../../utils/supabase/info";
 import { toast } from "../ui/toast-utils";
 import { useCachedFetch, useInvalidateCache } from "../../hooks/useNeuronCache";
@@ -35,6 +36,9 @@ export function ContractsModule({ currentUser, onCreateTicket, initialContract, 
   const [view, setView] = useState<ContractsView>(initialContract ? "detail" : "list");
   const [selectedContract, setSelectedContract] = useState<QuotationNew | null>(initialContract || null);
   const invalidateCache = useInvalidateCache();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [initialTab, setInitialTab] = useState<string | null>(null);
+  const [highlightId, setHighlightId] = useState<string | null>(null);
 
   // Update view if initialContract changes
   useEffect(() => {
@@ -88,6 +92,26 @@ export function ContractsModule({ currentUser, onCreateTicket, initialContract, 
     refresh: refreshContracts,
   } = useCachedFetch<QuotationNew[]>("contracts", contractsFetcher, []);
 
+  // Deep-link: auto-select contract from ?contract= query param
+  useEffect(() => {
+    const contractId = searchParams.get("contract");
+    const targetTab = searchParams.get("tab");
+    const targetHighlight = searchParams.get("highlight");
+    if (!contractId || contracts.length === 0 || isLoading) return;
+
+    const match = contracts.find(
+      (c) => c.quote_number === contractId || c.id === contractId
+    );
+    if (match) {
+      setSelectedContract(match);
+      setInitialTab(targetTab || null);
+      setHighlightId(targetHighlight || null);
+      setView("detail");
+      // Clean the query param so back-navigation doesn't re-trigger
+      setSearchParams({}, { replace: true });
+    }
+  }, [searchParams, contracts, isLoading, setSearchParams]);
+
   const handleSelectContract = (contract: QuotationNew) => {
     setSelectedContract(contract);
     setView("detail");
@@ -96,6 +120,8 @@ export function ContractsModule({ currentUser, onCreateTicket, initialContract, 
   const handleBackToList = () => {
     setView("list");
     setSelectedContract(null);
+    setInitialTab(null);
+    setHighlightId(null);
   };
 
   const handleContractUpdated = async (updatedContract?: QuotationNew) => {
@@ -181,6 +207,8 @@ export function ContractsModule({ currentUser, onCreateTicket, initialContract, 
           onEdit={handleEditContract}
           onUpdate={handleContractUpdated}
           currentUser={currentUser}
+          initialTab={initialTab}
+          highlightId={highlightId}
         />
       )}
     </div>

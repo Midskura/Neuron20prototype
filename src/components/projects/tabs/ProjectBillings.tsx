@@ -5,9 +5,10 @@ import { UnifiedBillingsTab } from "../../shared/billings/UnifiedBillingsTab";
 interface ProjectBillingsProps {
   financials: FinancialData;
   project: Project;
+  highlightId?: string | null;
 }
 
-export function ProjectBillings({ financials, project }: ProjectBillingsProps) {
+export function ProjectBillings({ financials, project, highlightId }: ProjectBillingsProps) {
   const { billingItems, refresh, isLoading } = financials;
 
   return (
@@ -21,6 +22,7 @@ export function ProjectBillings({ financials, project }: ProjectBillingsProps) {
           isLoading={isLoading}
           enableGroupByToggle={true}
           linkedBookings={project.linkedBookings || []}
+          highlightId={highlightId}
       />
     </div>
   );

@@ -21,6 +21,8 @@ interface TruckingBookingDetailsProps {
   onBack: () => void;
   onUpdate: () => void;
   currentUser?: { name: string; email: string; department: string } | null;
+  initialTab?: string | null;
+  highlightId?: string | null;
 }
 
 type DetailTab = "booking-info" | "billings" | "expenses" | "comments";
@@ -138,8 +140,10 @@ function ActivityTimeline({ activities }: { activities: ActivityLogEntry[] }) {
   );
 }
 
-export function TruckingBookingDetails({ booking, onBack, onUpdate, currentUser }: TruckingBookingDetailsProps) {
-  const [activeTab, setActiveTab] = useState<DetailTab>("booking-info");
+export function TruckingBookingDetails({ booking, onBack, onUpdate, currentUser, initialTab, highlightId }: TruckingBookingDetailsProps) {
+  const [activeTab, setActiveTab] = useState<DetailTab>(
+    (initialTab as DetailTab) || "booking-info"
+  );
   const [showTimeline, setShowTimeline] = useState(false);
   const [activityLog, setActivityLog] = useState<ActivityLogEntry[]>(initialActivityLog);
   const [editedBooking, setEditedBooking] = useState<TruckingBooking>(booking);
@@ -218,7 +222,7 @@ export function TruckingBookingDetails({ booking, onBack, onUpdate, currentUser 
         <div style={{ flex: showTimeline ? "0 0 65%" : "1", overflow: "auto", transition: "flex 0.3s ease" }}>
           {activeTab === "booking-info" && <BookingInformationTab booking={editedBooking} onBookingUpdated={onUpdate} addActivity={addActivity} setEditedBooking={setEditedBooking} />}
           {activeTab === "billings" && <div className="flex flex-col bg-white p-12 min-h-[600px]"><UnifiedBillingsTab items={bookingBillingItems} projectId={booking.projectNumber || ""} bookingId={booking.bookingId} onRefresh={financials.refresh} isLoading={financials.isLoading} extraActions={<BookingRateCardButton booking={booking} serviceType="Trucking" existingBillingItems={bookingBillingItems} onRefresh={financials.refresh} />} /></div>}
-          {activeTab === "expenses" && <ExpensesTab bookingId={booking.bookingId} bookingType="trucking" currentUser={currentUser} />}
+          {activeTab === "expenses" && <ExpensesTab bookingId={booking.bookingId} bookingType="trucking" currentUser={currentUser} highlightId={activeTab === "expenses" ? highlightId : undefined} />}
           {activeTab === "comments" && <BookingCommentsTab bookingId={booking.bookingId} currentUserId={currentUser?.email || "unknown"} currentUserName={currentUser?.name || "Unknown User"} currentUserDepartment={currentUser?.department || "Operations"} />}
         </div>
         {showTimeline && <div style={{ flex: "0 0 35%", borderLeft: "1px solid var(--neuron-ui-border)", backgroundColor: "#FAFBFC", overflow: "auto" }}><ActivityTimeline activities={activityLog} /></div>}

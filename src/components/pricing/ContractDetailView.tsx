@@ -44,6 +44,8 @@ interface ContractDetailViewProps {
   onEdit: () => void;
   onUpdate?: (quotation: QuotationNew) => void;
   currentUser?: { name: string; email: string; department: string } | null;
+  initialTab?: string | null;
+  highlightId?: string | null;
 }
 
 type ContractTab = "financial_overview" | "rate-card" | "bookings" | "billings" | "invoices" | "collections" | "expenses" | "attachments" | "comments" | "activity";
@@ -90,8 +92,12 @@ export function ContractDetailView({
   onEdit,
   onUpdate,
   currentUser,
+  initialTab,
+  highlightId,
 }: ContractDetailViewProps) {
-  const [activeTab, setActiveTab] = useState<ContractTab>("financial_overview");
+  const [activeTab, setActiveTab] = useState<ContractTab>(
+    (initialTab as ContractTab) || "financial_overview"
+  );
   const [activeCategory, setActiveCategory] = useState<TabCategory>("dashboard");
   const [linkedBookings, setLinkedBookings] = useState<any[]>([]);
   const [isLoadingBookings, setIsLoadingBookings] = useState(false);
@@ -486,6 +492,7 @@ export function ContractDetailView({
           linkedBookings={linkedBookings}
           title="Contract Invoices"
           subtitle={`Generate, track, and manage official invoices — ${quotation.quote_number} · ${quotation.customer_name}`}
+          highlightId={activeTab === "invoices" ? highlightId : undefined}
         />
       </div>
     );
@@ -503,6 +510,7 @@ export function ContractDetailView({
           onRefresh={contractFinancials.refresh}
           title="Contract Collections"
           subtitle={`Track payments received from ${quotation.customer_name} — ${quotation.quote_number}`}
+          highlightId={activeTab === "collections" ? highlightId : undefined}
         />
       </div>
     );

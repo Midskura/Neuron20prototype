@@ -21,6 +21,7 @@ interface UnifiedCollectionsTabProps {
   title?: string;
   subtitle?: string;
   readOnly?: boolean;
+  highlightId?: string | null;
 }
 
 export function UnifiedCollectionsTab({ 
@@ -31,18 +32,31 @@ export function UnifiedCollectionsTab({
   title,
   subtitle,
   readOnly = false,
+  highlightId,
 }: UnifiedCollectionsTabProps) {
   const { collections, invoices, refresh, isLoading } = financials;
   
   // -- State --
   const [interfaceMode, setInterfaceMode] = useState<'none' | 'create' | 'view'>('none');
   const [selectedCollection, setSelectedCollection] = useState<Collection | null>(null);
+  const [highlightConsumed, setHighlightConsumed] = useState(false);
   
   // Filters
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+
+  // Deep-link: auto-select collection if highlightId matches
+  // Using useMemo + state check since collections may load async
+  if (highlightId && !highlightConsumed && collections.length > 0) {
+    const match = collections.find((c: Collection) => c.id === highlightId);
+    if (match) {
+      setSelectedCollection(match);
+      setInterfaceMode('view');
+      setHighlightConsumed(true);
+    }
+  }
 
   // -- Helpers --
   const formatCurrency = (amount: number, currency: string = "PHP") => {

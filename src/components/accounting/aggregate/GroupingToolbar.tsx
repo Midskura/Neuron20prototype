@@ -14,6 +14,7 @@ import type { GroupOption, StatusOption, DateScope } from "./types";
 import type { AgingBucket } from "./types";
 import { formatCurrencyCompact } from "./types";
 import { ScopeBar } from "./ScopeBar";
+import { CustomDropdown } from "../../bd/CustomDropdown";
 
 interface GroupingToolbarProps {
   scope?: DateScope;
@@ -37,6 +38,11 @@ interface GroupingToolbarProps {
   agingBuckets?: AgingBucket[];
   activeAgingBucket?: string | null;
   onAgingBucketChange?: (label: string | null) => void;
+
+  // Optional booking type filter (Billings & Expenses)
+  bookingTypeOptions?: string[];
+  activeBookingType?: string;
+  onBookingTypeChange?: (value: string | null) => void;
 }
 
 export function GroupingToolbar({
@@ -55,17 +61,23 @@ export function GroupingToolbar({
   agingBuckets,
   activeAgingBucket,
   onAgingBucketChange,
+  bookingTypeOptions,
+  activeBookingType,
+  onBookingTypeChange,
 }: GroupingToolbarProps) {
   const hasStatus = statusOptions.length > 0;
   const hasAging = agingBuckets && agingBuckets.length > 0 && onAgingBucketChange;
+  const hasBookingType = bookingTypeOptions && bookingTypeOptions.length > 0 && onBookingTypeChange;
   const [groupOpen, setGroupOpen] = useState(false);
   const [agingOpen, setAgingOpen] = useState(false);
+  const [bookingTypeOpen, setBookingTypeOpen] = useState(false);
   const groupRef = useRef<HTMLDivElement>(null);
   const agingRef = useRef<HTMLDivElement>(null);
+  const bookingTypeRef = useRef<HTMLDivElement>(null);
 
-  // Close group dropdown on outside click
+  // Close dropdowns on outside click
   useEffect(() => {
-    if (!groupOpen && !agingOpen) return;
+    if (!groupOpen && !agingOpen && !bookingTypeOpen) return;
     const handler = (e: MouseEvent) => {
       if (groupOpen && groupRef.current && !groupRef.current.contains(e.target as Node)) {
         setGroupOpen(false);
@@ -73,10 +85,13 @@ export function GroupingToolbar({
       if (agingOpen && agingRef.current && !agingRef.current.contains(e.target as Node)) {
         setAgingOpen(false);
       }
+      if (bookingTypeOpen && bookingTypeRef.current && !bookingTypeRef.current.contains(e.target as Node)) {
+        setBookingTypeOpen(false);
+      }
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
-  }, [groupOpen, agingOpen]);
+  }, [groupOpen, agingOpen, bookingTypeOpen]);
 
   const activeGroupLabel =
     groupByOptions.find((o) => o.value === groupBy)?.label || groupBy;
@@ -282,54 +297,106 @@ export function GroupingToolbar({
           </div>
         )}
 
-        {/* Status segmented control — hidden in Essentials mode */}
-        {/* {hasStatus && (
-          <div
-            className="flex items-center rounded-lg overflow-hidden"
-            style={{
-              border: "1px solid #E5E7EB",
-              backgroundColor: "#FFFFFF",
-            }}
-          >
+        {/* Booking type dropdown (Billings & Expenses) */}
+        {hasBookingType && (
+          <div className="relative" ref={bookingTypeRef}>
             <button
-              onClick={() => onStatusChange("")}
-              className="px-3 py-2 text-[13px] font-medium transition-all"
+              onClick={() => setBookingTypeOpen(!bookingTypeOpen)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[13px] font-medium transition-colors hover:bg-gray-50"
               style={{
-                backgroundColor: activeStatus === "" ? "#F0FDFA" : "transparent",
-                color: activeStatus === "" ? "#0F766E" : "#667085",
-                borderRight: "1px solid #E5E7EB",
+                border: `1px solid ${activeBookingType ? "#E5E7EB" + "60" : "#E5E7EB"}`,
+                color: activeBookingType ? "#12332B" : "#12332B",
+                backgroundColor: bookingTypeOpen ? "#F0FDFA" : activeBookingType ? "#F0FDFA" : "#FFFFFF",
               }}
             >
-              All
+              <span
+                className="w-2 h-2 rounded-full flex-shrink-0"
+                style={{
+                  backgroundColor: activeBookingType
+                    ? "#0F766E"
+                    : "#667085",
+                }}
+              />
+              <span>{activeBookingType || "Booking Type"}</span>
+              <ChevronDown
+                size={12}
+                style={{ color: "#667085" }}
+                className={`transition-transform ${bookingTypeOpen ? "rotate-180" : ""}`}
+              />
             </button>
-            {statusOptions.map((opt, idx) => {
-              const isActive = activeStatus === opt.value;
-              const isLast = idx === statusOptions.length - 1;
-              return (
+
+            {bookingTypeOpen && (
+              <div
+                className="absolute top-full left-0 mt-1 z-50 rounded-lg shadow-lg py-1 min-w-[240px]"
+                style={{
+                  border: "1px solid #E5E7EB",
+                  backgroundColor: "#FFFFFF",
+                }}
+              >
+                {/* All / Clear option */}
                 <button
-                  key={opt.value}
-                  onClick={() =>
-                    onStatusChange(isActive ? "" : opt.value)
-                  }
-                  className="flex items-center gap-1.5 px-3 py-2 text-[13px] font-medium transition-all"
+                  onClick={() => {
+                    onBookingTypeChange!(null);
+                    setBookingTypeOpen(false);
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] transition-colors hover:bg-gray-50"
                   style={{
-                    backgroundColor: isActive ? `${opt.color}12` : "transparent",
-                    color: isActive ? opt.color : "#667085",
-                    borderRight: isLast ? "none" : "1px solid #E5E7EB",
+                    color: !activeBookingType ? "#0F766E" : "#12332B",
+                    fontWeight: !activeBookingType ? 600 : 400,
+                    borderBottom: "1px solid #F3F4F6",
                   }}
                 >
-                  <span
-                    className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-                    style={{
-                      backgroundColor: isActive ? opt.color : "#D1D5DB",
-                    }}
-                  />
-                  {opt.label}
+                  {!activeBookingType ? (
+                    <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: "#0F766E" }} />
+                  ) : (
+                    <span className="w-1.5" />
+                  )}
+                  All Booking Types
                 </button>
-              );
-            })}
+
+                {bookingTypeOptions!.map((type) => {
+                  const isActive = activeBookingType === type;
+                  return (
+                    <button
+                      key={type}
+                      onClick={() => {
+                        onBookingTypeChange!(isActive ? null : type);
+                        setBookingTypeOpen(false);
+                      }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] transition-colors hover:bg-gray-50"
+                      style={{
+                        color: isActive ? "#0F766E" : "#12332B",
+                        fontWeight: isActive ? 600 : 400,
+                      }}
+                    >
+                      <span
+                        className="w-2 h-2 rounded-sm flex-shrink-0"
+                        style={{ backgroundColor: isActive ? "#0F766E" : "#667085" }}
+                      />
+                      <span className="flex-1 text-left">{type}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
-        )} */}
+        )}
+
+        {/* Status filter dropdown */}
+        {hasStatus && (
+          <CustomDropdown
+            label=""
+            value={activeStatus || "all"}
+            onChange={(value) => onStatusChange(value === "all" ? "" : value)}
+            options={[
+              { value: "all", label: "All Status" },
+              ...statusOptions.map((opt) => ({
+                value: opt.value,
+                label: opt.label,
+              })),
+            ]}
+          />
+        )}
 
         {/* Record count badge removed — "X in Y groups" was redundant */}
       </div>

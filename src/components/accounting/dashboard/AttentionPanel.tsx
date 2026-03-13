@@ -1,13 +1,16 @@
 /**
- * AttentionPanel — Promoted to Zone 2 of the Financial Dashboard
+ * AttentionPanel — Zone 2 of the Financial Dashboard
  *
- * Compact actionable alert strip showing items needing attention.
+ * Action Items queue — each row is a clickable surface that navigates
+ * to the relevant tab. No explicit buttons; hover reveals a subtle
+ * navigation hint + chevron. Dismiss is a hover-only × icon.
+ *
  * Collapsible: auto-expands if danger/warning items exist,
  * collapsed by default if all items are success/info.
  */
 
 import { useState, useMemo } from "react";
-import { AlertTriangle, ChevronRight, ChevronDown, ChevronUp } from "lucide-react";
+import { AlertTriangle, ChevronRight, ChevronDown, ChevronUp, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 export interface AttentionItem {
@@ -15,8 +18,16 @@ export interface AttentionItem {
   icon: LucideIcon;
   label: string;
   detail: string;
+  /** Second line — the single most actionable data point */
+  detailLine?: string;
+  /** Primary action CTA label (verb-based: "Follow Up", "Create Invoice") — shown as hover hint */
   actionLabel?: string;
   onAction?: () => void;
+  /** Secondary action label (unused in new design, kept for API compat) */
+  actionLabel2?: string;
+  onAction2?: () => void;
+  /** Unique key for dismiss tracking */
+  dismissKey?: string;
 }
 
 interface AttentionPanelProps {
@@ -40,6 +51,10 @@ const SEVERITY_PRIORITY: Record<string, number> = {
 export function AttentionPanel({ items }: AttentionPanelProps) {
   if (items.length === 0) return null;
 
+  // Dismiss state (per session)
+  const [dismissedKeys, setDismissedKeys] = useState<Set<string>>(new Set());
+  const [showDismissed, setShowDismissed] = useState(false);
+
   // Determine if there are actionable (danger/warning) items
   const hasActionable = useMemo(
     () => items.some((i) => i.severity === "danger" || i.severity === "warning"),
@@ -48,30 +63,34 @@ export function AttentionPanel({ items }: AttentionPanelProps) {
 
   const [isExpanded, setIsExpanded] = useState(hasActionable);
 
-  // Count by severity for collapsed summary
-  const dangerCount = items.filter((i) => i.severity === "danger").length;
-  const warningCount = items.filter((i) => i.severity === "warning").length;
-  const successCount = items.filter((i) => i.severity === "success").length;
-
   // Sort items: danger first, then warning, info, success
   const sortedItems = useMemo(
     () => [...items].sort((a, b) => (SEVERITY_PRIORITY[a.severity] ?? 9) - (SEVERITY_PRIORITY[b.severity] ?? 9)),
     [items]
   );
 
-  // Build collapsed summary text
-  const summaryParts: string[] = [];
-  if (dangerCount > 0) summaryParts.push(`${dangerCount} critical`);
-  if (warningCount > 0) summaryParts.push(`${warningCount} warning${warningCount > 1 ? "s" : ""}`);
-  if (summaryParts.length === 0 && successCount > 0) summaryParts.push("All clear");
-  const summaryText = summaryParts.length > 0
-    ? summaryParts.join(", ") + " — click to expand"
-    : `${items.length} item${items.length > 1 ? "s" : ""}`;
+  // Split into active and dismissed
+  const activeItems = useMemo(
+    () => sortedItems.filter((item) => !item.dismissKey || !dismissedKeys.has(item.dismissKey)),
+    [sortedItems, dismissedKeys]
+  );
+  const dismissedItems = useMemo(
+    () => sortedItems.filter((item) => item.dismissKey && dismissedKeys.has(item.dismissKey)),
+    [sortedItems, dismissedKeys]
+  );
 
-  // Header accent color based on worst severity
-  const worstSeverity = sortedItems[0]?.severity || "info";
+  // Count by severity for collapsed summary
+  const dangerCount = activeItems.filter((i) => i.severity === "danger").length;
+  const warningCount = activeItems.filter((i) => i.severity === "warning").length;
+  const successCount = activeItems.filter((i) => i.severity === "success").length;
+
+  // Header accent color based on worst active severity
+  const worstSeverity = activeItems[0]?.severity || "info";
   const accentColor = SEVERITY_COLORS[worstSeverity]?.dot || "#6B7A76";
-  const accentBg = SEVERITY_COLORS[worstSeverity]?.bg || "#F8FAFC";
+
+  const handleDismiss = (key: string) => {
+    setDismissedKeys((prev) => new Set([...prev, key]));
+  };
 
   return (
     <div
@@ -98,8 +117,18 @@ export function AttentionPanel({ items }: AttentionPanelProps) {
           className="text-[12px] font-semibold uppercase tracking-wider"
           style={{ color: "#667085" }}
         >
-          Attention Required
+          Action Items
         </span>
+
+        {/* Active count badge */}
+        {activeItems.length > 0 && (
+          <span
+            className="px-1.5 py-0.5 rounded text-[10px] font-semibold"
+            style={{ backgroundColor: "#F3F4F6", color: "#667085" }}
+          >
+            {activeItems.filter((i) => i.severity !== "success").length} pending
+          </span>
+        )}
 
         {/* Collapsed summary badges */}
         {!isExpanded && (
@@ -144,60 +173,179 @@ export function AttentionPanel({ items }: AttentionPanelProps) {
       {/* Alert rows — visible when expanded */}
       {isExpanded && (
         <div>
-          {sortedItems.map((item, idx) => {
+          {activeItems.map((item, idx) => {
             const Icon = item.icon;
             const colors = SEVERITY_COLORS[item.severity] || SEVERITY_COLORS.info;
+            const isSuccess = item.severity === "success";
+            const isClickable = !!item.onAction;
 
             return (
               <div
-                key={idx}
-                className="flex items-center gap-3 px-5 py-3 transition-colors hover:bg-gray-50/30"
+                key={item.dismissKey || idx}
+                className={`group relative px-5 py-3 transition-all duration-150 ${
+                  isClickable ? "cursor-pointer" : ""
+                }`}
                 style={{
-                  borderBottom: idx < sortedItems.length - 1 ? "1px solid #F3F4F6" : "none",
-                  cursor: item.onAction ? "pointer" : "default",
+                  borderBottom: idx < activeItems.length - 1 ? "1px solid #F3F4F6" : "none",
                 }}
-                onClick={item.onAction}
-                role={item.onAction ? "button" : undefined}
-                tabIndex={item.onAction ? 0 : undefined}
-                onKeyDown={item.onAction ? (e) => e.key === "Enter" && item.onAction?.() : undefined}
+                onClick={isClickable ? item.onAction : undefined}
+                onMouseEnter={(e) => {
+                  if (isClickable) {
+                    e.currentTarget.style.backgroundColor = "#F8FAFB";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = "transparent";
+                }}
               >
-                {/* Severity dot */}
-                <div
-                  className="w-2 h-2 rounded-full flex-shrink-0"
-                  style={{ backgroundColor: colors.dot }}
-                />
+                {/* Line 1: Icon + Label + Amount badge + Chevron */}
+                <div className="flex items-center gap-3">
+                  {/* Severity dot */}
+                  <div
+                    className="w-2 h-2 rounded-full flex-shrink-0"
+                    style={{ backgroundColor: colors.dot }}
+                  />
 
-                {/* Icon */}
-                <div
-                  className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
-                  style={{ backgroundColor: colors.bg }}
-                >
-                  <Icon size={14} style={{ color: colors.dot }} />
+                  {/* Icon */}
+                  <div
+                    className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
+                    style={{ backgroundColor: colors.bg }}
+                  >
+                    <Icon size={14} style={{ color: colors.dot }} />
+                  </div>
+
+                  {/* Label */}
+                  <span
+                    className="text-[13px] font-medium flex-1"
+                    style={{ color: "#12332B" }}
+                  >
+                    {item.label}
+                  </span>
+
+                  {/* Detail (amount/count) */}
+                  <span
+                    className="text-[13px] font-semibold tabular-nums"
+                    style={{ color: colors.dot }}
+                  >
+                    {item.detail}
+                  </span>
+
+                  {/* Chevron — visible on hover for clickable rows */}
+                  {isClickable && (
+                    <ChevronRight
+                      size={14}
+                      className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity duration-150"
+                      style={{ color: "#9CA3AF" }}
+                    />
+                  )}
                 </div>
 
-                {/* Label */}
-                <span
-                  className="text-[13px] font-medium flex-1"
-                  style={{ color: "#12332B" }}
-                >
-                  {item.label}
-                </span>
+                {/* Line 2: Detail line + hover navigation hint */}
+                {(item.detailLine || item.actionLabel) && !isSuccess && (
+                  <div className="flex items-center gap-3 mt-1.5 ml-[46px]">
+                    {/* Detail line */}
+                    {item.detailLine && (
+                      <span
+                        className="text-[11px] flex-1"
+                        style={{ color: "#9CA3AF" }}
+                      >
+                        {item.detailLine}
+                      </span>
+                    )}
 
-                {/* Detail (amount/count) */}
-                <span
-                  className="text-[13px] font-semibold tabular-nums"
-                  style={{ color: colors.dot }}
-                >
-                  {item.detail}
-                </span>
+                    {/* Hover navigation hint — replaces the old button */}
+                    {/* Removed: the row click is the action, no text hint needed */}
+                  </div>
+                )}
 
-                {/* Action arrow */}
-                {item.onAction && (
-                  <ChevronRight size={14} style={{ color: "#9CA3AF" }} className="flex-shrink-0" />
+                {/* Dismiss × — hover-only, top-right corner */}
+                {item.dismissKey && !isSuccess && (
+                  <button
+                    className="absolute top-2.5 right-2 w-5 h-5 flex items-center justify-center rounded-full opacity-0 group-hover:opacity-100 transition-all duration-150 cursor-pointer hover:bg-gray-200/60"
+                    style={{ color: "#C4C9D4" }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDismiss(item.dismissKey!);
+                    }}
+                    title="Dismiss for this session"
+                  >
+                    <X size={11} />
+                  </button>
                 )}
               </div>
             );
           })}
+
+          {/* Dismissed section */}
+          {dismissedItems.length > 0 && (
+            <div style={{ borderTop: "1px solid #F3F4F6" }}>
+              <button
+                className="w-full px-5 py-2 flex items-center gap-2 cursor-pointer hover:bg-gray-50/30 transition-colors"
+                onClick={() => setShowDismissed(!showDismissed)}
+              >
+                <span className="text-[10px] font-medium" style={{ color: "#B4B9C4" }}>
+                  Dismissed ({dismissedItems.length})
+                </span>
+                <ChevronRight
+                  size={10}
+                  className="transition-transform duration-200"
+                  style={{
+                    color: "#D1D5DB",
+                    transform: showDismissed ? "rotate(90deg)" : "rotate(0deg)",
+                  }}
+                />
+              </button>
+
+              {showDismissed && (
+                <div>
+                  {dismissedItems.map((item, idx) => {
+                    const Icon = item.icon;
+                    const colors = SEVERITY_COLORS[item.severity] || SEVERITY_COLORS.info;
+
+                    return (
+                      <div
+                        key={item.dismissKey || idx}
+                        className="px-5 py-2 flex items-center gap-3 opacity-50"
+                        style={{
+                          borderBottom: idx < dismissedItems.length - 1 ? "1px solid #F3F4F6" : "none",
+                        }}
+                      >
+                        <div
+                          className="w-2 h-2 rounded-full flex-shrink-0"
+                          style={{ backgroundColor: colors.dot }}
+                        />
+                        <div
+                          className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0"
+                          style={{ backgroundColor: colors.bg }}
+                        >
+                          <Icon size={12} style={{ color: colors.dot }} />
+                        </div>
+                        <span
+                          className="text-[12px] font-medium flex-1 line-through"
+                          style={{ color: "#667085" }}
+                        >
+                          {item.label}
+                        </span>
+                        <button
+                          className="text-[10px] font-medium cursor-pointer hover:underline"
+                          style={{ color: "#9CA3AF" }}
+                          onClick={() => {
+                            setDismissedKeys((prev) => {
+                              const next = new Set(prev);
+                              next.delete(item.dismissKey!);
+                              return next;
+                            });
+                          }}
+                        >
+                          Restore
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>

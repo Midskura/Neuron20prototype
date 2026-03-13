@@ -39,22 +39,34 @@ async function buildProjectLookupMaps() {
 
   // bookingId → project_number  (bookings store their parent project ref)
   const bookingToProjectMap = new Map<string, string>();
-  const BOOKING_PREFIXES = [
-    "forwarding_booking:",
-    "brokerage_booking:",
-    "trucking_booking:",
-    "marine_insurance_booking:",
-    "others_booking:",
-  ];
+  // bookingId → service type (Forwarding, Brokerage, Trucking, Marine Insurance, Others)
+  const bookingServiceTypeMap = new Map<string, string>();
+
+  const BOOKING_PREFIX_TO_SERVICE: Record<string, string> = {
+    "forwarding_booking:": "Forwarding",
+    "brokerage_booking:": "Brokerage",
+    "trucking_booking:": "Trucking",
+    "marine_insurance_booking:": "Marine Insurance",
+    "others_booking:": "Others",
+  };
 
   const allBookings = (await Promise.all(
-    BOOKING_PREFIXES.map(prefix => kv.getByPrefix(prefix).catch(() => []))
+    Object.entries(BOOKING_PREFIX_TO_SERVICE).map(async ([prefix, svcType]) => {
+      const bookings = await kv.getByPrefix(prefix).catch(() => []);
+      // Tag each booking with its derived service type from the KV prefix
+      return bookings.map((b: any) => ({ ...b, _derived_service_type: svcType }));
+    })
   )).flat();
 
   for (const b of allBookings) {
     const bid = b.bookingId || b.id;
     const pn = b.projectNumber || b.project_number;
     if (bid && pn) bookingToProjectMap.set(bid, pn);
+    // Resolve service type: explicit field first, then derived from KV prefix
+    if (bid) {
+      const svcType = b.serviceType || b.service_type || b._derived_service_type || "Others";
+      bookingServiceTypeMap.set(bid, svcType);
+    }
   }
 
   // bookingId → customer metadata (for bookings NOT linked to any project)
@@ -73,19 +85,20 @@ async function buildProjectLookupMaps() {
     }
   }
 
-  return { projectMap, bookingToProjectMap, projectIdToNumber, bookingCustomerMap };
+  return { projectMap, bookingToProjectMap, projectIdToNumber, bookingCustomerMap, bookingServiceTypeMap };
 }
 
 /**
  * Enrich an array of financial records with project metadata.
- * Adds/normalizes: customer_name, customer_id, quotation_number, booking_id, project_number
+ * Adds/normalizes: customer_name, customer_id, quotation_number, booking_id, project_number, service_type
  */
 function enrichRecords(
   records: any[],
   projectMap: Map<string, { customer_name: string; customer_id: string; quotation_number: string }>,
   bookingToProjectMap: Map<string, string>,
   bookingCustomerMap: Map<string, { customer_name: string; customer_id: string; quotation_number: string }>,
-  projectIdToNumber: Map<string, string>
+  projectIdToNumber: Map<string, string>,
+  bookingServiceTypeMap?: Map<string, string>
 ): any[] {
   return records.map(record => {
     // Normalize booking_id from camelCase or snake_case
@@ -115,11 +128,19 @@ function enrichRecords(
     // If no project metadata found, try booking metadata
     const bookingMeta = bookingCustomerMap.get(bookingId);
 
+    // Resolve service type from booking (only fill if record doesn't already have it)
+    const existingServiceType = record.service_type || record.serviceType || "";
+    const resolvedServiceType = existingServiceType || (bookingServiceTypeMap?.get(bookingId)) || "";
+
     return {
       ...record,
-      // Normalize both field name formats
-      booking_id: bookingId || resolvedProjectNumber,
-      project_number: resolvedProjectNumber || bookingId,
+      // Keep fields semantically correct — never cross-contaminate
+      booking_id: bookingId,
+      project_number: resolvedProjectNumber,
+      // Service type derived from the parent booking entity
+      service_type: resolvedServiceType,
+      // Explicit flag so frontend can branch navigation without string-guessing
+      has_project: !!resolvedProjectNumber,
       // Enrich from project data (only fill if record doesn't already have the field)
       customer_name: record.customer_name || (projectMeta?.customer_name) || (bookingMeta?.customer_name) || "",
       customer_id: record.customer_id || (projectMeta?.customer_id) || (bookingMeta?.customer_id) || "",
@@ -573,9 +594,9 @@ export async function getExpenses(c: Context) {
     
     console.log(`✅ Fetched ${expenses.length} expenses`);
     
-    // Enrich with project metadata (customer_name, quotation_number, booking_id)
-    const { projectMap, bookingToProjectMap, bookingCustomerMap, projectIdToNumber } = await buildProjectLookupMaps();
-    const enrichedExpenses = enrichRecords(expenses, projectMap, bookingToProjectMap, bookingCustomerMap, projectIdToNumber);
+    // Enrich with project metadata (customer_name, quotation_number, booking_id, service_type)
+    const { projectMap, bookingToProjectMap, bookingCustomerMap, projectIdToNumber, bookingServiceTypeMap } = await buildProjectLookupMaps();
+    const enrichedExpenses = enrichRecords(expenses, projectMap, bookingToProjectMap, bookingCustomerMap, projectIdToNumber, bookingServiceTypeMap);
     
     return successResponse(c, enrichedExpenses);
   } catch (error) {
@@ -783,9 +804,80 @@ export async function getCollections(c: Context) {
       new Date(b.collection_date).getTime() - new Date(a.collection_date).getTime()
     );
 
-    // Enrich with project metadata (quotation_number, booking_id normalization)
-    const { projectMap, bookingToProjectMap, bookingCustomerMap, projectIdToNumber } = await buildProjectLookupMaps();
-    collections = enrichRecords(collections, projectMap, bookingToProjectMap, bookingCustomerMap, projectIdToNumber);
+    // Enrich with project metadata (quotation_number, booking_id normalization, service_type)
+    const { projectMap, bookingToProjectMap, bookingCustomerMap, projectIdToNumber, bookingServiceTypeMap } = await buildProjectLookupMaps();
+    collections = enrichRecords(collections, projectMap, bookingToProjectMap, bookingCustomerMap, projectIdToNumber, bookingServiceTypeMap);
+    
+    // ✨ Linkage Hardening Phase 3: Self-heal collections missing booking_ids
+    // For legacy collections created before Phase 2, derive booking_ids from their invoice(s).
+    const collectionsMissingBookingIds = collections.filter((col: any) => !col.booking_ids);
+    
+    if (collectionsMissingBookingIds.length > 0) {
+      console.log(`🩹 Linkage Hardening: Self-healing ${collectionsMissingBookingIds.length} collections missing booking_ids...`);
+      try {
+        // Fetch all invoices once for lookup
+        const allBillings = await kv.getByPrefix("billing:");
+        const invoicesByNumber = new Map<string, any>();
+        const invoicesById = new Map<string, any>();
+        for (const b of allBillings) {
+          if (b.invoice_number) {
+            invoicesByNumber.set(b.invoice_number, b);
+            if (b.id) invoicesById.set(b.id, b);
+          }
+        }
+        
+        const savePromises: Promise<void>[] = [];
+        
+        for (const col of collectionsMissingBookingIds) {
+          const mergedBookingIds = new Set<string>();
+          const mergedServiceTypes = new Set<string>();
+          
+          // Try invoice_number
+          if (col.invoice_number) {
+            const inv = invoicesByNumber.get(col.invoice_number);
+            if (inv?.booking_ids) {
+              inv.booking_ids.forEach((bid: string) => bid && mergedBookingIds.add(bid));
+              (inv.service_types || []).forEach((st: string) => st && mergedServiceTypes.add(st));
+            }
+          }
+          
+          // Try linked_billings (references invoice IDs or invoice numbers)
+          if (col.linked_billings && Array.isArray(col.linked_billings)) {
+            for (const lb of col.linked_billings) {
+              const lbId = lb.id || "";
+              const inv = invoicesById.get(lbId) || invoicesByNumber.get(lbId);
+              if (inv?.booking_ids) {
+                inv.booking_ids.forEach((bid: string) => bid && mergedBookingIds.add(bid));
+                (inv.service_types || []).forEach((st: string) => st && mergedServiceTypes.add(st));
+              }
+            }
+          }
+          
+          if (mergedBookingIds.size > 0) {
+            col.booking_ids = [...mergedBookingIds];
+            col.service_types = [...mergedServiceTypes];
+            
+            // Persist to KV (async, non-blocking)
+            const kvId = col.id;
+            savePromises.push(
+              kv.get(`collection:${kvId}`).then((stored: any) => {
+                if (stored && !stored.booking_ids) {
+                  return kv.set(`collection:${kvId}`, { ...stored, booking_ids: [...mergedBookingIds], service_types: [...mergedServiceTypes] });
+                }
+              }).catch(() => {})
+            );
+          }
+        }
+        
+        if (savePromises.length > 0) {
+          Promise.allSettled(savePromises).then(() =>
+            console.log(`💾 Linkage Hardening: Persisted booking_ids for ${savePromises.length} legacy collections`)
+          ).catch(err => console.error("Error persisting collection linkage patches:", err));
+        }
+      } catch (err) {
+        console.error("Error during collection linkage self-healing:", err);
+      }
+    }
     
     console.log(`Fetched ${collections.length} collections (enriched)`);
     
@@ -914,6 +1006,54 @@ export async function processCollectionPosting(evoucherId: string, user_id: stri
       updated_at: now,
     };
     
+    // ✨ Linkage Hardening Phase 2: Inherit booking lineage from the invoice(s) being paid
+    // This closes the Collection → Booking traceability gap.
+    try {
+      const invoiceNumbers: string[] = [];
+      // Primary: single invoice_number from e-voucher
+      if (evoucher.invoice_number) {
+        invoiceNumbers.push(evoucher.invoice_number);
+      }
+      // Secondary: linked_billings may reference multiple invoices
+      if (evoucher.linked_billings && Array.isArray(evoucher.linked_billings)) {
+        for (const lb of evoucher.linked_billings) {
+          const invId = lb.id || lb.invoice_number || "";
+          if (invId && !invoiceNumbers.includes(invId)) {
+            invoiceNumbers.push(invId);
+          }
+        }
+      }
+
+      if (invoiceNumbers.length > 0) {
+        // Fetch all invoices (they share the billing: prefix, distinguished by invoice_number)
+        const allBillings = await kv.getByPrefix("billing:");
+        const matchedInvoices = allBillings.filter((b: any) =>
+          b.invoice_number && invoiceNumbers.includes(b.invoice_number)
+        );
+
+        const mergedBookingIds = new Set<string>();
+        const mergedServiceTypes = new Set<string>();
+
+        for (const inv of matchedInvoices) {
+          if (inv.booking_ids && Array.isArray(inv.booking_ids)) {
+            inv.booking_ids.forEach((bid: string) => bid && mergedBookingIds.add(bid));
+          }
+          if (inv.service_types && Array.isArray(inv.service_types)) {
+            inv.service_types.forEach((st: string) => st && mergedServiceTypes.add(st));
+          }
+        }
+
+        if (mergedBookingIds.size > 0) {
+          collection.booking_ids = [...mergedBookingIds];
+          collection.service_types = [...mergedServiceTypes];
+          console.log(`✨ Collection ${collectionId} linked to ${mergedBookingIds.size} booking(s): [${collection.booking_ids.join(", ")}]`);
+        }
+      }
+    } catch (linkageErr) {
+      // Non-blocking — collection is still valid without booking lineage
+      console.warn(`⚠️ Linkage Hardening: Failed to derive booking_ids for collection ${collectionId}:`, linkageErr);
+    }
+
     await kv.set(`collection:${collectionId}`, collection);
     
     // 2. Identify GL Accounts
@@ -1033,10 +1173,87 @@ export async function getInvoices(c: Context) {
       );
     }
 
-    // Enrich with project metadata (customer_name, quotation_number, booking_id)
-    const { projectMap, bookingToProjectMap, bookingCustomerMap, projectIdToNumber } = await buildProjectLookupMaps();
-    billings = enrichRecords(billings, projectMap, bookingToProjectMap, bookingCustomerMap, projectIdToNumber);
+    // Enrich with project metadata (customer_name, quotation_number, booking_id, service_type)
+    const { projectMap, bookingToProjectMap, bookingCustomerMap, projectIdToNumber, bookingServiceTypeMap } = await buildProjectLookupMaps();
+    billings = enrichRecords(billings, projectMap, bookingToProjectMap, bookingCustomerMap, projectIdToNumber, bookingServiceTypeMap);
     
+    // ✨ Linkage Hardening Phase 3: Self-heal invoices missing booking_ids
+    // For legacy invoices created before Phase 1, derive booking_ids from their billing items.
+    const invoicesMissingBookingIds = billings.filter((inv: any) => !inv.booking_ids);
+    
+    if (invoicesMissingBookingIds.length > 0) {
+      console.log(`🩹 Linkage Hardening: Self-healing ${invoicesMissingBookingIds.length} invoices missing booking_ids...`);
+      try {
+        // Fetch ALL billing items once (both prefixes) — needed for reverse lookup
+        const [bilPrefixed, bilItemPrefixed] = await Promise.all([
+          kv.getByPrefix("billing:"),
+          kv.getByPrefix("billing_item:"),
+        ]);
+        const allBillingItems = [...bilPrefixed.filter((b: any) => !b.invoice_number), ...bilItemPrefixed];
+        
+        // Build lookups: id → item, invoice_number → items[]
+        const billingItemById = new Map<string, any>();
+        const billingItemsByInvoiceNum = new Map<string, any[]>();
+        for (const item of allBillingItems) {
+          const itemId = item.id || item.billingId;
+          if (itemId) billingItemById.set(itemId, item);
+          const invNum = item.invoice_number;
+          if (invNum) {
+            if (!billingItemsByInvoiceNum.has(invNum)) billingItemsByInvoiceNum.set(invNum, []);
+            billingItemsByInvoiceNum.get(invNum)!.push(item);
+          }
+        }
+        
+        const savePromises: Promise<void>[] = [];
+        
+        for (const inv of invoicesMissingBookingIds) {
+          const items: any[] = [];
+          
+          // Try billing_item_ids first (if stored on invoice)
+          if (inv.billing_item_ids && Array.isArray(inv.billing_item_ids)) {
+            for (const itemId of inv.billing_item_ids) {
+              const item = billingItemById.get(itemId);
+              if (item) items.push(item);
+            }
+          }
+          
+          // Fallback: find billing items stamped with this invoice_number
+          if (items.length === 0 && inv.invoice_number) {
+            const matched = billingItemsByInvoiceNum.get(inv.invoice_number) || [];
+            items.push(...matched);
+          }
+          
+          if (items.length > 0) {
+            const bookingIds = [...new Set(items.map((b: any) => b.booking_id || b.bookingId || "").filter(Boolean))];
+            const serviceTypes = [...new Set(items.map((b: any) => b.service_type || b.serviceType || "").filter(Boolean))];
+            
+            if (bookingIds.length > 0) {
+              inv.booking_ids = bookingIds;
+              inv.service_types = serviceTypes;
+              
+              // Persist to KV (async, non-blocking) so this only runs once
+              const kvId = inv.id;
+              savePromises.push(
+                kv.get(`billing:${kvId}`).then((stored: any) => {
+                  if (stored && !stored.booking_ids) {
+                    return kv.set(`billing:${kvId}`, { ...stored, booking_ids: bookingIds, service_types: serviceTypes });
+                  }
+                }).catch(() => {})
+              );
+            }
+          }
+        }
+        
+        if (savePromises.length > 0) {
+          Promise.allSettled(savePromises).then(() =>
+            console.log(`💾 Linkage Hardening: Persisted booking_ids for ${savePromises.length} legacy invoices`)
+          ).catch(err => console.error("Error persisting invoice linkage patches:", err));
+        }
+      } catch (err) {
+        console.error("Error during invoice linkage self-healing:", err);
+      }
+    }
+
     // Sort by date descending
     billings.sort((a: any, b: any) => {
       const dateA = a.created_at || a.createdAt || "";
@@ -1094,6 +1311,7 @@ export async function createInvoice(c: Context) {
     
     // --- Mark referenced billing items as "billed" ---
     const billingItemIds: string[] = body.billing_item_ids || [];
+    const fetchedBillingItems: any[] = []; // ✨ Linkage Hardening Phase 1: collect items for booking derivation
     if (billingItemIds.length > 0) {
       for (const itemId of billingItemIds) {
         try {
@@ -1108,12 +1326,34 @@ export async function createInvoice(c: Context) {
               billed_at: now,
               updated_at: now,
             });
+            fetchedBillingItems.push(existing); // ✨ Collect for booking derivation
+          } else if (existing) {
+            fetchedBillingItems.push(existing); // ✨ Already billed but still need lineage
           }
         } catch (itemErr) {
           console.error(`Failed to mark billing item ${itemId} as billed:`, itemErr);
         }
       }
       console.log(`Marked ${billingItemIds.length} billing item(s) as billed for invoice ${invoiceNumber}`);
+    }
+
+    // ✨ Linkage Hardening Phase 1: Derive booking lineage from billing items
+    // Every invoice now knows which bookings (work units) and service types it covers.
+    // This enables: Collection → Invoice → Booking traceability for the Cash Flow Report.
+    if (fetchedBillingItems.length > 0) {
+      const derivedBookingIds = [...new Set(
+        fetchedBillingItems
+          .map(b => b.booking_id || b.bookingId || "")
+          .filter(Boolean)
+      )];
+      const derivedServiceTypes = [...new Set(
+        fetchedBillingItems
+          .map(b => b.service_type || b.serviceType || "")
+          .filter(Boolean)
+      )];
+      invoice.booking_ids = derivedBookingIds;
+      invoice.service_types = derivedServiceTypes;
+      console.log(`✨ Invoice ${invoiceNumber} linked to ${derivedBookingIds.length} booking(s): [${derivedBookingIds.join(", ")}], services: [${derivedServiceTypes.join(", ")}]`);
     }
 
     // --- Journal Entry: DR Accounts Receivable / CR Revenue ---
@@ -1266,9 +1506,9 @@ export async function getBillings(c: Context) {
       return true;
     });
 
-    // Enrich with project metadata (customer_name, quotation_number, etc.)
-    const { projectMap, bookingToProjectMap, bookingCustomerMap, projectIdToNumber } = await buildProjectLookupMaps();
-    billings = enrichRecords(billings, projectMap, bookingToProjectMap, bookingCustomerMap, projectIdToNumber);
+    // Enrich with project metadata (customer_name, quotation_number, service_type, etc.)
+    const { projectMap, bookingToProjectMap, bookingCustomerMap, projectIdToNumber, bookingServiceTypeMap } = await buildProjectLookupMaps();
+    billings = enrichRecords(billings, projectMap, bookingToProjectMap, bookingCustomerMap, projectIdToNumber, bookingServiceTypeMap);
     
     // Sort by date descending
     billings.sort((a: any, b: any) => {

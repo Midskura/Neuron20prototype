@@ -19,6 +19,7 @@ interface UnifiedExpensesTabProps {
   title?: string;
   subtitle?: string;
   readOnly?: boolean;
+  highlightId?: string | null;
 }
 
 const formatCurrency = (amount: number, currency: string = "PHP") => {
@@ -51,6 +52,7 @@ export function UnifiedExpensesTab({
   title,
   subtitle,
   readOnly = false,
+  highlightId = null,
 }: UnifiedExpensesTabProps) {
   
   // -- Local State for Filters & UI --
@@ -268,6 +270,7 @@ export function UnifiedExpensesTab({
           label: "Total Gross Expenses",
           amount: totalGrossAmount
         } : undefined}
+        highlightId={highlightId}
       />
 
       {/* Detail Panel */}

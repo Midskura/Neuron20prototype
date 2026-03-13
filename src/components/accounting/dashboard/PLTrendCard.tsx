@@ -170,6 +170,43 @@ export function PLTrendCard({
     { label: "Net Cash", value: netCash, color: netCash >= 0 ? "#16A34A" : "#EF4444", sub: "Collected – Expenses" },
   ];
 
+  // ── Anomaly insight line ──
+  const insightLine = useMemo(() => {
+    if (data.length < 4) return null; // Need at least 4 months for a meaningful 3-month moving average
+
+    let worstAnomaly: { month: string; pctAbove: number; topCategory: string; topAmount: number } | null = null;
+
+    for (let i = 3; i < data.length; i++) {
+      const avg3 = (data[i - 1].expenses + data[i - 2].expenses + data[i - 3].expenses) / 3;
+      if (avg3 <= 0) continue;
+      const pctAbove = ((data[i].expenses - avg3) / avg3) * 100;
+      if (pctAbove >= 30 && (!worstAnomaly || pctAbove > worstAnomaly.pctAbove)) {
+        // Find top expense category for this month
+        const monthKey = data[i].monthKey;
+        const categoryTotals: Record<string, number> = {};
+        for (const exp of expenses) {
+          const mk = getMonthKey(exp.expenseDate || exp.expense_date || exp.createdAt || exp.created_at);
+          if (mk === monthKey) {
+            const cat = exp.expenseCategory || exp.expense_category || "Other";
+            categoryTotals[cat] = (categoryTotals[cat] || 0) + (Number(exp.amount) || 0);
+          }
+        }
+        const topEntry = Object.entries(categoryTotals).sort((a, b) => b[1] - a[1])[0];
+        worstAnomaly = {
+          month: data[i].month,
+          pctAbove: Math.round(pctAbove),
+          topCategory: topEntry?.[0] || "Unknown",
+          topAmount: topEntry?.[1] || 0,
+        };
+      }
+    }
+
+    if (worstAnomaly) {
+      return `Expenses in ${worstAnomaly.month} were ${worstAnomaly.pctAbove}% above your 3-month average — primarily from ${worstAnomaly.topCategory} (${formatCurrencyCompact(worstAnomaly.topAmount)}).`;
+    }
+    return data.some((d) => d.expenses > 0) ? "Expenses are tracking within normal range." : null;
+  }, [data, expenses]);
+
   return (
     <div
       className="rounded-2xl overflow-hidden"
@@ -444,6 +481,18 @@ export function PLTrendCard({
           </div>
         </div>
       </div>
+
+      {/* Anomaly insight line */}
+      {insightLine && (
+        <div
+          className="px-4 py-2"
+          style={{ borderTop: "1px solid #F3F4F6" }}
+        >
+          <p className="text-[13px]" style={{ color: "#667085" }}>
+            {insightLine}
+          </p>
+        </div>
+      )}
     </div>
   );
 }

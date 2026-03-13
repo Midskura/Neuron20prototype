@@ -11,9 +11,10 @@ interface ProjectInvoicesProps {
     email: string; 
     department: string;
   } | null;
+  highlightId?: string | null;
 }
 
-export function ProjectInvoices({ financials, project, currentUser }: ProjectInvoicesProps) {
+export function ProjectInvoices({ financials, project, currentUser, highlightId }: ProjectInvoicesProps) {
   // Logic is now delegated to the UnifiedInvoicesTab for DRY compliance
   return (
     <div className="flex flex-col bg-white p-12 min-h-[600px]">
@@ -22,6 +23,7 @@ export function ProjectInvoices({ financials, project, currentUser }: ProjectInv
         project={project}
         currentUser={currentUser}
         onRefresh={financials.refresh}
+        highlightId={highlightId}
       />
     </div>
   );

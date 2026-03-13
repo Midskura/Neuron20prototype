@@ -9,6 +9,7 @@
  */
 
 import { useState, useEffect } from "react";
+import { useSearchParams } from "react-router";
 import { Container, Ship, Truck, FileText, Package } from "lucide-react";
 import { ForwardingBookings } from "../operations/forwarding/ForwardingBookings";
 import { ForwardingBookingDetails } from "../operations/forwarding/ForwardingBookingDetails";
@@ -30,10 +31,41 @@ const SERVICE_TABS: { id: ServiceTab; label: string; icon: typeof Container }[] 
 
 export function AccountingBookingsShell() {
   const [activeTab, setActiveTab] = useState<ServiceTab>("forwarding");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [pendingBookingId, setPendingBookingId] = useState<string | null>(null);
+  const [pendingTab, setPendingTab] = useState<string | null>(null);
+  const [pendingHighlightId, setPendingHighlightId] = useState<string | null>(null);
 
   // Forwarding uses an external list→detail pattern (like Operations.tsx)
   const [fwdSubView, setFwdSubView] = useState<"list" | "detail">("list");
   const [selectedFwdBooking, setSelectedFwdBooking] = useState<ForwardingBooking | null>(null);
+
+  // Deep-link: auto-select booking from ?booking= query param
+  // Detect service type from booking ID prefix and switch tabs
+  useEffect(() => {
+    const bookingId = searchParams.get("booking");
+    const targetTab = searchParams.get("tab");
+    const targetHighlight = searchParams.get("highlight");
+    if (!bookingId) return;
+
+    // Detect service type from booking ID prefix
+    const prefix = bookingId.split("-")[0]?.toUpperCase();
+    const serviceMap: Record<string, ServiceTab> = {
+      "FWD": "forwarding",
+      "BRK": "brokerage",
+      "TRK": "trucking",
+      "MI": "marine-insurance",
+      "OTH": "others",
+    };
+    const detected = serviceMap[prefix] || "forwarding";
+    setActiveTab(detected);
+    setPendingBookingId(bookingId);
+    setPendingTab(targetTab || null);
+    setPendingHighlightId(targetHighlight || null);
+
+    // Clean the query param
+    setSearchParams({}, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   // Reset forwarding detail view when switching tabs
   useEffect(() => {
@@ -60,18 +92,20 @@ export function AccountingBookingsShell() {
               booking={selectedFwdBooking}
               onBack={handleBackToList}
               onBookingUpdated={() => console.log("Booking updated from Accounting")}
+              initialTab={pendingTab}
+              highlightId={pendingHighlightId}
             />
           );
         }
-        return <ForwardingBookings onSelectBooking={handleSelectFwdBooking} />;
+        return <ForwardingBookings onSelectBooking={handleSelectFwdBooking} pendingBookingId={pendingBookingId} />;
       case "brokerage":
-        return <BrokerageBookings />;
+        return <BrokerageBookings pendingBookingId={pendingBookingId} initialTab={pendingTab} highlightId={pendingHighlightId} />;
       case "trucking":
-        return <TruckingBookings />;
+        return <TruckingBookings pendingBookingId={pendingBookingId} initialTab={pendingTab} highlightId={pendingHighlightId} />;
       case "marine-insurance":
-        return <MarineInsuranceBookings />;
+        return <MarineInsuranceBookings pendingBookingId={pendingBookingId} initialTab={pendingTab} highlightId={pendingHighlightId} />;
       case "others":
-        return <OthersBookings />;
+        return <OthersBookings pendingBookingId={pendingBookingId} initialTab={pendingTab} highlightId={pendingHighlightId} />;
       default:
         return null;
     }

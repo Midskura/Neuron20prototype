@@ -8,6 +8,7 @@
  * Each card shows: value, delta vs previous period (▲/▼), subtext.
  */
 
+import { useState } from "react";
 import { TrendingUp, TrendingDown, Minus } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -26,6 +27,10 @@ export interface VitalSign {
   hero?: boolean;
   /** Dark hero card (inverted colors — dark green bg, white text) */
   darkHero?: boolean;
+  /** Click handler — makes the card a clickable launchpad */
+  onCardClick?: () => void;
+  /** Hover hint text shown on clickable cards (e.g. "View billings →") */
+  clickHint?: string;
 }
 
 interface VitalSignsStripProps {
@@ -39,7 +44,12 @@ function formatDelta(current: number, previous: number, polarity: "positive" | "
   isGood: boolean;
 } {
   if (previous === 0 && current === 0) return { label: "—", trend: "flat", isGood: true };
-  if (previous === 0) return { label: "New", trend: "up", isGood: polarity === "positive" };
+  if (previous === 0) {
+    // "New" — but direction depends on whether the value is positive or negative
+    const trend = current > 0 ? "up" as const : "down" as const;
+    const isGood = polarity === "positive" ? current > 0 : current < 0;
+    return { label: "New", trend, isGood };
+  }
 
   const pctChange = ((current - previous) / Math.abs(previous)) * 100;
   const absChange = Math.abs(pctChange);
@@ -56,41 +66,55 @@ function formatDelta(current: number, previous: number, polarity: "positive" | "
 // ── Hero Card (large, top row) ──
 
 function HeroCard({ sign }: { sign: VitalSign }) {
-  const Icon = sign.icon;
+  const [isHovered, setIsHovered] = useState(false);
   const delta = formatDelta(sign.rawValue, sign.previousValue, sign.polarity);
   const TrendIcon = delta.trend === "up" ? TrendingUp : delta.trend === "down" ? TrendingDown : Minus;
 
   const isDark = sign.darkHero;
+  const isClickable = !!sign.onCardClick;
+  const isLoss = isDark && sign.rawValue < 0;
 
-  // Colors for dark vs light hero
-  const bgColor = isDark ? "#0F766E" : "white";
-  const borderColor = isDark ? "#0F766E" : "#E5E9F0";
+  // Top-right icon: swap to TrendingDown when in loss state
+  const Icon = isLoss ? TrendingDown : sign.icon;
+
+  // Colors for dark vs light hero — with loss (red) variant
+  const bgColor = isLoss ? "#9F2323" : isDark ? "#0F766E" : "white";
+  const borderColor = isLoss ? "#9F2323" : isDark ? "#0F766E" : "#E5E9F0";
   const labelColor = isDark ? "rgba(255,255,255,0.6)" : "#667085";
   const valueColor = isDark ? "#FFFFFF" : "#12332B";
   const subtextColor = isDark ? "rgba(255,255,255,0.5)" : "#9CA3AF";
   const iconBg = isDark ? "rgba(255,255,255,0.12)" : "#F0FDF4";
-  const iconColor = isDark ? "#5EEAD4" : "#0F766E";
+  const iconColor = isLoss ? "#FCA5A5" : isDark ? "#5EEAD4" : "#0F766E";
 
   // Delta badge colors — adapted for dark bg
   const deltaColor = delta.trend === "flat"
     ? (isDark ? "rgba(255,255,255,0.5)" : "#9CA3AF")
     : delta.isGood
       ? (isDark ? "#86EFAC" : "#16A34A")
-      : (isDark ? "#FCA5A5" : "#EF4444");
+      : (isLoss ? "#FECACA" : isDark ? "#FCA5A5" : "#EF4444");
   const deltaBg = delta.trend === "flat"
     ? (isDark ? "rgba(255,255,255,0.08)" : "#F3F4F6")
     : delta.isGood
       ? (isDark ? "rgba(134,239,172,0.15)" : "#DCFCE7")
-      : (isDark ? "rgba(252,165,165,0.15)" : "#FEE2E2");
+      : (isLoss ? "rgba(254,202,202,0.15)" : isDark ? "rgba(252,165,165,0.15)" : "#FEE2E2");
 
   return (
     <div
-      className="rounded-xl p-6 flex flex-col justify-between"
+      className="rounded-xl p-6 flex flex-col justify-between transition-all duration-200"
       style={{
         border: `1px solid ${borderColor}`,
         background: bgColor,
         minHeight: "148px",
+        cursor: isClickable ? "pointer" : "default",
+        transform: isClickable && isHovered ? "translateY(-1px)" : "none",
+        boxShadow: isClickable && isHovered ? "0 2px 8px rgba(0,0,0,0.08)" : "none",
       }}
+      onClick={sign.onCardClick}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      role={isClickable ? "button" : undefined}
+      tabIndex={isClickable ? 0 : undefined}
+      onKeyDown={isClickable ? (e) => e.key === "Enter" && sign.onCardClick?.() : undefined}
     >
       {/* Header row: label + icon */}
       <div className="flex items-center justify-between mb-3">
@@ -130,6 +154,18 @@ function HeroCard({ sign }: { sign: VitalSign }) {
         <span className="text-[12px]" style={{ color: subtextColor }}>
           {sign.subtext}
         </span>
+        {/* Click hint — appears on hover */}
+        {isClickable && sign.clickHint && (
+          <span
+            className="text-[11px] font-medium ml-auto transition-opacity duration-200"
+            style={{
+              color: isDark ? "rgba(255,255,255,0.7)" : "#0F766E",
+              opacity: isHovered ? 1 : 0,
+            }}
+          >
+            {sign.clickHint}
+          </span>
+        )}
       </div>
     </div>
   );
@@ -138,9 +174,12 @@ function HeroCard({ sign }: { sign: VitalSign }) {
 // ── Compact Card (smaller, bottom row) ──
 
 function CompactCard({ sign }: { sign: VitalSign }) {
+  const [isHovered, setIsHovered] = useState(false);
   const Icon = sign.icon;
   const delta = formatDelta(sign.rawValue, sign.previousValue, sign.polarity);
   const TrendIcon = delta.trend === "up" ? TrendingUp : delta.trend === "down" ? TrendingDown : Minus;
+
+  const isClickable = !!sign.onCardClick;
 
   const deltaColor = delta.trend === "flat"
     ? "#9CA3AF"
@@ -151,12 +190,21 @@ function CompactCard({ sign }: { sign: VitalSign }) {
 
   return (
     <div
-      className="rounded-xl p-5 flex flex-col justify-between"
+      className="rounded-xl p-5 flex flex-col justify-between transition-all duration-200"
       style={{
         border: "1px solid #E5E9F0",
         background: "white",
         minHeight: "112px",
+        cursor: isClickable ? "pointer" : "default",
+        transform: isClickable && isHovered ? "translateY(-1px)" : "none",
+        boxShadow: isClickable && isHovered ? "0 2px 8px rgba(0,0,0,0.08)" : "none",
       }}
+      onClick={sign.onCardClick}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      role={isClickable ? "button" : undefined}
+      tabIndex={isClickable ? 0 : undefined}
+      onKeyDown={isClickable ? (e) => e.key === "Enter" && sign.onCardClick?.() : undefined}
     >
       {/* Header row: label + icon */}
       <div className="flex items-center justify-between mb-1.5">
@@ -196,6 +244,18 @@ function CompactCard({ sign }: { sign: VitalSign }) {
         <span className="text-[11px]" style={{ color: "#9CA3AF" }}>
           {sign.subtext}
         </span>
+        {/* Click hint — appears on hover */}
+        {isClickable && sign.clickHint && (
+          <span
+            className="text-[10px] font-medium ml-auto transition-opacity duration-200"
+            style={{
+              color: "#0F766E",
+              opacity: isHovered ? 1 : 0,
+            }}
+          >
+            {sign.clickHint}
+          </span>
+        )}
       </div>
     </div>
   );

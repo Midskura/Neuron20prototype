@@ -1,8 +1,10 @@
 /**
- * ScopeBar — Compact date scope dropdown for aggregate financial views.
+ * ScopeBar — Compact date scope selector for aggregate financial views.
  *
- * Renders as a single button showing the current preset label + date range.
- * Clicking opens a popover with preset list + custom date range inputs.
+ * Layout: [Preset Dropdown] [📅 From] to [📅 To]
+ *
+ * The date pickers ALWAYS show the resolved date range — even for presets
+ * like "This Quarter". Manually changing a date auto-switches to "Custom".
  *
  * Supports two modes:
  *   - `embedded` (default): borderless, transparent — designed to sit inside the unified toolbar
@@ -11,6 +13,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { Calendar, ChevronDown, Check } from "lucide-react";
+import { CustomDatePicker } from "../../common/CustomDatePicker";
 import type { DateScope, ScopePreset } from "./types";
 import { createDateScope } from "./types";
 
@@ -28,13 +31,6 @@ const PRESETS: { value: ScopePreset; label: string; shortLabel: string }[] = [
   { value: "ytd", label: "Year to Date", shortLabel: "YTD" },
   { value: "all", label: "All Time", shortLabel: "All Time" },
 ];
-
-const formatScopeRange = (scope: DateScope): string => {
-  if (scope.preset === "all") return "All records";
-  const fmt = (d: Date) =>
-    d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  return `${fmt(scope.from)} – ${fmt(scope.to)}`;
-};
 
 const getPresetLabel = (preset: ScopePreset): string => {
   if (preset === "custom") return "Custom";
@@ -66,11 +62,13 @@ export function ScopeBar({ scope, onScopeChange, standalone }: ScopeBarProps) {
 
   const handlePresetClick = (preset: ScopePreset) => {
     onScopeChange(createDateScope(preset));
-    if (preset !== "custom") setOpen(false);
+    setOpen(false);
   };
 
-  const handleCustomDateChange = (field: "from" | "to", value: string) => {
-    const date = new Date(value + "T00:00:00");
+  // When user picks a date from CustomDatePicker → auto-switch to "custom"
+  const handleDatePickerChange = (field: "from" | "to", isoStr: string) => {
+    if (!isoStr) return; // cleared — ignore
+    const date = new Date(isoStr + "T00:00:00");
     if (isNaN(date.getTime())) return;
     onScopeChange({
       preset: "custom",
@@ -79,111 +77,91 @@ export function ScopeBar({ scope, onScopeChange, standalone }: ScopeBarProps) {
     });
   };
 
-  return (
-    <div className="relative" ref={ref}>
-      {/* Trigger button */}
-      <button
-        onClick={() => setOpen(!open)}
-        className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[13px] font-medium transition-colors hover:bg-gray-50"
-        style={{
-          border: standalone ? "1px solid #E5E7EB" : "none",
-          color: "#12332B",
-          backgroundColor: open ? "#F0FDFA" : standalone ? "#FFFFFF" : "transparent",
-        }}
-      >
-        <Calendar size={14} style={{ color: open ? "#0F766E" : "#667085" }} />
-        <span>{getPresetLabel(scope.preset)}</span>
-        <span
-          className="text-[12px] font-normal"
-          style={{ color: "#667085" }}
-        >
-          · {formatScopeRange(scope)}
-        </span>
-        <ChevronDown
-          size={12}
-          style={{ color: "#667085" }}
-          className={`ml-0.5 transition-transform ${open ? "rotate-180" : ""}`}
-        />
-      </button>
+  // Resolve display values — always show the scope's from/to, even for "all"
+  const displayFrom = scope.preset === "all" ? "" : toInputValue(scope.from);
+  const displayTo = scope.preset === "all" ? "" : toInputValue(scope.to);
 
-      {/* Dropdown popover */}
-      {open && (
-        <div
-          className="absolute top-full left-0 mt-1.5 z-50 rounded-lg shadow-lg py-1 min-w-[220px]"
+  return (
+    <div className="flex items-center gap-2" ref={ref}>
+      {/* Preset dropdown */}
+      <div className="relative">
+        <button
+          onClick={() => setOpen(!open)}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[13px] font-medium transition-colors hover:bg-gray-50"
           style={{
-            border: "1px solid var(--neuron-ui-border)",
-            backgroundColor: "#FFFFFF",
+            border: standalone ? "1px solid #E5E7EB" : "none",
+            color: "#12332B",
+            backgroundColor: open ? "#F0FDFA" : standalone ? "#FFFFFF" : "transparent",
           }}
         >
-          {PRESETS.map((p) => {
-            const isActive = scope.preset === p.value;
-            return (
-              <button
-                key={p.value}
-                onClick={() => handlePresetClick(p.value)}
-                className="w-full flex items-center gap-2.5 px-3 py-2 text-[12px] transition-colors hover:bg-gray-50"
-                style={{
-                  color: isActive ? "#0F766E" : "var(--neuron-ink-primary)",
-                  fontWeight: isActive ? 600 : 400,
-                }}
-              >
-                {isActive ? (
-                  <Check size={12} style={{ color: "#0F766E" }} />
-                ) : (
-                  <span className="w-3" />
-                )}
-                {p.label}
-              </button>
-            );
-          })}
-
-          <div
-            className="my-1 mx-3"
-            style={{ borderTop: "1px solid var(--neuron-ui-border)" }}
+          <Calendar size={14} style={{ color: open ? "#0F766E" : "#667085" }} />
+          <span>{getPresetLabel(scope.preset)}</span>
+          <ChevronDown
+            size={12}
+            style={{ color: "#667085" }}
+            className={`ml-0.5 transition-transform ${open ? "rotate-180" : ""}`}
           />
+        </button>
 
-          <button
-            onClick={() => handlePresetClick("custom")}
-            className="w-full flex items-center gap-2.5 px-3 py-2 text-[12px] transition-colors hover:bg-gray-50"
+        {/* Dropdown popover */}
+        {open && (
+          <div
+            className="absolute top-full left-0 mt-1.5 z-50 rounded-lg shadow-lg py-1 min-w-[220px]"
             style={{
-              color: scope.preset === "custom" ? "#0F766E" : "var(--neuron-ink-primary)",
-              fontWeight: scope.preset === "custom" ? 600 : 400,
+              border: "1px solid var(--neuron-ui-border)",
+              backgroundColor: "#FFFFFF",
             }}
           >
-            {scope.preset === "custom" ? (
-              <Check size={12} style={{ color: "#0F766E" }} />
-            ) : (
-              <span className="w-3" />
-            )}
-            Custom Range
-          </button>
+            {PRESETS.map((p) => {
+              const isActive = scope.preset === p.value;
+              return (
+                <button
+                  key={p.value}
+                  onClick={() => handlePresetClick(p.value)}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-[12px] transition-colors hover:bg-gray-50"
+                  style={{
+                    color: isActive ? "#0F766E" : "var(--neuron-ink-primary)",
+                    fontWeight: isActive ? 600 : 400,
+                  }}
+                >
+                  {isActive ? (
+                    <Check size={12} style={{ color: "#0F766E" }} />
+                  ) : (
+                    <span className="w-3" />
+                  )}
+                  {p.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
-          {scope.preset === "custom" && (
-            <div className="px-3 pb-2.5 pt-1 flex items-center gap-2">
-              <input
-                type="date"
-                value={toInputValue(scope.from)}
-                onChange={(e) => handleCustomDateChange("from", e.target.value)}
-                className="flex-1 px-2 py-1.5 rounded-md text-[11px]"
-                style={{
-                  border: "1px solid var(--neuron-ui-border)",
-                  color: "var(--neuron-ink-primary)",
-                }}
-              />
-              <span className="text-[10px]" style={{ color: "var(--neuron-ink-muted)" }}>to</span>
-              <input
-                type="date"
-                value={toInputValue(scope.to)}
-                onChange={(e) => handleCustomDateChange("to", e.target.value)}
-                className="flex-1 px-2 py-1.5 rounded-md text-[11px]"
-                style={{
-                  border: "1px solid var(--neuron-ui-border)",
-                  color: "var(--neuron-ink-primary)",
-                }}
-              />
-            </div>
-          )}
-        </div>
+      {/* Date range pickers — always visible, always reflect scope.from / scope.to */}
+      {scope.preset !== "all" && (
+        <>
+          <div style={{ minWidth: "130px" }}>
+            <CustomDatePicker
+              value={displayFrom}
+              onChange={(val) => handleDatePickerChange("from", val)}
+              placeholder="Start Date"
+              minWidth="100%"
+              className="w-full px-3 py-2 text-[13px]"
+            />
+          </div>
+          <span className="text-[12px] font-medium" style={{ color: "#6B7280" }}>
+            to
+          </span>
+          <div style={{ minWidth: "130px" }}>
+            <CustomDatePicker
+              value={displayTo}
+              onChange={(val) => handleDatePickerChange("to", val)}
+              placeholder="End Date"
+              minWidth="100%"
+              className="w-full px-3 py-2 text-[13px]"
+            />
+          </div>
+        </>
       )}
     </div>
   );

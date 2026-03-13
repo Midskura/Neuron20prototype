@@ -41,6 +41,8 @@ interface ProjectDetailProps {
   } | null;
   department: "BD" | "Operations";
   onCreateTicket?: (entity: { type: string; id: string; name: string }) => void;
+  initialTab?: string | null;
+  highlightId?: string | null;
 }
 
 export function ProjectDetail({ 
@@ -49,9 +51,13 @@ export function ProjectDetail({
   onUpdate, 
   currentUser,
   department,
-  onCreateTicket
+  onCreateTicket,
+  initialTab,
+  highlightId
 }: ProjectDetailProps) {
-  const [activeTab, setActiveTab] = useState<ProjectTab>("financial_overview");
+  const [activeTab, setActiveTab] = useState<ProjectTab>(
+    (initialTab as ProjectTab) || "financial_overview"
+  );
   const [activeCategory, setActiveCategory] = useState<TabCategory>("dashboard");
   const [showActionsMenu, setShowActionsMenu] = useState(false);
   const [showPreviewPanel, setShowPreviewPanel] = useState(false);
@@ -542,13 +548,13 @@ export function ProjectDetail({
         
         {activeTab === "billings" && (
           <div className="max-w-7xl mx-auto">
-            <ProjectBillings financials={financials} project={project} />
+            <ProjectBillings financials={financials} project={project} highlightId={highlightId} />
           </div>
         )}
         
         {activeTab === "invoices" && (
           <div className="max-w-7xl mx-auto">
-            <ProjectInvoices financials={financials} project={project} currentUser={currentUser} />
+            <ProjectInvoices financials={financials} project={project} currentUser={currentUser} highlightId={highlightId} />
           </div>
         )}
         
@@ -558,6 +564,7 @@ export function ProjectDetail({
               financials={financials}
               project={project} 
               currentUser={currentUser}
+              highlightId={highlightId}
             />
           </div>
         )}

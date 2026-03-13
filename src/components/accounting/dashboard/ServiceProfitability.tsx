@@ -2,7 +2,7 @@
  * ServiceProfitability — Zone 4L of the Financial Dashboard
  *
  * Table showing Revenue, Costs, Margin (₱ and %) per service type.
- * Derives service type from billing item `service_type` or `quotation_category`.
+ * Derives service type from billing item `service_type` (enriched from parent booking).
  * Highlights low-margin services with warning colors.
  */
 
@@ -48,16 +48,14 @@ export function ServiceProfitability({ billingItems, invoices, expenses }: Servi
 
     // Revenue from invoices + billing items
     for (const item of [...invoices, ...billingItems]) {
-      const svc = normalizeServiceType(item.service_type || item.quotation_category || "");
+      const svc = normalizeServiceType(item.service_type || "");
       const amount = Number(item.total_amount) || Number(item.amount) || 0;
       revenueMap[svc] = (revenueMap[svc] || 0) + amount;
     }
 
-    // Costs from expenses — use expense_category or map to service type
+    // Costs from expenses
     for (const exp of expenses) {
-      const svc = normalizeServiceType(
-        exp.service_type || exp.expenseCategory || exp.expense_category || ""
-      );
+      const svc = normalizeServiceType(exp.service_type || "");
       const amount = Number(exp.amount) || 0;
       costMap[svc] = (costMap[svc] || 0) + amount;
     }

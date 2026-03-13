@@ -19,6 +19,8 @@ interface ForwardingBookingDetailsProps {
   onBack: () => void;
   onBookingUpdated: () => void;
   currentUser?: { name: string; email: string; department: string } | null;
+  initialTab?: string | null;
+  highlightId?: string | null;
 }
 
 type DetailTab = "booking-info" | "billings" | "expenses" | "comments";
@@ -68,9 +70,13 @@ export function ForwardingBookingDetails({
   booking,
   onBack,
   onBookingUpdated,
-  currentUser
+  currentUser,
+  initialTab,
+  highlightId
 }: ForwardingBookingDetailsProps) {
-  const [activeTab, setActiveTab] = useState<DetailTab>("booking-info");
+  const [activeTab, setActiveTab] = useState<DetailTab>(
+    (initialTab as DetailTab) || "booking-info"
+  );
   const [showTimeline, setShowTimeline] = useState(false);
   const [activityLog, setActivityLog] = useState<ActivityLogEntry[]>(initialActivityLog);
   
@@ -407,6 +413,7 @@ export function ForwardingBookingDetails({
               bookingId={booking.bookingId}
               bookingType="forwarding"
               currentUser={currentUser}
+              highlightId={activeTab === "expenses" ? highlightId : undefined}
             />
           )}
           {activeTab === "comments" && (

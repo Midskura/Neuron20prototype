@@ -1,5 +1,5 @@
 import { Receipt, Plus, DollarSign, LoaderCircle, ChevronDown, ChevronRight, Briefcase, Ship, Truck, Shield, Package } from "lucide-react";
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 // Shared Components
 import { PricingTableHeader } from "../pricing/PricingTableHeader";
 import { UniversalPricingRow, PricingItemData } from "../pricing/UniversalPricingRow";
@@ -47,6 +47,8 @@ interface BillingsTableProps {
   // ✨ Booking Grouping (Contract Billings)
   groupBy?: "category" | "booking";
   linkedBookings?: any[];
+  /** Deep-link: highlight a specific billing item row */
+  highlightId?: string | null;
 }
 
 const formatCurrency = (amount: number, currency: string = "PHP") => {
@@ -88,7 +90,20 @@ export function BillingsTable({
   onAddItem,
   groupBy = "category",
   linkedBookings,
+  highlightId = null,
 }: BillingsTableProps) {
+  // Ref for scrolling to highlighted item
+  const highlightRef = useRef<HTMLDivElement>(null);
+  
+  // Auto-scroll to highlighted item after render
+  useEffect(() => {
+    if (highlightId && highlightRef.current) {
+      setTimeout(() => {
+        highlightRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 300);
+    }
+  }, [highlightId]);
+
   // State for collapsible sections
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
 
@@ -411,9 +426,14 @@ export function BillingsTable({
                             <div className="divide-y divide-[#F0F0F0]">
                               {catItems.map(item => {
                                 const isBilled = item.status === "billed" || item.status === "paid" || item.status === "invoiced";
+                                const isHighlighted = highlightId === item.id;
                                 return (
-                                  <UniversalPricingRow
+                                  <div
                                     key={item.id}
+                                    ref={isHighlighted ? highlightRef : undefined}
+                                    className={isHighlighted ? "ring-2 ring-[#0F766E] bg-[#0F766E]/5 rounded-md transition-all duration-700" : ""}
+                                  >
+                                  <UniversalPricingRow
                                     data={mapToPricingData(item)}
                                     mode={viewMode || isBilled ? "view" : "edit"}
                                     serviceType={item.service_type}
@@ -432,6 +452,7 @@ export function BillingsTable({
                                       onRemove: () => onItemChange?.(item.id, "delete", true),
                                     }}
                                   />
+                                  </div>
                                 );
                               })}
                             </div>

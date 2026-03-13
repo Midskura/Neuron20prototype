@@ -1,4 +1,6 @@
 import "./styles/globals.css";
+// App entrypoint — Neuron OS
+// Force recompilation: cache-bust 2026-03-12b
 import { useState, useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation, useParams, useSearchParams } from "react-router";
 import { Layout } from "./components/Layout";

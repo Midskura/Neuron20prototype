@@ -11,6 +11,7 @@ import { TransactionsModule } from "../transactions/TransactionsModule";
 import { AuditingModule } from "./AuditingModule";
 import { AggregateInvoicesPage } from "./AggregateInvoicesPage";
 import { FinancialHealthPage } from "./reports/FinancialHealthPage";
+import { ReportsModule } from "./reports/ReportsModule";
 import { FinancialsModule } from "./FinancialsModule";
 import { AccountingBookingsShell } from "./AccountingBookingsShell";
 import { useAppMode } from "../../config/appMode";
@@ -61,7 +62,7 @@ export function Accounting({ view }: { view: AccountingView }) {
   }
 
   if (view === "reports") {
-    return isEssentials ? <FinancialHealthPage /> : <FinancialReports />;
+    return <ReportsModule />;
   }
 
   if (view === "projects") {

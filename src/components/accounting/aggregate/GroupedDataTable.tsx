@@ -6,7 +6,7 @@
  */
 
 import { useState, useMemo } from "react";
-import { ChevronRight, ChevronDown, ChevronsUpDown } from "lucide-react";
+import { ChevronRight, ChevronDown, ChevronsUpDown, Download } from "lucide-react";
 import type { GroupedItems } from "./types";
 import { formatCurrencyFull } from "./types";
 
@@ -35,6 +35,10 @@ interface GroupedDataTableProps<T> {
   emptyMessage?: string;
   /** Callback when a detail row is clicked */
   onRowClick?: (item: T) => void;
+  /** Label for the amount field in CSV export (defaults to "Amount") */
+  exportLabel?: string;
+  /** Tab name for CSV file naming */
+  exportFileName?: string;
 }
 
 const ROWS_PER_PAGE = 25;
@@ -46,6 +50,8 @@ export function GroupedDataTable<T extends { id?: string | number }>({
   pageSize = ROWS_PER_PAGE,
   emptyMessage = "No records found for the current scope and filters.",
   onRowClick,
+  exportLabel,
+  exportFileName = "financials",
 }: GroupedDataTableProps<T>) {
   // Track collapsed state per group (default: first 5 expanded, rest collapsed)
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => {
@@ -86,6 +92,16 @@ export function GroupedDataTable<T extends { id?: string | number }>({
     setGroupPages((prev) => ({ ...prev, [key]: page }));
   };
 
+  // Grand total across all groups (must be before early returns — Rules of Hooks)
+  const grandTotal = useMemo(
+    () => groups.reduce((sum, g) => sum + g.subtotal, 0),
+    [groups]
+  );
+  const totalCount = useMemo(
+    () => groups.reduce((sum, g) => sum + g.count, 0),
+    [groups]
+  );
+
   // Loading skeleton
   if (isLoading) {
     return (
@@ -124,6 +140,62 @@ export function GroupedDataTable<T extends { id?: string | number }>({
   }
 
   const allCollapsed = groups.every((g) => collapsedGroups.has(g.key));
+
+  // CSV export
+  const handleExport = () => {
+    const headers = columns.map((c) => c.header);
+    headers.unshift("Group");
+
+    const rows: string[][] = [];
+    for (const group of groups) {
+      for (const item of group.items) {
+        const row = columns.map((col) => {
+          if (col.accessorKey) {
+            return String((item as any)[col.accessorKey] ?? "");
+          }
+          // For cell renderers, try to extract a text value from common fields
+          const headerLower = col.header.toLowerCase();
+          if (headerLower === "amount" || headerLower === "balance") {
+            const amt = Number((item as any).amount ?? (item as any).total_amount ?? 0);
+            return amt.toFixed(2);
+          }
+          if (headerLower === "date") {
+            const d = (item as any).created_at || (item as any).invoice_date || (item as any).collection_date || (item as any).expenseDate || "";
+            return d ? new Date(d).toLocaleDateString("en-US") : "";
+          }
+          if (headerLower === "customer") return (item as any).customer_name || (item as any).customerName || "";
+          if (headerLower === "status") return (item as any).status || "";
+          if (headerLower === "description") return (item as any).description || (item as any).expenseName || "";
+          if (headerLower === "vendor") return (item as any).vendorName || (item as any).vendor_name || "";
+          if (headerLower === "category") return (item as any).quotation_category || (item as any).expenseCategory || (item as any).category || "";
+          if (headerLower.includes("ref")) return (item as any).project_number || (item as any).quotation_number || (item as any).booking_id || "";
+          if (headerLower.includes("invoice")) return (item as any).invoice_number || "";
+          if (headerLower === "method") return (item as any).payment_method || (item as any).mode_of_payment || "";
+          if (headerLower === "reference") return (item as any).reference_number || (item as any).or_number || "";
+          if (headerLower === "due date") {
+            const d = (item as any).due_date || "";
+            return d ? new Date(d).toLocaleDateString("en-US") : "";
+          }
+          return "";
+        });
+        row.unshift(group.label);
+        rows.push(row);
+      }
+    }
+
+    const csvContent = [
+      headers.join(","),
+      ...rows.map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")),
+    ].join("\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${exportFileName}_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div className="rounded-lg overflow-hidden" style={{ border: "1px solid var(--neuron-ui-border)" }}>
@@ -304,6 +376,44 @@ export function GroupedDataTable<T extends { id?: string | number }>({
           </div>
         );
       })}
+
+      {/* Grand total row */}
+      <div
+        className="flex items-center px-4 py-2"
+        style={{ backgroundColor: "var(--neuron-bg-page)", borderTop: "1px solid var(--neuron-ui-border)" }}
+      >
+        <div className="flex items-center flex-1 min-w-0">
+          <span
+            className="text-[13px] font-semibold"
+            style={{ color: "var(--neuron-ink-primary)" }}
+          >
+            Grand Total
+          </span>
+          <span
+            className="ml-2.5 px-2 py-0.5 rounded-full text-[10px] font-medium"
+            style={{
+              backgroundColor: "var(--neuron-brand-green-100)",
+              color: "var(--neuron-brand-green)",
+            }}
+          >
+            {totalCount}
+          </span>
+          <span
+            className="ml-auto text-[13px] font-semibold tabular-nums"
+            style={{ color: "var(--neuron-ink-primary)" }}
+          >
+            {formatCurrencyFull(grandTotal)}
+          </span>
+        </div>
+        <button
+          onClick={handleExport}
+          className="flex items-center justify-center shrink-0 rounded hover:bg-black/5 transition-colors"
+          style={{ color: "var(--neuron-ink-muted)", width: "20px", height: "20px" }}
+          title="Export to CSV"
+        >
+          <Download size={14} />
+        </button>
+      </div>
     </div>
   );
 }

@@ -69,13 +69,13 @@ function ServiceTab({ billingItems, invoices, expenses }: { billingItems: any[];
     const costMap: Record<string, number> = {};
 
     for (const item of [...invoices, ...billingItems]) {
-      const svc = normalizeServiceType(item.service_type || item.quotation_category || "");
+      const svc = normalizeServiceType(item.service_type || "");
       const amount = Number(item.total_amount) || Number(item.amount) || 0;
       revenueMap[svc] = (revenueMap[svc] || 0) + amount;
     }
 
     for (const exp of expenses) {
-      const svc = normalizeServiceType(exp.service_type || exp.expenseCategory || exp.expense_category || "");
+      const svc = normalizeServiceType(exp.service_type || "");
       const amount = Number(exp.amount) || 0;
       costMap[svc] = (costMap[svc] || 0) + amount;
     }
@@ -255,7 +255,7 @@ function CategoryTab({ invoices, billingItems, expenses }: { invoices: any[]; bi
     const categoryMap: Record<string, number> = {};
 
     for (const item of combined) {
-      const category = item.charge_code || item.quotation_category || item.service_type || item.description || "General Revenue";
+      const category = item.charge_code || item.quotation_category || item.description || "General Revenue";
       const amount = Number(item.amount) || Number(item.total_amount) || 0;
       categoryMap[category] = (categoryMap[category] || 0) + amount;
     }

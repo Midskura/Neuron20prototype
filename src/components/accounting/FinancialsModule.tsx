@@ -21,7 +21,7 @@ import {
   Receipt,
   FileStack,
   DollarSign,
-  TrendingUp,
+  Wallet,
   FileWarning,
   Hash,
   BarChart3,
@@ -76,7 +76,7 @@ const TABS: { id: FinancialsTab; label: string; icon: typeof Layout }[] = [
   { id: "billings", label: "Billings", icon: Receipt },
   { id: "invoices", label: "Invoices", icon: FileStack },
   { id: "collections", label: "Collections", icon: DollarSign },
-  { id: "expenses", label: "Expenses", icon: TrendingUp },
+  { id: "expenses", label: "Expenses", icon: Wallet },
 ];
 
 // ── Component ──
@@ -88,17 +88,57 @@ export function FinancialsModule() {
   // Aggregate scope state (shared across tabs — Phase 1: billings only)
   const [scope, setScope] = useState<DateScope>(() => createDateScope("this-month"));
 
-  /** Navigate to the parent project for a clicked record */
+  /** Detect which tab to deep-link into based on record shape */
+  const detectTargetTab = useCallback((item: any): string => {
+    if (item.invoice_number) return "invoices";
+    if (item.collection_date) return "collections";
+    if (item.expenseCategory || item.expenseDate) return "expenses";
+    return "billings";
+  }, []);
+
+  /** Get the best display reference for a record (booking > project > contract) */
+  const getRefDisplay = useCallback((item: any): string => {
+    const booking = item.booking_id || item.bookingId || "";
+    const proj = item.project_number || item.projectNumber || "";
+    const contract = item.quotation_number || item.quotationNumber || "";
+    if (booking) return booking;
+    if (proj) return proj;
+    if (contract) return contract;
+    return "—";
+  }, []);
+
+  /** Navigate to the source record based on lineage (project → contract → booking → toast) */
   const handleRowClick = useCallback((item: any) => {
-    const projectNumber =
-      item.project_number || item.projectNumber ||
-      item.booking_id || item.bookingId;
-    if (projectNumber) {
-      navigate(`/accounting/projects?project=${encodeURIComponent(projectNumber)}`);
-    } else {
-      toast.info("No linked project for this record.");
+    const projNum = item.project_number || item.projectNumber || "";
+    const bookingId = item.booking_id || item.bookingId || "";
+    const quotationNum = item.quotation_number || item.quotationNumber || "";
+    const tab = detectTargetTab(item);
+    const recordId = item.id || "";
+    const hl = recordId ? `&highlight=${encodeURIComponent(recordId)}` : "";
+
+    // Expenses always route to the booking (expenses are booked against bookings, not projects)
+    if (tab === "expenses") {
+      if (bookingId) {
+        navigate(`/accounting/bookings?booking=${encodeURIComponent(bookingId)}&tab=expenses${hl}`);
+      } else {
+        toast.info("No linked booking for this expense.");
+      }
+      return;
     }
-  }, [navigate]);
+
+    if (projNum) {
+      // Record belongs to a project → navigate to project detail with correct tab + highlight
+      navigate(`/accounting/projects?project=${encodeURIComponent(projNum)}&tab=${tab}${hl}`);
+    } else if (quotationNum) {
+      // Record belongs to a contract (no project) → navigate to contract detail
+      navigate(`/accounting/contracts?contract=${encodeURIComponent(quotationNum)}&tab=${tab}${hl}`);
+    } else if (bookingId) {
+      // Standalone booking → navigate to bookings shell (billings tab)
+      navigate(`/accounting/bookings?booking=${encodeURIComponent(bookingId)}&tab=${tab}${hl}`);
+    } else {
+      toast.info("No linked project, contract, or booking for this record.");
+    }
+  }, [navigate, detectTargetTab]);
 
   // Centralised data (fetched once, shared across all tabs)
   const [billingItems, setBillingItems] = useState<any[]>([]);
@@ -162,12 +202,15 @@ export function FinancialsModule() {
           createdAt: ev.created_at,
           status: ev.status || "pending",
           vendorName: ev.vendor_name || ev.payee_name || "\u2014",
-          bookingId: ev.project_number || ev.booking_id || "",
+          bookingId: ev.booking_id || "",
           isBillable: ev.is_billable || false,
           // Carry through for grouping
           customerName: ev.customer_name || "",
           projectNumber: ev.project_number || "",
           quotationNumber: ev.quotation_number || "",
+          hasProject: ev.has_project || false,
+          // Service type enriched from parent booking (server-side)
+          service_type: ev.service_type || "",
         }));
         setExpenses(mapped);
       }
@@ -285,15 +328,14 @@ export function FinancialsModule() {
 
   // ── Billings Aggregate (Phase 2) — Grouping + Table ──
 
-  const [billingsGroupBy, setBillingsGroupBy] = useState("customer");
+  const [billingsGroupBy, setBillingsGroupBy] = useState("booking");
   const [billingsSearch, setBillingsSearch] = useState("");
   const [billingsStatusFilter, setBillingsStatusFilter] = useState("");
+  const [billingsBookingTypeFilter, setBillingsBookingTypeFilter] = useState<string>("");
 
   const BILLINGS_GROUP_OPTIONS: GroupOption[] = [
-    { value: "customer", label: "Customer" },
-    { value: "project", label: "Project" },
-    { value: "contract", label: "Contract" },
     { value: "booking", label: "Booking" },
+    { value: "customer", label: "Customer" },
   ];
 
   const BILLINGS_STATUS_OPTIONS: StatusOption[] = [
@@ -316,7 +358,7 @@ export function FinancialsModule() {
       width: "110px",
       cell: (item: BillingItem) => (
         <span className="font-medium" style={{ color: "var(--neuron-brand-green)" }}>
-          {(item as any).project_number || item.booking_id || "—"}
+          {getRefDisplay(item)}
         </span>
       ),
     },
@@ -368,6 +410,10 @@ export function FinancialsModule() {
     if (billingsStatusFilter) {
       items = items.filter((i) => (i.status || "").toLowerCase() === billingsStatusFilter);
     }
+    // Booking type filter
+    if (billingsBookingTypeFilter) {
+      items = items.filter((i) => (i.service_type || "").toLowerCase() === billingsBookingTypeFilter.toLowerCase());
+    }
     // Search filter
     if (billingsSearch) {
       const q = billingsSearch.toLowerCase();
@@ -381,7 +427,7 @@ export function FinancialsModule() {
       );
     }
     return items;
-  }, [scopedBillingItems, billingsStatusFilter, billingsSearch]);
+  }, [scopedBillingItems, billingsStatusFilter, billingsBookingTypeFilter, billingsSearch]);
 
   const billingsGroups: GroupedItems<BillingItem>[] = useMemo(() => {
     const map = new Map<string, BillingItem[]>();
@@ -389,17 +435,11 @@ export function FinancialsModule() {
     filteredBillingItems.forEach((item) => {
       let key: string;
       switch (billingsGroupBy) {
-        case "customer":
-          key = (item as any).customer_name || "Unknown Customer";
-          break;
-        case "project":
-          key = (item as any).project_number || item.booking_id || "No Project";
-          break;
-        case "contract":
-          key = (item as any).quotation_number || (item as any).contract_number || "No Contract";
-          break;
         case "booking":
           key = item.booking_id || (item as any).project_number || "No Booking";
+          break;
+        case "customer":
+          key = (item as any).customer_name || "Unknown Customer";
           break;
         default:
           key = "Other";
@@ -589,7 +629,7 @@ export function FinancialsModule() {
     {
       header: "Ref #",
       width: "100px",
-      cell: (inv: any) => inv.project_number || "—",
+      cell: (inv: any) => getRefDisplay(inv),
     },
     {
       header: "Due Date",
@@ -800,8 +840,8 @@ export function FinancialsModule() {
   ];
 
   const COLLECTIONS_STATUS_OPTIONS: StatusOption[] = [
-    { value: "posted", label: "Posted", color: "#16A34A" },
     { value: "pending", label: "Pending", color: "#D97706" },
+    { value: "posted", label: "Posted", color: "#16A34A" },
     { value: "voided", label: "Voided", color: "#EF4444" },
   ];
 
@@ -832,7 +872,7 @@ export function FinancialsModule() {
     {
       header: "Ref #",
       width: "100px",
-      cell: (c: any) => c.project_number || "—",
+      cell: (c: any) => getRefDisplay(c),
     },
     {
       header: "Method",
@@ -928,9 +968,10 @@ export function FinancialsModule() {
 
   // ── Expenses Aggregate (Phase 4) ──
 
-  const [expensesGroupBy, setExpensesGroupBy] = useState("customer");
+  const [expensesGroupBy, setExpensesGroupBy] = useState("booking");
   const [expensesSearch, setExpensesSearch] = useState("");
   const [expensesStatusFilter, setExpensesStatusFilter] = useState("");
+  const [expensesBookingTypeFilter, setExpensesBookingTypeFilter] = useState<string>("");
 
   // Scope-filtered expenses
   const scopedExpenses = useMemo(() => {
@@ -969,7 +1010,7 @@ export function FinancialsModule() {
         label: "Total Expenses",
         value: formatCurrencyCompact(totalExpenses),
         subtext: `${items.length} records`,
-        icon: TrendingUp,
+        icon: Wallet,
         severity: "normal" as const,
       },
       {
@@ -997,16 +1038,16 @@ export function FinancialsModule() {
   }, [scopedExpenses]);
 
   const EXPENSES_GROUP_OPTIONS: GroupOption[] = [
-    { value: "customer", label: "Customer" },
-    { value: "project", label: "Project" },
-    { value: "contract", label: "Contract" },
     { value: "booking", label: "Booking" },
+    { value: "customer", label: "Customer" },
   ];
 
   const EXPENSES_STATUS_OPTIONS: StatusOption[] = [
+    { value: "draft", label: "Draft", color: "#6B7A76" },
     { value: "pending", label: "Pending", color: "#D97706" },
     { value: "approved", label: "Approved", color: "#0F766E" },
     { value: "posted", label: "Posted", color: "#16A34A" },
+    { value: "rejected", label: "Rejected", color: "#EF4444" },
   ];
 
   const EXPENSES_COLUMNS: AggColumnDef<any>[] = useMemo(() => [
@@ -1024,7 +1065,7 @@ export function FinancialsModule() {
       width: "100px",
       cell: (e: any) => (
         <span className="font-medium" style={{ color: "var(--neuron-brand-green)" }}>
-          {e.projectNumber || e.bookingId || "—"}
+          {getRefDisplay(e)}
         </span>
       ),
     },
@@ -1058,7 +1099,7 @@ export function FinancialsModule() {
       align: "center" as const,
       cell: (e: any) => {
         const s = (e.status || "").toLowerCase();
-        const colorMap: Record<string, string> = { pending: "#D97706", approved: "#0F766E", posted: "#16A34A" };
+        const colorMap: Record<string, string> = { draft: "#6B7A76", pending: "#D97706", approved: "#0F766E", posted: "#16A34A", rejected: "#EF4444" };
         const color = colorMap[s] || "#6B7A76";
         return (
           <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase"
@@ -1076,6 +1117,10 @@ export function FinancialsModule() {
     if (expensesStatusFilter) {
       items = items.filter((e: any) => (e.status || "").toLowerCase() === expensesStatusFilter);
     }
+    // Booking type filter
+    if (expensesBookingTypeFilter) {
+      items = items.filter((e: any) => (e.service_type || "").toLowerCase() === expensesBookingTypeFilter.toLowerCase());
+    }
     if (expensesSearch) {
       const q = expensesSearch.toLowerCase();
       items = items.filter((e: any) =>
@@ -1087,7 +1132,7 @@ export function FinancialsModule() {
       );
     }
     return items;
-  }, [scopedExpenses, expensesStatusFilter, expensesSearch]);
+  }, [scopedExpenses, expensesStatusFilter, expensesBookingTypeFilter, expensesSearch]);
 
   // Grouped expenses
   const expensesGroups: GroupedItems<any>[] = useMemo(() => {
@@ -1098,14 +1143,8 @@ export function FinancialsModule() {
         case "customer":
           key = e.customerName || e.customer_name || "Unknown Customer";
           break;
-        case "project":
-          key = e.projectNumber || e.bookingId || "No Project";
-          break;
-        case "contract":
-          key = e.quotationNumber || e.contract_number || "No Contract";
-          break;
         case "booking":
-          key = e.bookingId || e.projectNumber || "No Project";
+          key = e.bookingId || e.projectNumber || "No Booking";
           break;
         default:
           key = "Other";
@@ -1123,6 +1162,26 @@ export function FinancialsModule() {
       }))
       .sort((a, b) => b.subtotal - a.subtotal);
   }, [filteredExpenses, expensesGroupBy]);
+
+  // ── Booking Type Options (derived from data, shared by Billings & Expenses) ──
+
+  const billingsBookingTypeOptions = useMemo(() => {
+    const types = new Set<string>();
+    scopedBillingItems.forEach((item) => {
+      const svc = item.service_type || "";
+      if (svc) types.add(svc);
+    });
+    return Array.from(types).sort();
+  }, [scopedBillingItems]);
+
+  const expensesBookingTypeOptions = useMemo(() => {
+    const types = new Set<string>();
+    scopedExpenses.forEach((e: any) => {
+      const svc = e.service_type || "";
+      if (svc) types.add(svc);
+    });
+    return Array.from(types).sort();
+  }, [scopedExpenses]);
 
   // ── Render ──
 
@@ -1209,12 +1268,16 @@ export function FinancialsModule() {
               onStatusChange={setBillingsStatusFilter}
               totalCount={filteredBillingItems.length}
               groupCount={billingsGroups.length}
+              bookingTypeOptions={billingsBookingTypeOptions}
+              activeBookingType={billingsBookingTypeFilter}
+              onBookingTypeChange={(v) => setBillingsBookingTypeFilter(v || "")}
             />
             <GroupedDataTable<BillingItem>
               groups={billingsGroups}
               columns={BILLINGS_COLUMNS}
               isLoading={isLoading}
               onRowClick={handleRowClick}
+              exportFileName="billings"
             />
           </AggregateFinancialShell>
         )}
@@ -1249,6 +1312,7 @@ export function FinancialsModule() {
               columns={INVOICES_COLUMNS}
               isLoading={isLoading}
               onRowClick={handleRowClick}
+              exportFileName="invoices"
             />
           </AggregateFinancialShell>
         )}
@@ -1280,6 +1344,7 @@ export function FinancialsModule() {
               columns={COLLECTIONS_COLUMNS}
               isLoading={isLoading}
               onRowClick={handleRowClick}
+              exportFileName="collections"
             />
           </AggregateFinancialShell>
         )}
@@ -1305,12 +1370,16 @@ export function FinancialsModule() {
               onStatusChange={setExpensesStatusFilter}
               totalCount={filteredExpenses.length}
               groupCount={expensesGroups.length}
+              bookingTypeOptions={expensesBookingTypeOptions}
+              activeBookingType={expensesBookingTypeFilter}
+              onBookingTypeChange={(v) => setExpensesBookingTypeFilter(v || "")}
             />
             <GroupedDataTable<any>
               groups={expensesGroups}
               columns={EXPENSES_COLUMNS}
               isLoading={isLoading}
               onRowClick={handleRowClick}
+              exportFileName="expenses"
             />
           </AggregateFinancialShell>
         )}

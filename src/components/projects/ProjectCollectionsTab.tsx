@@ -6,12 +6,14 @@ interface ProjectCollectionsTabProps {
   financials: FinancialData;
   project: Project;
   currentUser: any;
+  highlightId?: string | null;
 }
 
 export function ProjectCollectionsTab({ 
   financials,
   project, 
-  currentUser 
+  currentUser,
+  highlightId
 }: ProjectCollectionsTabProps) {
   // Simple wrapper around the unified component with consistent padding
   return (
@@ -21,6 +23,7 @@ export function ProjectCollectionsTab({
         project={project}
         currentUser={currentUser}
         onRefresh={financials.refresh}
+        highlightId={highlightId}
       />
     </div>
   );

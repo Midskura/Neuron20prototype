@@ -1,4 +1,5 @@
 import { Receipt, FileText, LoaderCircle } from "lucide-react";
+import { useRef, useEffect } from "react";
 
 export interface ExpenseTableItem {
   id: string;
@@ -29,6 +30,7 @@ interface ExpensesTableProps {
     amount: number;
     currency?: string;
   };
+  highlightId?: string | null;
 }
 
 const formatCurrency = (amount: number, currency: string = "PHP") => {
@@ -56,8 +58,19 @@ export function ExpensesTable({
   onRowClick,
   showBookingColumn = false,
   footerSummary,
-  grossSummary
+  grossSummary,
+  highlightId = null
 }: ExpensesTableProps) {
+  const highlightRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll to highlighted item
+  useEffect(() => {
+    if (highlightId && highlightRef.current) {
+      setTimeout(() => {
+        highlightRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 300);
+    }
+  }, [highlightId]);
 
   // Visual helper for status - Matches Neuron badge system
   const getStatusBadge = (status: string = "pending") => {
@@ -134,11 +147,14 @@ export function ExpensesTable({
 
       {/* Rows */}
       <div className="divide-y divide-[#E5E9F0]">
-        {data.map((item, index) => (
+        {data.map((item, index) => {
+          const isHighlighted = highlightId === item.id;
+          return (
           <div
             key={item.id || index}
-            className={`${gridClass} gap-3 px-4 py-3 transition-colors ${onRowClick ? "cursor-pointer hover:bg-[#F1F6F4]" : ""}`}
+            className={`${gridClass} gap-3 px-4 py-3 transition-colors ${onRowClick ? "cursor-pointer hover:bg-[#F1F6F4]" : ""} ${isHighlighted ? "ring-2 ring-[#0F766E] bg-[#0F766E]/5 rounded-md" : ""}`}
             onClick={() => onRowClick && onRowClick(item.originalData || item)}
+            ref={isHighlighted ? highlightRef : undefined}
           >
             {/* Icon - Muted gray to match phone icon */}
             <div className="flex items-center justify-center">
@@ -197,7 +213,8 @@ export function ExpensesTable({
               </span>
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Footer Summary Row */}

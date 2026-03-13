@@ -44,7 +44,6 @@ export function IncomeVsCostBreakdown({
       const category =
         item.charge_code ||
         item.quotation_category ||
-        item.service_type ||
         item.description ||
         "General Revenue";
       const amount =

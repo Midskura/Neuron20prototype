@@ -35,6 +35,16 @@ interface ReceivablesAgingBarProps {
   onNavigate?: () => void;
   /** Previous-period invoices for trend indicators */
   previousInvoices?: any[];
+  /** Unbilled billing items (services rendered but not yet invoiced) */
+  unbilledItems?: any[];
+  /** Navigate to billings tab when unbilled row is clicked */
+  onUnbilledClick?: () => void;
+  /** Record payment against an invoice */
+  onRecordPayment?: (invoiceId: string) => void;
+  /** Send payment reminder for an invoice */
+  onSendReminder?: (invoice: any) => void;
+  /** Create invoice from an unbilled booking */
+  onCreateInvoice?: (bookingId: string) => void;
 }
 
 const AGING_CONFIG: { label: string; days: string; min: number; max: number; color: string; bgLight: string }[] = [
@@ -76,9 +86,13 @@ const fmtPHP = (amount: number) =>
 function InvoiceDrillDown({
   segment,
   onViewAll,
+  onRecordPayment,
+  onSendReminder,
 }: {
   segment: AgingSegment;
   onViewAll: () => void;
+  onRecordPayment?: (invoiceId: string) => void;
+  onSendReminder?: (invoice: any) => void;
 }) {
   const MAX_ROWS = 5;
   const sorted = useMemo(
@@ -105,7 +119,7 @@ function InvoiceDrillDown({
           return (
             <div
               key={inv.id || idx}
-              className="px-4 py-2 flex items-center justify-between hover:bg-white/50 transition-colors"
+              className="px-4 py-2 flex items-center justify-between group/row hover:bg-white/50 transition-colors"
             >
               <div className="flex items-center gap-4 min-w-0 flex-1">
                 <span
@@ -126,7 +140,7 @@ function InvoiceDrillDown({
                   </span>
                 )}
               </div>
-              <div className="flex items-center gap-3 flex-shrink-0 ml-4">
+              <div className="flex items-center gap-2 flex-shrink-0 ml-4">
                 {agingDays > 0 && (
                   <span
                     className="text-[9px] font-semibold px-1.5 py-0.5 rounded tabular-nums"
@@ -141,6 +155,27 @@ function InvoiceDrillDown({
                 >
                   {fmtPHP(balance)}
                 </span>
+                {/* Micro-actions — appear on row hover */}
+                <div className="flex items-center gap-1 opacity-0 group-hover/row:opacity-100 transition-opacity duration-150">
+                  {onRecordPayment && (
+                    <button
+                      className="px-2 py-0.5 rounded text-[10px] font-medium cursor-pointer transition-colors hover:bg-white/80"
+                      style={{ color: "#0F766E", border: "1px solid #0F766E30" }}
+                      onClick={(e) => { e.stopPropagation(); onRecordPayment(inv.id || invNumber); }}
+                    >
+                      Record Payment
+                    </button>
+                  )}
+                  {onSendReminder && (
+                    <button
+                      className="px-2 py-0.5 rounded text-[10px] font-medium cursor-pointer transition-colors hover:bg-white/80"
+                      style={{ color: "#0F766E", border: "1px solid #0F766E30" }}
+                      onClick={(e) => { e.stopPropagation(); onSendReminder(inv); }}
+                    >
+                      Send Reminder
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           );
@@ -176,9 +211,173 @@ function InvoiceDrillDown({
   );
 }
 
+// ── Unbilled Drill-Down Panel ──
+
+interface UnbilledBooking {
+  bookingId: string;
+  customerName: string;
+  unbilledAmount: number;
+  itemCount: number;
+}
+
+/** Check if an ID looks like a project number (not a booking) */
+function isProjectId(id: string): boolean {
+  const upper = id.toUpperCase();
+  return upper.startsWith("PROJ-") || upper.startsWith("PRJ-");
+}
+
+/** Group unbilled billing items by booking, aggregating amounts.
+ *  Excludes items that only have a project number (no real booking link) —
+ *  projects are containers, billings are made from bookings. */
+function groupByBooking(items: any[]): UnbilledBooking[] {
+  const map = new Map<string, UnbilledBooking>();
+  for (const item of items) {
+    // Use the real booking_id; skip if it's actually a project number fallback
+    const rawBookingId = item.booking_id || item.bookingId || "";
+    const projectNumber = item.project_number || item.projectNumber || "";
+
+    // If booking_id equals project_number, the server enrichment fell back —
+    // there's no real booking link. Also skip if booking_id looks like a project.
+    let bid = rawBookingId;
+    if (!bid || isProjectId(bid)) {
+      // No real booking association — skip this item from the booking drill-down
+      // (it will still count in the unbilled total bar, just won't appear in drill-down rows)
+      continue;
+    }
+
+    const existing = map.get(bid);
+    const amount = Number(item.amount) || 0;
+    const customer = (item.customer_name || item.customerName || "").trim() || "Unknown Customer";
+    if (existing) {
+      existing.unbilledAmount += amount;
+      existing.itemCount += 1;
+      // Keep the first non-unknown customer name
+      if (existing.customerName === "Unknown Customer" && customer !== "Unknown Customer") {
+        existing.customerName = customer;
+      }
+    } else {
+      map.set(bid, {
+        bookingId: bid,
+        customerName: customer,
+        unbilledAmount: amount,
+        itemCount: 1,
+      });
+    }
+  }
+  return Array.from(map.values());
+}
+
+function UnbilledDrillDown({
+  items,
+  color,
+  bgLight,
+  onViewAll,
+  onCreateInvoice,
+}: {
+  items: any[];
+  color: string;
+  bgLight: string;
+  onViewAll: () => void;
+  onCreateInvoice?: (bookingId: string) => void;
+}) {
+  const MAX_ROWS = 5;
+  const bookings = useMemo(
+    () => groupByBooking(items).sort((a, b) => b.unbilledAmount - a.unbilledAmount),
+    [items]
+  );
+  const displayed = bookings.slice(0, MAX_ROWS);
+  const remaining = bookings.length - MAX_ROWS;
+
+  return (
+    <div
+      className="rounded-lg overflow-hidden ml-[88px]"
+      style={{ border: `1px solid ${color}25`, background: bgLight }}
+    >
+      {/* Booking rows */}
+      <div className="divide-y" style={{ borderColor: `${color}15` }}>
+        {displayed.map((booking, idx) => (
+          <div
+            key={booking.bookingId || idx}
+            className="px-4 py-2 flex items-center justify-between group/row hover:bg-white/50 transition-colors"
+          >
+            <div className="flex items-center gap-4 min-w-0 flex-1">
+              <span
+                className="text-[11px] font-semibold tabular-nums flex-shrink-0"
+                style={{ color: "#12332B", minWidth: "90px" }}
+              >
+                {booking.bookingId}
+              </span>
+              <span
+                className="text-[11px] font-medium truncate"
+                style={{ color: "#667085", maxWidth: "200px" }}
+              >
+                {booking.customerName}
+              </span>
+              {booking.itemCount > 1 && (
+                <span
+                  className="text-[9px] font-medium px-1.5 py-0.5 rounded tabular-nums flex-shrink-0"
+                  style={{ backgroundColor: `${color}12`, color }}
+                >
+                  {booking.itemCount} charges
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-2 flex-shrink-0 ml-4">
+              <span
+                className="text-[12px] font-bold tabular-nums"
+                style={{ color: "#12332B" }}
+              >
+                {fmtPHP(booking.unbilledAmount)}
+              </span>
+              {/* Micro-action — appears on row hover */}
+              {onCreateInvoice && (
+                <div className="opacity-0 group-hover/row:opacity-100 transition-opacity duration-150">
+                  <button
+                    className="px-2 py-0.5 rounded text-[10px] font-medium cursor-pointer transition-colors hover:bg-white/80"
+                    style={{ color: "#0F766E", border: "1px solid #0F766E30" }}
+                    onClick={(e) => { e.stopPropagation(); onCreateInvoice(booking.bookingId); }}
+                  >
+                    Create Invoice
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* "More" footer */}
+      {remaining > 0 && (
+        <div className="px-4 py-1.5 text-center" style={{ borderTop: `1px solid ${color}15` }}>
+          <button
+            className="text-[10px] font-medium cursor-pointer hover:underline"
+            style={{ color: color }}
+            onClick={onViewAll}
+          >
+            +{remaining} more bookings — View all in Billings →
+          </button>
+        </div>
+      )}
+
+      {/* Always show "View all" if only a few */}
+      {remaining <= 0 && bookings.length > 0 && (
+        <div className="px-4 py-1.5 text-right" style={{ borderTop: `1px solid ${color}15` }}>
+          <button
+            className="text-[10px] font-medium cursor-pointer hover:underline"
+            style={{ color: color }}
+            onClick={onViewAll}
+          >
+            View all in Billings →
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main Component ──
 
-export function ReceivablesAgingBar({ invoices, dso, onBucketClick, onNavigate, previousInvoices }: ReceivablesAgingBarProps) {
+export function ReceivablesAgingBar({ invoices, dso, onBucketClick, onNavigate, previousInvoices, unbilledItems, onUnbilledClick, onRecordPayment, onSendReminder, onCreateInvoice }: ReceivablesAgingBarProps) {
   const [expandedBucket, setExpandedBucket] = useState<string | null>(null);
 
   // Filter to unpaid invoices only
@@ -190,6 +389,20 @@ export function ReceivablesAgingBar({ invoices, dso, onBucketClick, onNavigate, 
         return s !== "paid" && ps !== "paid" && getBalance(inv) > 0.01;
       }),
     [invoices]
+  );
+
+  // Unbilled totals
+  const unbilledAmount = useMemo(
+    () => (unbilledItems || []).reduce((s, b) => s + (Number(b.amount) || 0), 0),
+    [unbilledItems]
+  );
+  const unbilledCount = (unbilledItems || []).length;
+  const hasUnbilled = unbilledCount > 0 && unbilledAmount > 0;
+
+  // Count unique bookings for display (accounting sees bookings, not raw charges)
+  const unbilledBookingCount = useMemo(
+    () => groupByBooking(unbilledItems || []).length,
+    [unbilledItems]
   );
 
   // Build segments WITH matched invoices for drill-down
@@ -213,7 +426,12 @@ export function ReceivablesAgingBar({ invoices, dso, onBucketClick, onNavigate, 
 
   const totalAmount = segments.reduce((s, seg) => s + seg.amount, 0);
   const totalCount = segments.reduce((s, seg) => s + seg.count, 0);
-  const maxBucketAmount = Math.max(...segments.map((s) => s.amount), 1);
+
+  // Only show buckets that have data
+  const activeSegments = useMemo(() => segments.filter((s) => s.count > 0), [segments]);
+
+  // Max bucket amount — include unbilled in the scale so bars are honest
+  const maxBucketAmount = Math.max(...activeSegments.map((s) => s.amount), hasUnbilled ? unbilledAmount : 0, 1);
 
   // Previous-period aging for trend indicators
   const prevSegmentAmounts: Record<string, number> = useMemo(() => {
@@ -247,13 +465,13 @@ export function ReceivablesAgingBar({ invoices, dso, onBucketClick, onNavigate, 
   const todayStr = formatShortDate(new Date());
 
   // ── Empty state ──
-  if (totalAmount === 0) {
+  if (totalAmount === 0 && !hasUnbilled) {
     return (
       <div
-        className="rounded-xl p-5"
+        className="rounded-xl px-5 py-3"
         style={{ border: "1px solid #E5E9F0", background: "white" }}
       >
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <h3
               className="text-[13px] font-semibold uppercase tracking-wider"
@@ -270,7 +488,7 @@ export function ReceivablesAgingBar({ invoices, dso, onBucketClick, onNavigate, 
             </span>
           </div>
         </div>
-        <p className="text-[13px]" style={{ color: "#9CA3AF" }}>
+        <p className="text-[13px] mt-2" style={{ color: "#9CA3AF" }}>
           No outstanding receivables
         </p>
       </div>
@@ -279,11 +497,11 @@ export function ReceivablesAgingBar({ invoices, dso, onBucketClick, onNavigate, 
 
   return (
     <div
-      className="rounded-xl p-5"
+      className="rounded-xl px-5 py-3"
       style={{ border: "1px solid #E5E9F0", background: "white" }}
     >
       {/* ── Header Row ── */}
-      <div className="flex items-center justify-between mb-5">
+      <div className="flex items-center justify-between mb-3">
         {/* Left: title + "As of" chip */}
         <div className="flex items-center gap-3">
           <h3
@@ -301,11 +519,11 @@ export function ReceivablesAgingBar({ invoices, dso, onBucketClick, onNavigate, 
           </span>
         </div>
 
-        {/* Right: total outstanding + DSO + View */}
+        {/* Right: total outstanding + View */}
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1.5">
             <span className="text-[11px] font-medium" style={{ color: "#9CA3AF" }}>
-              Total:
+              Billed:
             </span>
             <span className="text-[18px] font-bold tabular-nums" style={{ color: "#12332B" }}>
               {formatCurrencyCompact(totalAmount)}
@@ -314,12 +532,19 @@ export function ReceivablesAgingBar({ invoices, dso, onBucketClick, onNavigate, 
               ({totalCount})
             </span>
           </div>
-          <span
-            className="text-[12px] font-semibold px-2 py-0.5 rounded-md tabular-nums"
-            style={{ background: dsoStyle.bg, color: dsoStyle.color }}
-          >
-            DSO: {dso}d
-          </span>
+          {hasUnbilled && (
+            <div className="flex items-center gap-1.5 pl-2" style={{ borderLeft: "1px solid #E5E9F0" }}>
+              <span className="text-[11px] font-medium" style={{ color: "#9CA3AF" }}>
+                Unbilled:
+              </span>
+              <span className="text-[14px] font-bold tabular-nums" style={{ color: "#667085" }}>
+                {formatCurrencyCompact(unbilledAmount)}
+              </span>
+              <span className="text-[11px] font-medium ml-0.5 tabular-nums" style={{ color: "#9CA3AF" }}>
+                ({unbilledBookingCount} {unbilledBookingCount === 1 ? "bkg" : "bkgs"})
+              </span>
+            </div>
+          )}
           {onNavigate && (
             <button
               className="text-[12px] font-medium cursor-pointer hover:underline"
@@ -333,11 +558,130 @@ export function ReceivablesAgingBar({ invoices, dso, onBucketClick, onNavigate, 
       </div>
 
       {/* ── Horizontal Row Chart ── */}
-      <div className="flex flex-col gap-1">
-        {segments.map((seg) => {
+      <div className="flex flex-col gap-0">
+        {/* Unbilled row — pre-invoice stage, visually distinct */}
+        {hasUnbilled && (() => {
+          const unbilledBarPct = maxBucketAmount > 0 ? (unbilledAmount / maxBucketAmount) * 100 : 0;
+          const isExpanded = expandedBucket === "__unbilled__";
+          const UNBILLED_COLOR = "#667085";
+          const UNBILLED_BG = "#F8F9FB";
+
+          return (
+            <div>
+              <button
+                className="w-full flex items-center gap-3 py-1 px-1 rounded-md transition-colors group"
+                style={{
+                  cursor: "pointer",
+                  background: isExpanded ? UNBILLED_BG : "transparent",
+                }}
+                onClick={() => {
+                  if (unbilledCount > 0) {
+                    setExpandedBucket((prev) => (prev === "__unbilled__" ? null : "__unbilled__"));
+                  }
+                }}
+              >
+                {/* Label */}
+                <div className="flex items-center gap-1.5 flex-shrink-0" style={{ width: "72px" }}>
+                  <div
+                    className="w-2 h-2 rounded-full flex-shrink-0"
+                    style={{ border: `2px solid ${UNBILLED_COLOR}`, background: "transparent" }}
+                  />
+                  <span
+                    className="text-[11px] font-semibold"
+                    style={{ color: UNBILLED_COLOR }}
+                  >
+                    Unbilled
+                  </span>
+                </div>
+
+                {/* Bar — simple solid color to distinguish from aging bars */}
+                <div className="flex-1 h-[18px] rounded overflow-hidden relative" style={{ background: "#F3F4F6" }}>
+                  <div
+                    className="h-full rounded transition-all duration-300 flex items-center px-1.5 min-w-[24px]"
+                    style={{
+                      width: `${Math.max(unbilledBarPct, 3)}%`,
+                      backgroundColor: UNBILLED_COLOR,
+                      opacity: isExpanded ? 1 : 0.8,
+                    }}
+                  >
+                    {unbilledBarPct > 20 && (
+                      <span className="text-white text-[9px] font-semibold truncate leading-none">
+                        {formatCurrencyCompact(unbilledAmount)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Amount */}
+                <div className="flex-shrink-0 text-right" style={{ width: "80px" }}>
+                  <span
+                    className="text-[12px] font-bold tabular-nums whitespace-nowrap"
+                    style={{ color: "#12332B" }}
+                  >
+                    {formatCurrencyCompact(unbilledAmount)}
+                  </span>
+                </div>
+
+                {/* Count — "jobs" instead of "inv" */}
+                <div className="flex-shrink-0 text-right" style={{ width: "40px" }}>
+                  <span
+                    className="text-[10px] tabular-nums"
+                    style={{ color: "#9CA3AF" }}
+                  >
+                    {unbilledBookingCount} {unbilledBookingCount === 1 ? "bkg" : "bkgs"}
+                  </span>
+                </div>
+
+                {/* Empty share % slot (unbilled isn't part of AR share) */}
+                <div className="flex-shrink-0 text-right" style={{ width: "36px" }}>
+                  <span className="text-[10px] font-medium tabular-nums" style={{ color: "#B4B9C4" }}>
+                    —
+                  </span>
+                </div>
+
+                {/* Empty trend slot */}
+                <div className="flex-shrink-0" style={{ width: "14px" }} />
+
+                {/* Expand chevron */}
+                <div className="flex-shrink-0" style={{ width: "14px" }}>
+                  <ChevronRight
+                    size={12}
+                    className="transition-transform duration-200"
+                    style={{
+                      color: isExpanded ? UNBILLED_COLOR : "#D1D5DB",
+                      transform: isExpanded ? "rotate(90deg)" : "rotate(0deg)",
+                    }}
+                  />
+                </div>
+              </button>
+
+              {/* Unbilled drill-down */}
+              {isExpanded && unbilledCount > 0 && (
+                <div className="py-0.5">
+                  <UnbilledDrillDown
+                    items={unbilledItems!}
+                    color={UNBILLED_COLOR}
+                    bgLight={UNBILLED_BG}
+                    onViewAll={() => onUnbilledClick?.()}
+                    onCreateInvoice={onCreateInvoice}
+                  />
+                </div>
+              )}
+
+              {/* Dashed divider between unbilled and aging rows */}
+              <div
+                className="mx-1 my-1"
+                style={{
+                  borderBottom: "1px dashed #D1D5DB",
+                }}
+              />
+            </div>
+          );
+        })()}
+
+        {activeSegments.map((seg) => {
           const barPct = maxBucketAmount > 0 ? (seg.amount / maxBucketAmount) * 100 : 0;
           const sharePct = totalAmount > 0 ? (seg.amount / totalAmount) * 100 : 0;
-          const isEmpty = seg.count === 0;
           const isExpanded = expandedBucket === seg.label;
 
           // Trend calculation
@@ -361,117 +705,105 @@ export function ReceivablesAgingBar({ invoices, dso, onBucketClick, onNavigate, 
             <div key={seg.label}>
               {/* Row */}
               <button
-                className="w-full flex items-center gap-3 py-2 px-2 rounded-lg transition-colors group"
+                className="w-full flex items-center gap-3 py-1 px-1 rounded-md transition-colors group"
                 style={{
-                  cursor: isEmpty ? "default" : "pointer",
+                  cursor: "pointer",
                   background: isExpanded ? seg.bgLight : "transparent",
                 }}
                 onClick={() => handleRowClick(seg.label, seg.count)}
-                disabled={isEmpty}
               >
                 {/* Bucket label — fixed width for alignment */}
-                <div className="flex items-center gap-2 flex-shrink-0" style={{ width: "76px" }}>
+                <div className="flex items-center gap-1.5 flex-shrink-0" style={{ width: "72px" }}>
                   <div
-                    className="w-2.5 h-2.5 rounded-sm flex-shrink-0"
-                    style={{ backgroundColor: isEmpty ? "#E5E9F0" : seg.color }}
+                    className="w-2 h-2 rounded-sm flex-shrink-0"
+                    style={{ backgroundColor: seg.color }}
                   />
                   <span
-                    className="text-[12px] font-semibold"
-                    style={{ color: isEmpty ? "#D1D5DB" : seg.color }}
+                    className="text-[11px] font-semibold"
+                    style={{ color: seg.color }}
                   >
                     {seg.label}
                   </span>
                 </div>
 
                 {/* Bar area */}
-                <div className="flex-1 h-6 rounded-md overflow-hidden relative" style={{ background: "#F3F4F6" }}>
-                  {isEmpty ? (
-                    // Empty bucket: thin dashed placeholder
-                    <div
-                      className="absolute inset-y-0 left-0 w-full flex items-center px-3"
-                    >
-                      <span className="text-[10px] italic" style={{ color: "#D1D5DB" }}>
-                        —
+                <div className="flex-1 h-[18px] rounded overflow-hidden relative" style={{ background: "#F3F4F6" }}>
+                  <div
+                    className="h-full rounded transition-all duration-300 flex items-center px-1.5 min-w-[24px]"
+                    style={{
+                      width: `${Math.max(barPct, 3)}%`,
+                      backgroundColor: seg.color,
+                      opacity: isExpanded ? 1 : 0.85,
+                    }}
+                  >
+                    {barPct > 20 && (
+                      <span className="text-white text-[9px] font-semibold truncate leading-none">
+                        {formatCurrencyCompact(seg.amount)}
                       </span>
-                    </div>
-                  ) : (
-                    <div
-                      className="h-full rounded-md transition-all duration-300 flex items-center px-2.5 min-w-[32px]"
-                      style={{
-                        width: `${Math.max(barPct, 3)}%`,
-                        backgroundColor: seg.color,
-                        opacity: isExpanded ? 1 : 0.85,
-                      }}
-                    >
-                      {barPct > 15 && (
-                        <span className="text-white text-[11px] font-semibold truncate">
-                          {formatCurrencyCompact(seg.amount)}
-                        </span>
-                      )}
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
 
                 {/* Amount — fixed width for alignment */}
-                <div className="flex-shrink-0 text-right" style={{ width: "72px" }}>
+                <div className="flex-shrink-0 text-right" style={{ width: "80px" }}>
                   <span
-                    className="text-[13px] font-bold tabular-nums"
-                    style={{ color: isEmpty ? "#D1D5DB" : "#12332B" }}
+                    className="text-[12px] font-bold tabular-nums whitespace-nowrap"
+                    style={{ color: "#12332B" }}
                   >
-                    {isEmpty ? "—" : formatCurrencyCompact(seg.amount)}
+                    {formatCurrencyCompact(seg.amount)}
                   </span>
                 </div>
 
                 {/* Count */}
-                <div className="flex-shrink-0 text-right" style={{ width: "44px" }}>
+                <div className="flex-shrink-0 text-right" style={{ width: "40px" }}>
                   <span
-                    className="text-[11px] tabular-nums"
-                    style={{ color: isEmpty ? "#D1D5DB" : "#9CA3AF" }}
+                    className="text-[10px] tabular-nums"
+                    style={{ color: "#9CA3AF" }}
                   >
-                    {isEmpty ? "—" : `${seg.count} inv`}
+                    {seg.count} inv
                   </span>
                 </div>
 
                 {/* Share % */}
-                <div className="flex-shrink-0 text-right" style={{ width: "40px" }}>
+                <div className="flex-shrink-0 text-right" style={{ width: "36px" }}>
                   <span
-                    className="text-[11px] font-medium tabular-nums"
-                    style={{ color: isEmpty ? "#D1D5DB" : "#667085" }}
+                    className="text-[10px] font-medium tabular-nums"
+                    style={{ color: "#667085" }}
                   >
-                    {isEmpty ? "" : `${sharePct.toFixed(sharePct < 1 && sharePct > 0 ? 1 : 0)}%`}
+                    {sharePct.toFixed(sharePct < 1 && sharePct > 0 ? 1 : 0)}%
                   </span>
                 </div>
 
                 {/* Trend arrow */}
-                <div className="flex-shrink-0" style={{ width: "16px" }}>
+                <div className="flex-shrink-0" style={{ width: "14px" }}>
                   {trendArrow && trendColor ? (
-                    <span className="text-[11px] font-bold" style={{ color: trendColor }}>
+                    <span className="text-[10px] font-bold" style={{ color: trendColor }}>
                       {trendArrow}
                     </span>
                   ) : null}
                 </div>
 
                 {/* Expand chevron */}
-                <div className="flex-shrink-0" style={{ width: "16px" }}>
-                  {!isEmpty && (
-                    <ChevronRight
-                      size={13}
-                      className="transition-transform duration-200"
-                      style={{
-                        color: isExpanded ? seg.color : "#D1D5DB",
-                        transform: isExpanded ? "rotate(90deg)" : "rotate(0deg)",
-                      }}
-                    />
-                  )}
+                <div className="flex-shrink-0" style={{ width: "14px" }}>
+                  <ChevronRight
+                    size={12}
+                    className="transition-transform duration-200"
+                    style={{
+                      color: isExpanded ? seg.color : "#D1D5DB",
+                      transform: isExpanded ? "rotate(90deg)" : "rotate(0deg)",
+                    }}
+                  />
                 </div>
               </button>
 
               {/* Drill-down panel — appears directly below the clicked row */}
               {isExpanded && seg.count > 0 && (
-                <div className="py-1">
+                <div className="py-0.5">
                   <InvoiceDrillDown
                     segment={seg}
                     onViewAll={() => onBucketClick(seg.label)}
+                    onRecordPayment={onRecordPayment}
+                    onSendReminder={onSendReminder}
                   />
                 </div>
               )}

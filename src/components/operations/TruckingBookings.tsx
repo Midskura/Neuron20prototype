@@ -26,11 +26,14 @@ interface TruckingBooking {
 
 interface TruckingBookingsProps {
   currentUser?: { name: string; email: string; department: string } | null;
+  pendingBookingId?: string | null;
+  initialTab?: string | null;
+  highlightId?: string | null;
 }
 
 const API_URL = `https://${projectId}.supabase.co/functions/v1/make-server-c142e950`;
 
-export function TruckingBookings({ currentUser }: TruckingBookingsProps = {}) {
+export function TruckingBookings({ currentUser, pendingBookingId, initialTab, highlightId }: TruckingBookingsProps = {}) {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -61,6 +64,15 @@ export function TruckingBookings({ currentUser }: TruckingBookingsProps = {}) {
     bookingsFetcher,
     [],
   );
+
+  // Deep-link: auto-select booking from pendingBookingId
+  useEffect(() => {
+    if (!pendingBookingId || bookings.length === 0 || isLoading) return;
+    const match = bookings.find(b => b.bookingId === pendingBookingId);
+    if (match) {
+      setSelectedBooking(match);
+    }
+  }, [pendingBookingId, bookings, isLoading]);
 
   const handleBookingCreated = () => {
     setShowCreateModal(false);
@@ -174,9 +186,10 @@ export function TruckingBookings({ currentUser }: TruckingBookingsProps = {}) {
         booking={selectedBooking} 
         onBack={() => { 
           setSelectedBooking(null);
-          // No refetch needed — cache provides fresh data via stale-while-revalidate
         }} 
-        onUpdate={fetchBookings} 
+        onUpdate={fetchBookings}
+        initialTab={initialTab}
+        highlightId={highlightId}
       />
     );
   }
